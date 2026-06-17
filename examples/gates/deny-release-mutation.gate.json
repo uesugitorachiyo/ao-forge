@@ -1,0 +1,21 @@
+{
+  "schema_version": "ao.forge.covenant-gate-result.v0.1",
+  "status": "denied",
+  "plan_id": "forge-plan-efedbfb309b1",
+  "execution_enabled": false,
+  "decision": {
+    "schema_version": "ao.forge.covenant-decision-fixture.v0.1",
+    "decision_id": "deny-release-mutation",
+    "target_plan_id": "forge-plan-efedbfb309b1",
+    "decision": "deny",
+    "explanation": "The plan requests release mutation, which is denied by policy.",
+    "source": "local-fixture"
+  },
+  "next_actions": [
+    {
+      "action_id": "revise-plan-or-stop",
+      "description": "The Covenant gate denied the plan; do not execute AO2 work.",
+      "required": true
+    }
+  ]
+}

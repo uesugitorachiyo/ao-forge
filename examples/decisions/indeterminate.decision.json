@@ -1,0 +1,8 @@
+{
+  "schema_version": "ao.forge.covenant-decision-fixture.v0.1",
+  "decision_id": "indeterminate-network-access",
+  "target_plan_id": "forge-plan-efedbfb309b1",
+  "decision": "indeterminate",
+  "explanation": "The plan requests network access, which requires operator approval and is indeterminate under standard policy.",
+  "source": "local-fixture"
+}

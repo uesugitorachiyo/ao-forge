@@ -40,7 +40,7 @@
         },
         "decision": {
           "type": "string",
-          "enum": ["allow", "deny", "invalid"]
+          "enum": ["allow", "deny", "invalid", "indeterminate"]
         },
         "explanation": {
           "type": "string"

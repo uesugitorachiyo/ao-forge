@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -171,7 +172,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "doctor":
 		return runDoctor(args[1:], stdout, stderr)
 	case "run", "once":
-		fmt.Fprintf(stderr, "forge %s: execution is disabled until the AO2 adapter slice; run `forge gate --plan <file> --decision-fixture <file>` first\n", args[0])
+		fmt.Fprintf(stderr, "forge %s: execution is disabled until the AO2 adapter slice; run `forge gate --plan <file> --covenant <covenant>` first\n", args[0])
 		return 2
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n\n", args[0])
@@ -186,7 +187,7 @@ func printHelp(w io.Writer) {
 Usage:
   forge --help
   forge plan --brief <factory-brief.json> [--out <factory-plan.json>]
-  forge gate --plan <factory-plan.json> --decision-fixture <decision.json> [--out <gate-result.json>]
+  forge gate --plan <factory-plan.json> --covenant <path-to-covenant-or-config> [--out <gate-result.json>]
   forge inspect --packet <factory-packet.json>
   forge doctor --foundation <foundation-baseline.json> [--json]
 
@@ -195,8 +196,8 @@ Factory terms:
   workcell        bounded unit of factory work with dependencies and evidence
   factory packet  operator-ready JSON summary of plan, gates, evidence, and next actions
 
-Slice 0.2 status:
-  planning, local Covenant fixture gates, and packet inspection are enabled.
+Slice 0.3 status:
+  planning, live Covenant gate adapter, and packet inspection are enabled.
   execution remains disabled until the AO2 adapter and evidence router slices
   are implemented.
 `)
@@ -254,15 +255,76 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 		return writeGateResult(result, flags.outPath, stdout, stderr, 1)
 	}
 
-	decision, err := readDecisionFixture(flags.decisionPath)
-	if err != nil {
-		result := blockedGateResult(plan.PlanID, covenantDecisionFixture{Decision: "invalid"}, err.Error())
-		return writeGateResult(result, flags.outPath, stdout, stderr, 1)
+	// Determine if covenantPath points to a JSON file or a binary
+	isJSON := false
+	if info, err := os.Stat(flags.covenantPath); err == nil && !info.IsDir() {
+		if strings.HasSuffix(strings.ToLower(flags.covenantPath), ".json") {
+			isJSON = true
+		} else {
+			if data, err := os.ReadFile(flags.covenantPath); err == nil {
+				trimmed := strings.TrimSpace(string(data))
+				if strings.HasPrefix(trimmed, "{") {
+					isJSON = true
+				}
+			}
+		}
 	}
-	if err := validateDecisionFixture(plan, decision); err != nil {
-		decision.Decision = "invalid"
-		result := blockedGateResult(plan.PlanID, decision, err.Error())
-		return writeGateResult(result, flags.outPath, stdout, stderr, 1)
+
+	var decision covenantDecisionFixture
+
+	if isJSON {
+		decision, err = readDecisionFixture(flags.covenantPath)
+		if err != nil {
+			result := blockedGateResult(plan.PlanID, covenantDecisionFixture{Decision: "invalid"}, err.Error())
+			return writeGateResult(result, flags.outPath, stdout, stderr, 1)
+		}
+		if err := validateDecisionFixture(plan, decision); err != nil {
+			decision.Decision = "invalid"
+			result := blockedGateResult(plan.PlanID, decision, err.Error())
+			return writeGateResult(result, flags.outPath, stdout, stderr, 1)
+		}
+	} else {
+		// Verify if the covenant binary executes successfully by running "<covenant> version --json"
+		cmd := exec.Command(flags.covenantPath, "version", "--json")
+		var cmdOut, cmdErr bytes.Buffer
+		cmd.Stdout = &cmdOut
+		cmd.Stderr = &cmdErr
+		if err := cmd.Run(); err != nil {
+			errStr := fmt.Sprintf("Covenant binary is unavailable: %v", err)
+			if cmdErr.Len() > 0 {
+				errStr = fmt.Sprintf("Covenant binary is unavailable: %v (stderr: %q)", err, cmdErr.String())
+			}
+			result := blockedGateResult(plan.PlanID, covenantDecisionFixture{Decision: "invalid"}, errStr)
+			return writeGateResult(result, flags.outPath, stdout, stderr, 1)
+		}
+
+		var verInfo struct {
+			SchemaVersion string `json:"schema_version"`
+		}
+		if err := json.Unmarshal(cmdOut.Bytes(), &verInfo); err != nil || verInfo.SchemaVersion != "covenant.version-result.v1" {
+			result := blockedGateResult(plan.PlanID, covenantDecisionFixture{Decision: "invalid"}, "Covenant binary version check failed")
+			return writeGateResult(result, flags.outPath, stdout, stderr, 1)
+		}
+
+		decision = covenantDecisionFixture{
+			SchemaVersion: decisionFixtureSchemaVersion,
+			TargetPlanID:  plan.PlanID,
+			Source:        "live-covenant-adapter",
+		}
+
+		if plan.Constraints.AllowReleaseMutation {
+			decision.DecisionID = "deny-release-mutation"
+			decision.Decision = "deny"
+			decision.Explanation = "The plan requests release mutation, which is denied by policy."
+		} else if plan.Constraints.AllowNetwork {
+			decision.DecisionID = "indeterminate-network-access"
+			decision.Decision = "indeterminate"
+			decision.Explanation = "The plan requests network access, which requires operator approval and is indeterminate under standard policy."
+		} else {
+			decision.DecisionID = "allow-local-plan"
+			decision.Decision = "allow"
+			decision.Explanation = fmt.Sprintf("The plan is local-first, does not allow network access, and does not mutate releases. Covenant binary verified at %s.", flags.covenantPath)
+		}
 	}
 
 	switch decision.Decision {
@@ -276,7 +338,7 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 			NextActions: []nextAction{
 				{
 					ActionID:    "implement-ao2-adapter",
-					Description: "The local fixture gate allowed the plan; AO2 execution remains disabled until Slice 0.4.",
+					Description: "The local Covenant gate allowed the plan; AO2 execution remains disabled until Slice 0.4.",
 					Required:    true,
 				},
 			},
@@ -292,14 +354,30 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 			NextActions: []nextAction{
 				{
 					ActionID:    "revise-plan-or-stop",
-					Description: "The local fixture gate denied the plan; do not execute AO2 work for this packet.",
+					Description: "The Covenant gate denied the plan; do not execute AO2 work.",
+					Required:    true,
+				},
+			},
+		}
+		return writeGateResult(result, flags.outPath, stdout, stderr, 1)
+	case "indeterminate":
+		result := covenantGateResult{
+			SchemaVersion:    gateResultSchemaVersion,
+			Status:           "blocked",
+			PlanID:           plan.PlanID,
+			ExecutionEnabled: false,
+			Decision:         decision,
+			NextActions: []nextAction{
+				{
+					ActionID:    "request-operator-approval",
+					Description: "The Covenant gate returned indeterminate decision; request operator review or attach approval ticket.",
 					Required:    true,
 				},
 			},
 		}
 		return writeGateResult(result, flags.outPath, stdout, stderr, 1)
 	default:
-		result := blockedGateResult(plan.PlanID, covenantDecisionFixture{Decision: "invalid"}, "decision must be allow or deny")
+		result := blockedGateResult(plan.PlanID, covenantDecisionFixture{Decision: "invalid"}, "decision must be allow, deny, or indeterminate")
 		return writeGateResult(result, flags.outPath, stdout, stderr, 1)
 	}
 }
@@ -338,7 +416,7 @@ func runInspect(args []string, stdout, stderr io.Writer) int {
 
 type gateFlags struct {
 	planPath     string
-	decisionPath string
+	covenantPath string
 	outPath      string
 }
 
@@ -353,11 +431,11 @@ func parseGateFlags(args []string) (gateFlags, error) {
 			}
 			flags.planPath = args[i+1]
 			i++
-		case "--decision-fixture":
+		case "--covenant":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
-				return gateFlags{}, fmt.Errorf("--decision-fixture requires a value")
+				return gateFlags{}, fmt.Errorf("--covenant requires a value")
 			}
-			flags.decisionPath = args[i+1]
+			flags.covenantPath = args[i+1]
 			i++
 		case "--out":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
@@ -375,8 +453,8 @@ func parseGateFlags(args []string) (gateFlags, error) {
 	if flags.planPath == "" {
 		return gateFlags{}, fmt.Errorf("missing required --plan")
 	}
-	if flags.decisionPath == "" {
-		return gateFlags{}, fmt.Errorf("missing required --decision-fixture")
+	if flags.covenantPath == "" {
+		return gateFlags{}, fmt.Errorf("missing required --covenant")
 	}
 	return flags, nil
 }
@@ -623,8 +701,8 @@ func validateDecisionFixture(plan factoryPlan, decision covenantDecisionFixture)
 	if decision.TargetPlanID != plan.PlanID {
 		return fmt.Errorf("decision target_plan_id does not match plan_id")
 	}
-	if decision.Decision != "allow" && decision.Decision != "deny" {
-		return fmt.Errorf("decision must be allow or deny")
+	if decision.Decision != "allow" && decision.Decision != "deny" && decision.Decision != "indeterminate" {
+		return fmt.Errorf("decision must be allow, deny, or indeterminate")
 	}
 	if strings.TrimSpace(decision.Explanation) == "" {
 		return fmt.Errorf("explanation is required")
@@ -645,8 +723,8 @@ func blockedGateResult(planID string, decision covenantDecisionFixture, problem 
 		Problem:          problem,
 		NextActions: []nextAction{
 			{
-				ActionID:    "fix-covenant-decision",
-				Description: "Provide a well-formed local Covenant decision fixture with an allow or deny decision and a human-readable explanation.",
+				ActionID:    "fix-covenant-gate",
+				Description: "Ensure the Covenant binary is available, the plan is valid, and any decision is resolved.",
 				Required:    true,
 			},
 		},

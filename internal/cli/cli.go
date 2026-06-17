@@ -199,6 +199,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runOnce(args[1:], stdout, stderr)
 	case "packet":
 		return runPacketCommand(args[1:], stdout, stderr)
+	case "resume":
+		return runResume(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n\n", args[0])
 		printHelp(stderr)
@@ -217,6 +219,7 @@ Usage:
   forge run --plan <factory-plan.json> --gate-result <gate-result.json> [--out <factory-packet.json>] [--live] [--confirm-release]
   forge once --brief <factory-brief.json> --covenant <path-to-covenant-or-config> [--out <factory-packet.json>] [--live] [--confirm-release]
   forge packet --run <run-id> [--out <factory-packet.json>]
+  forge resume --run <run-id> [--out <factory-packet.json>] [--live] [--confirm-release]
   forge inspect --packet <factory-packet.json>
   forge doctor --foundation <foundation-baseline.json> [--json]
 
@@ -225,8 +228,8 @@ Factory terms:
   workcell        bounded unit of factory work with dependencies and evidence
   factory packet  operator-ready JSON summary of plan, gates, evidence, and next actions
 
-Slice 1.5 status:
-  durable state persistence, live/dry-run execution orchestration, and validation are enabled.
+Slice 1.8 status:
+  durable state persistence, live/dry-run execution orchestration, verification, and run resumption are enabled.
 `)
 }
 
@@ -1242,6 +1245,20 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	return executePlanRun(plan, planPath, gateResultPath, outPath, controlPlaneURL, liveMode, confirmRelease, nil, stdout, stderr)
+}
+
+func executePlanRun(
+	plan factoryPlan,
+	planPath string,
+	gateResultPath string,
+	outPath string,
+	controlPlaneURL string,
+	liveMode bool,
+	confirmRelease bool,
+	prevStates map[string]*workcellRunState,
+	stdout, stderr io.Writer,
+) int {
 	var schedulerStates []workcellRunState
 
 	// Helper function to write blocked packet when failing closed early
@@ -1479,7 +1496,7 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 
 	// 1. Run Workcells
 	var runErr error
-	schedulerStates, runErr = runWorkcellsConcurrent(context.Background(), plan, ao2Path, stdout, stderr, liveMode)
+	schedulerStates, runErr = runWorkcellsConcurrent(context.Background(), plan, ao2Path, stdout, stderr, liveMode, prevStates)
 
 	// Determine status
 	runSummaryStatus := "dry_run_accepted"
@@ -1784,6 +1801,123 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 	}
 
 	return 0
+}
+
+func runResume(args []string, stdout, stderr io.Writer) int {
+	var runID, outPath string
+	var controlPlaneURL string
+	var liveMode bool
+	var confirmRelease bool
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--run":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				fmt.Fprintln(stderr, "forge resume: --run requires a value")
+				return 2
+			}
+			runID = args[i+1]
+			i++
+		case "--out":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				fmt.Fprintln(stderr, "forge resume: --out requires a value")
+				return 2
+			}
+			outPath = args[i+1]
+			i++
+		case "--control-plane":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				fmt.Fprintln(stderr, "forge resume: --control-plane requires a value")
+				return 2
+			}
+			controlPlaneURL = args[i+1]
+			i++
+		case "--live":
+			liveMode = true
+		case "--confirm-release":
+			confirmRelease = true
+		default:
+			fmt.Fprintf(stderr, "forge resume: unexpected argument %s\n", args[i])
+			return 2
+		}
+	}
+
+	if runID == "" {
+		fmt.Fprintln(stderr, "forge resume: missing required --run")
+		return 2
+	}
+
+	dotForge := ".forge"
+	if info, err := os.Stat(dotForge); err != nil || !info.IsDir() {
+		fmt.Fprintf(stderr, "forge resume: local state directory .forge not found (run forge init first)\n")
+		return 1
+	}
+
+	runDir := filepath.Join(dotForge, "runs", runID)
+	if info, err := os.Stat(runDir); err != nil || !info.IsDir() {
+		fmt.Fprintf(stderr, "forge resume: run ID %q not found under .forge/runs/\n", runID)
+		return 1
+	}
+
+	planPath := filepath.Join(runDir, "plan.json")
+	gateResultPath := filepath.Join(runDir, "gate_result.json")
+	packetPath := filepath.Join(runDir, "factory-packet.json")
+
+	if _, err := os.Stat(planPath); err != nil {
+		fmt.Fprintf(stderr, "forge resume: plan.json not found in run directory %q\n", runDir)
+		return 1
+	}
+	if _, err := os.Stat(gateResultPath); err != nil {
+		fmt.Fprintf(stderr, "forge resume: gate_result.json not found in run directory %q\n", runDir)
+		return 1
+	}
+
+	plan, err := readPlan(planPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge resume: read plan: %v\n", err)
+		return 1
+	}
+
+	var prevPacket factoryPacket
+	hasPrevPacket := false
+	if data, err := os.ReadFile(packetPath); err == nil {
+		if err := json.Unmarshal(data, &prevPacket); err == nil {
+			hasPrevPacket = true
+		}
+	}
+
+	prevStates := make(map[string]*workcellRunState)
+	if hasPrevPacket {
+		for _, prevWc := range prevPacket.Workcells {
+			if prevWc.Status == "passed" {
+				wcEvPath := filepath.Join(runDir, fmt.Sprintf("ao2-wc-%s-evidence.json", prevWc.WorkcellID))
+				var stdoutText, stderrText, specSHA string
+				if evData, err := os.ReadFile(wcEvPath); err == nil {
+					var evObj map[string]any
+					if err := json.Unmarshal(evData, &evObj); err == nil {
+						if st, ok := evObj["stdout"].(string); ok {
+							stdoutText = st
+						}
+						if se, ok := evObj["stderr"].(string); ok {
+							stderrText = se
+						}
+						if sh, ok := evObj["spec_sha256"].(string); ok {
+							specSHA = sh
+						}
+					}
+				}
+				prevStates[prevWc.WorkcellID] = &workcellRunState{
+					ID:         prevWc.WorkcellID,
+					Status:     "passed",
+					Summary:    prevWc.Summary,
+					Stdout:     stdoutText,
+					Stderr:     stderrText,
+					SpecSHA256: specSHA,
+				}
+			}
+		}
+	}
+
+	return executePlanRun(plan, planPath, gateResultPath, outPath, controlPlaneURL, liveMode, confirmRelease, prevStates, stdout, stderr)
 }
 
 func runOnce(args []string, stdout, stderr io.Writer) int {
@@ -2405,16 +2539,33 @@ type workcellRunState struct {
 	Rubric     *workcellRubric
 }
 
-func runWorkcellsConcurrent(ctx context.Context, plan factoryPlan, ao2Path string, stdout, stderr io.Writer, liveMode bool) ([]workcellRunState, error) {
+func runWorkcellsConcurrent(ctx context.Context, plan factoryPlan, ao2Path string, stdout, stderr io.Writer, liveMode bool, prevStates map[string]*workcellRunState) ([]workcellRunState, error) {
 	// Initialize state
 	states := make(map[string]*workcellRunState)
 	for _, wc := range plan.Workcells {
+		status := "pending"
+		var existingSummary, existingStdout, existingStderr, existingSpecSHA256 string
+		if prevStates != nil {
+			if prev, ok := prevStates[wc.WorkcellID]; ok {
+				if prev.Status == "passed" {
+					status = "passed"
+					existingSummary = prev.Summary
+					existingStdout = prev.Stdout
+					existingStderr = prev.Stderr
+					existingSpecSHA256 = prev.SpecSHA256
+				}
+			}
+		}
 		states[wc.WorkcellID] = &workcellRunState{
-			ID:        wc.WorkcellID,
-			Kind:      wc.Kind,
-			DependsOn: wc.DependsOn,
-			Status:    "pending",
-			Rubric:    wc.Rubric,
+			ID:         wc.WorkcellID,
+			Kind:       wc.Kind,
+			DependsOn:  wc.DependsOn,
+			Status:     status,
+			Summary:    existingSummary,
+			Stdout:     existingStdout,
+			Stderr:     existingStderr,
+			SpecSHA256: existingSpecSHA256,
+			Rubric:     wc.Rubric,
 		}
 	}
 
@@ -2797,6 +2948,20 @@ func archiveRunState(runID string, planPath string, gateResultPath string, summa
 	if summaryPath != "" {
 		if summaryData, err := os.ReadFile(summaryPath); err == nil {
 			_ = os.WriteFile(filepath.Join(runDir, "ao2-run-summary.json"), summaryData, 0644)
+		}
+	}
+
+	for _, wc := range packet.Workcells {
+		wcEvName := fmt.Sprintf("ao2-wc-%s-evidence.json", wc.WorkcellID)
+		var srcDir string
+		if summaryPath != "" {
+			srcDir = filepath.Dir(summaryPath)
+		} else {
+			srcDir = "."
+		}
+		srcPath := filepath.Join(srcDir, wcEvName)
+		if evData, err := os.ReadFile(srcPath); err == nil {
+			_ = os.WriteFile(filepath.Join(runDir, wcEvName), evData, 0644)
 		}
 	}
 

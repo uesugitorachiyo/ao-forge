@@ -53,7 +53,7 @@ func TestHelpExplainsFactoryTermsWithoutMarketingCopy(t *testing.T) {
 		"factory packet",
 		"forge plan --brief",
 		"forge inspect --packet",
-		"execution remains disabled",
+		"dry-run execution",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("help missing %q\n%s", want, stdout)
@@ -835,15 +835,244 @@ func main() {
 	}
 }
 
-func TestRunAndOnceStayDisabledInSlice03(t *testing.T) {
-	for _, command := range []string{"run", "once"} {
-		code, stdout, stderr := runCLI(command)
-		if code == 0 {
-			t.Fatalf("%s exit code = 0, stdout = %s", command, stdout)
+func TestRunLiveAo2Binary(t *testing.T) {
+	root := repoRoot(t)
+
+	// Compile a dummy binary that acts as ao2
+	tmpDir := t.TempDir()
+	dummySrc := filepath.Join(tmpDir, "dummy_ao2.go")
+	dummyBin := filepath.Join(tmpDir, "dummy_ao2")
+	if os.PathSeparator == '\\' {
+		dummyBin += ".exe"
+	}
+
+	srcContent := `package main
+import (
+	"fmt"
+	"os"
+)
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "run" {
+		// check for --dry-run and --spec
+		hasDryRun := false
+		specPath := ""
+		for i := 2; i < len(os.Args); i++ {
+			if os.Args[i] == "--dry-run" {
+				hasDryRun = true
+			} else if os.Args[i] == "--spec" && i+1 < len(os.Args) {
+				specPath = os.Args[i+1]
+			}
 		}
-		if !strings.Contains(stderr, "execution is disabled") {
-			t.Fatalf("%s stderr missing disabled message: %s", command, stderr)
+		if hasDryRun && specPath != "" {
+			fmt.Println("status=dry_run_accepted")
+			fmt.Println("schema_version=ao2.run/v1")
+			fmt.Println("plan_id=forge-plan-efedbfb309b1")
+			fmt.Println("task_count=3")
+			fmt.Println("target_repo=fixtures/discount-service")
+			fmt.Println("control_plane_role=read_only_observer")
+			fmt.Println("mutates_ao_artifacts=false")
+			fmt.Println("factory_v3_drives_workflow=false")
+			fmt.Println("spec_sha256=abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd")
+			os.Exit(0)
 		}
+	}
+	os.Exit(1)
+}`
+	if err := os.WriteFile(dummySrc, []byte(srcContent), 0644); err != nil {
+		t.Fatalf("write dummy ao2 src: %v", err)
+	}
+
+	cmd := exec.Command("go", "build", "-o", dummyBin, dummySrc)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy ao2: %v (output: %q)", err, string(out))
+	}
+
+	// Set AO2_PATH env var so resolver finds it
+	t.Setenv("AO2_PATH", dummyBin)
+
+	// Setup mock plans and gate results
+	planPath := filepath.Join(root, "examples", "plans", "risky-pr-factory-plan.json")
+	
+	// 1. Fails closed with missing gate result
+	code, stdout, stderr := runCLI("run", "--plan", planPath, "--gate-result", "nonexistent-gate-result.json")
+	if code == 0 {
+		t.Fatalf("expected failure exit code for missing gate result")
+	}
+	var packet struct {
+		Status string `json:"status"`
+		Workcells []struct {
+			Status string `json:"status"`
+		} `json:"workcells"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &packet); err != nil {
+		t.Fatalf("failed to unmarshal output: %v (stdout: %s)", err, stdout)
+	}
+	if packet.Status != "blocked" {
+		t.Fatalf("expected status blocked, got %s", packet.Status)
+	}
+	for _, wc := range packet.Workcells {
+		if wc.Status != "blocked" {
+			t.Fatalf("expected workcell status blocked, got %s", wc.Status)
+		}
+	}
+
+	// 2. Fails closed with denied gate result
+	denyGatePath := filepath.Join(tmpDir, "deny-gate.json")
+	denyGateContent := `{
+		"schema_version": "ao.forge.covenant-gate-result.v0.1",
+		"status": "denied",
+		"plan_id": "forge-plan-efedbfb309b1",
+		"execution_enabled": false,
+		"decision": {
+			"schema_version": "ao.forge.covenant-decision-fixture.v0.1",
+			"decision_id": "deny-release-mutation",
+			"target_plan_id": "forge-plan-efedbfb309b1",
+			"decision": "deny",
+			"explanation": "denied by policy",
+			"source": "test"
+		}
+	}`
+	if err := os.WriteFile(denyGatePath, []byte(denyGateContent), 0644); err != nil {
+		t.Fatalf("write deny gate: %v", err)
+	}
+	code, stdout, stderr = runCLI("run", "--plan", planPath, "--gate-result", denyGatePath)
+	if code == 0 {
+		t.Fatalf("expected failure exit code for denied gate result")
+	}
+	if err := json.Unmarshal([]byte(stdout), &packet); err != nil {
+		t.Fatalf("failed to unmarshal output: %v (stdout: %s)", err, stdout)
+	}
+	if packet.Status != "denied" {
+		t.Fatalf("expected status denied, got %s", packet.Status)
+	}
+	for _, wc := range packet.Workcells {
+		if wc.Status != "denied" {
+			t.Fatalf("expected workcell status denied, got %s", wc.Status)
+		}
+	}
+
+	// 3. Succeeds with allowed gate result
+	allowGatePath := filepath.Join(root, "examples", "gates", "allow-local-plan.gate.json")
+	outPacketPath := filepath.Join(tmpDir, "packet-out.json")
+	code, stdout, stderr = runCLI("run", "--plan", planPath, "--gate-result", allowGatePath, "--out", outPacketPath)
+	if code != 0 {
+		t.Fatalf("expected success exit code for run, got %d (stderr: %s)", code, stderr)
+	}
+	
+	packetBytes, err := os.ReadFile(outPacketPath)
+	if err != nil {
+		t.Fatalf("failed to read out packet: %v", err)
+	}
+	var passedPacket struct {
+		Status string `json:"status"`
+		Workcells []struct {
+			Status string `json:"status"`
+			AO2Run string `json:"ao2_run"`
+		} `json:"workcells"`
+		Evidence []struct {
+			Label string `json:"label"`
+			Path  string `json:"path"`
+		} `json:"evidence"`
+	}
+	if err := json.Unmarshal(packetBytes, &passedPacket); err != nil {
+		t.Fatalf("failed to unmarshal passed packet: %v", err)
+	}
+	if passedPacket.Status != "passed" {
+		t.Fatalf("expected packet status passed, got %s", passedPacket.Status)
+	}
+	if len(passedPacket.Workcells) != 3 {
+		t.Fatalf("expected 3 workcells, got %d", len(passedPacket.Workcells))
+	}
+	for _, wc := range passedPacket.Workcells {
+		if wc.Status != "passed" || wc.AO2Run != "dry-run" {
+			t.Fatalf("unexpected workcell: %+v", wc)
+		}
+	}
+	if len(passedPacket.Evidence) != 3 {
+		t.Fatalf("expected 3 evidence items, got %d", len(passedPacket.Evidence))
+	}
+}
+
+func TestOnceSucceedsFromBrief(t *testing.T) {
+	root := repoRoot(t)
+	tmpDir := t.TempDir()
+
+	// Compile a dummy binary that acts as covenant
+	dummyCovSrc := filepath.Join(tmpDir, "dummy_covenant.go")
+	dummyCovBin := filepath.Join(tmpDir, "dummy_covenant")
+	if os.PathSeparator == '\\' {
+		dummyCovBin += ".exe"
+	}
+	covContent := `package main
+import (
+	"fmt"
+	"os"
+)
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "version" && len(os.Args) > 2 && os.Args[2] == "--json" {
+		fmt.Println("{\"schema_version\": \"covenant.version-result.v1\", \"version\": \"v0.1.0\"}")
+		os.Exit(0)
+	}
+	os.Exit(1)
+}`
+	if err := os.WriteFile(dummyCovSrc, []byte(covContent), 0644); err != nil {
+		t.Fatalf("write dummy cov src: %v", err)
+	}
+	cmdCov := exec.Command("go", "build", "-o", dummyCovBin, dummyCovSrc)
+	if out, err := cmdCov.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy covenant: %v (output: %q)", err, string(out))
+	}
+
+	// Compile dummy ao2
+	dummyAo2Src := filepath.Join(tmpDir, "dummy_ao2.go")
+	dummyAo2Bin := filepath.Join(tmpDir, "dummy_ao2")
+	if os.PathSeparator == '\\' {
+		dummyAo2Bin += ".exe"
+	}
+	ao2Content := `package main
+import (
+	"fmt"
+	"os"
+)
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "run" {
+		fmt.Println("status=dry_run_accepted")
+		fmt.Println("schema_version=ao2.run/v1")
+		fmt.Println("plan_id=forge-plan-efedbfb309b1")
+		os.Exit(0)
+	}
+	os.Exit(1)
+}`
+	if err := os.WriteFile(dummyAo2Src, []byte(ao2Content), 0644); err != nil {
+		t.Fatalf("write dummy ao2 src: %v", err)
+	}
+	cmdAo2 := exec.Command("go", "build", "-o", dummyAo2Bin, dummyAo2Src)
+	if out, err := cmdAo2.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy ao2: %v (output: %q)", err, string(out))
+	}
+
+	t.Setenv("AO2_PATH", dummyAo2Bin)
+
+	briefPath := filepath.Join(root, "examples", "vertical-slices", "risky-pr-factory.factory.json")
+	outPacket := filepath.Join(tmpDir, "once-packet.json")
+
+	code, _, stderr := runCLI("once", "--brief", briefPath, "--covenant", dummyCovBin, "--out", outPacket)
+	if code != 0 {
+		t.Fatalf("once command failed: code=%d, stderr=%q", code, stderr)
+	}
+
+	packetBytes, err := os.ReadFile(outPacket)
+	if err != nil {
+		t.Fatalf("failed to read once packet: %v", err)
+	}
+	var packet struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(packetBytes, &packet); err != nil {
+		t.Fatalf("unmarshal once packet failed: %v", err)
+	}
+	if packet.Status != "passed" {
+		t.Fatalf("expected status passed, got %q", packet.Status)
 	}
 }
 

@@ -1,0 +1,22 @@
+{
+  "schema_version": "ao.forge.covenant-gate-result.v0.1",
+  "status": "blocked",
+  "plan_id": "forge-plan-efedbfb309b1",
+  "execution_enabled": false,
+  "decision": {
+    "schema_version": "ao.forge.covenant-decision-fixture.v0.1",
+    "decision_id": "",
+    "target_plan_id": "forge-plan-efedbfb309b1",
+    "decision": "invalid",
+    "explanation": "",
+    "source": ""
+  },
+  "problem": "Covenant binary is unavailable: exec: \"nonexistent-covenant-bin\": executable file not found in $PATH",
+  "next_actions": [
+    {
+      "action_id": "fix-covenant-gate",
+      "description": "Ensure the Covenant binary is available, the plan is valid, and any decision is resolved.",
+      "required": true
+    }
+  ]
+}

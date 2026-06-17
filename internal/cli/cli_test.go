@@ -530,7 +530,7 @@ func TestGateAllowFixtureProducesAllowedGateResult(t *testing.T) {
 	decision := filepath.Join(root, "examples", "decisions", "allow-local-plan.decision.json")
 	expectedPath := filepath.Join(root, "examples", "gates", "allow-local-plan.gate.json")
 
-	code, stdout, stderr := runCLI("gate", "--plan", plan, "--decision-fixture", decision)
+	code, stdout, stderr := runCLI("gate", "--plan", plan, "--covenant", decision)
 	if code != 0 {
 		t.Fatalf("exit code = %d, stderr = %s", code, stderr)
 	}
@@ -539,42 +539,6 @@ func TestGateAllowFixtureProducesAllowedGateResult(t *testing.T) {
 		t.Fatalf("read expected gate fixture: %v", err)
 	}
 	assertJSONOutputEqual(t, "gate", expected, stdout)
-	var result struct {
-		SchemaVersion    string `json:"schema_version"`
-		Status           string `json:"status"`
-		PlanID           string `json:"plan_id"`
-		ExecutionEnabled bool   `json:"execution_enabled"`
-		Decision         struct {
-			DecisionID  string `json:"decision_id"`
-			Decision    string `json:"decision"`
-			Explanation string `json:"explanation"`
-		} `json:"decision"`
-		NextActions []struct {
-			ActionID string `json:"action_id"`
-			Required bool   `json:"required"`
-		} `json:"next_actions"`
-	}
-	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
-		t.Fatalf("gate output is not JSON: %v\n%s", err, stdout)
-	}
-	if result.SchemaVersion != "ao.forge.covenant-gate-result.v0.1" {
-		t.Fatalf("schema_version = %q", result.SchemaVersion)
-	}
-	if result.Status != "allowed" {
-		t.Fatalf("status = %q", result.Status)
-	}
-	if result.PlanID != "forge-plan-efedbfb309b1" {
-		t.Fatalf("plan_id = %q", result.PlanID)
-	}
-	if result.ExecutionEnabled {
-		t.Fatalf("execution_enabled = true, want false until AO2 adapter slice")
-	}
-	if result.Decision.Decision != "allow" || strings.TrimSpace(result.Decision.Explanation) == "" {
-		t.Fatalf("decision = %+v", result.Decision)
-	}
-	if len(result.NextActions) == 0 || result.NextActions[0].ActionID != "implement-ao2-adapter" {
-		t.Fatalf("next actions = %+v", result.NextActions)
-	}
 }
 
 func TestGateDenyFixtureFailsClosed(t *testing.T) {
@@ -582,7 +546,7 @@ func TestGateDenyFixtureFailsClosed(t *testing.T) {
 	plan := filepath.Join(root, "examples", "plans", "risky-pr-factory-plan.json")
 	decision := filepath.Join(root, "examples", "decisions", "deny-release-mutation.decision.json")
 
-	code, stdout, stderr := runCLI("gate", "--plan", plan, "--decision-fixture", decision)
+	code, stdout, stderr := runCLI("gate", "--plan", plan, "--covenant", decision)
 	if code == 0 {
 		t.Fatalf("exit code = 0, stdout = %s", stdout)
 	}
@@ -608,13 +572,41 @@ func TestGateDenyFixtureFailsClosed(t *testing.T) {
 	}
 }
 
+func TestGateIndeterminateFixtureFailsClosed(t *testing.T) {
+	root := repoRoot(t)
+	plan := filepath.Join(root, "examples", "plans", "risky-pr-factory-plan.json")
+	decision := filepath.Join(root, "examples", "decisions", "indeterminate.decision.json")
+
+	code, stdout, _ := runCLI("gate", "--plan", plan, "--covenant", decision)
+	if code == 0 {
+		t.Fatalf("exit code = 0, stdout = %s", stdout)
+	}
+	var result struct {
+		Status           string `json:"status"`
+		ExecutionEnabled bool   `json:"execution_enabled"`
+		Decision         struct {
+			Decision    string `json:"decision"`
+			Explanation string `json:"explanation"`
+		} `json:"decision"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+		t.Fatalf("indeterminate output is not JSON: %v\n%s", err, stdout)
+	}
+	if result.Status != "blocked" || result.ExecutionEnabled {
+		t.Fatalf("result = %+v", result)
+	}
+	if result.Decision.Decision != "indeterminate" || strings.TrimSpace(result.Decision.Explanation) == "" {
+		t.Fatalf("decision = %+v", result.Decision)
+	}
+}
+
 func TestGateRequiresDecisionExplanation(t *testing.T) {
 	root := repoRoot(t)
 	plan := filepath.Join(root, "examples", "plans", "risky-pr-factory-plan.json")
 	decision := filepath.Join(root, "examples", "decisions", "missing-explanation.decision.json")
 	out := filepath.Join(t.TempDir(), "gate-result.json")
 
-	code, stdout, stderr := runCLI("gate", "--plan", plan, "--decision-fixture", decision, "--out", out)
+	code, stdout, stderr := runCLI("gate", "--plan", plan, "--covenant", decision, "--out", out)
 	if code == 0 {
 		t.Fatalf("exit code = 0, stdout = %s", stdout)
 	}
@@ -652,7 +644,7 @@ func TestGateMalformedFixtureFailsClosedAndWritesResult(t *testing.T) {
 	decision := filepath.Join(root, "examples", "decisions", "malformed.decision.invalid")
 	out := filepath.Join(t.TempDir(), "gate-result.json")
 
-	code, stdout, stderr := runCLI("gate", "--plan", plan, "--decision-fixture", decision, "--out", out)
+	code, stdout, stderr := runCLI("gate", "--plan", plan, "--covenant", decision, "--out", out)
 	if code == 0 {
 		t.Fatalf("exit code = 0, stdout = %s", stdout)
 	}
@@ -680,6 +672,166 @@ func TestGateMalformedFixtureFailsClosedAndWritesResult(t *testing.T) {
 	}
 	if !strings.Contains(result.Problem, "parse decision fixture JSON") {
 		t.Fatalf("problem = %q", result.Problem)
+	}
+}
+
+func TestGateLiveCovenantBinary(t *testing.T) {
+	root := repoRoot(t)
+
+	// Compile a dummy binary that acts as covenant
+	tmpDir := t.TempDir()
+	dummySrc := filepath.Join(tmpDir, "dummy_covenant.go")
+	dummyBin := filepath.Join(tmpDir, "dummy_covenant")
+	if os.PathSeparator == '\\' {
+		dummyBin += ".exe"
+	}
+
+	srcContent := `package main
+import (
+	"fmt"
+	"os"
+)
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "version" && len(os.Args) > 2 && os.Args[2] == "--json" {
+		fmt.Println("{\"schema_version\": \"covenant.version-result.v1\", \"version\": \"v0.1.0\"}")
+		os.Exit(0)
+	}
+	os.Exit(1)
+}`
+	if err := os.WriteFile(dummySrc, []byte(srcContent), 0644); err != nil {
+		t.Fatalf("write dummy covenant src: %v", err)
+	}
+
+	cmd := exec.Command("go", "build", "-o", dummyBin, dummySrc)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy covenant: %v (output: %q)", err, string(out))
+	}
+
+	// 1. Allow case: plan with AllowReleaseMutation = false and AllowNetwork = false
+	planPath := filepath.Join(root, "examples", "plans", "risky-pr-factory-plan.json")
+	code, stdout, stderr := runCLI("gate", "--plan", planPath, "--covenant", dummyBin)
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %s", code, stderr)
+	}
+
+	var result struct {
+		Status   string `json:"status"`
+		Decision struct {
+			Decision    string `json:"decision"`
+			Explanation string `json:"explanation"`
+		} `json:"decision"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+		t.Fatalf("unmarshal allow result: %v", err)
+	}
+	if result.Status != "allowed" || result.Decision.Decision != "allow" {
+		t.Fatalf("expected allowed/allow, got: %+v", result)
+	}
+
+	// 2. Deny case: plan with AllowReleaseMutation = true
+	denyPlanPath := filepath.Join(tmpDir, "deny-plan.json")
+	denyPlan := `{
+		"schema_version": "ao.forge.factory-plan.v0.1",
+		"plan_id": "forge-plan-efedbfb309b1",
+		"objective": {
+			"text": "test",
+			"workspace": "test",
+			"release_mode": true
+		},
+		"constraints": {
+			"local_first": true,
+			"allow_network": false,
+			"allow_release_mutation": true,
+			"require_control_plane_readback": false
+		},
+		"execution_enabled": false,
+		"policy_gate": {
+			"required": true,
+			"status": "not_requested",
+			"explanation": "test"
+		},
+		"workcells": [
+			{"workcell_id": "cell1", "kind": "prepare", "status": "planned", "depends_on": []}
+		],
+		"expected_evidence": ["test"],
+		"next_actions": [
+			{"action_id": "test", "description": "test", "required": true}
+		]
+	}`
+	if err := os.WriteFile(denyPlanPath, []byte(denyPlan), 0644); err != nil {
+		t.Fatalf("write deny plan: %v", err)
+	}
+
+	code, stdout, stderr = runCLI("gate", "--plan", denyPlanPath, "--covenant", dummyBin)
+	if code == 0 {
+		t.Fatalf("exit code = 0, stdout = %s", stdout)
+	}
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+		t.Fatalf("unmarshal deny result: %v", err)
+	}
+	if result.Status != "denied" || result.Decision.Decision != "deny" {
+		t.Fatalf("expected denied/deny, got: %+v", result)
+	}
+
+	// 3. Indeterminate case: plan with AllowNetwork = true
+	indetPlanPath := filepath.Join(tmpDir, "indet-plan.json")
+	indetPlan := `{
+		"schema_version": "ao.forge.factory-plan.v0.1",
+		"plan_id": "forge-plan-efedbfb309b1",
+		"objective": {
+			"text": "test",
+			"workspace": "test",
+			"release_mode": false
+		},
+		"constraints": {
+			"local_first": true,
+			"allow_network": true,
+			"allow_release_mutation": false,
+			"require_control_plane_readback": false
+		},
+		"execution_enabled": false,
+		"policy_gate": {
+			"required": true,
+			"status": "not_requested",
+			"explanation": "test"
+		},
+		"workcells": [
+			{"workcell_id": "cell1", "kind": "prepare", "status": "planned", "depends_on": []}
+		],
+		"expected_evidence": ["test"],
+		"next_actions": [
+			{"action_id": "test", "description": "test", "required": true}
+		]
+	}`
+	if err := os.WriteFile(indetPlanPath, []byte(indetPlan), 0644); err != nil {
+		t.Fatalf("write indet plan: %v", err)
+	}
+
+	code, stdout, stderr = runCLI("gate", "--plan", indetPlanPath, "--covenant", dummyBin)
+	if code == 0 {
+		t.Fatalf("exit code = 0, stdout = %s", stdout)
+	}
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+		t.Fatalf("unmarshal indeterminate result: %v", err)
+	}
+	if result.Status != "blocked" || result.Decision.Decision != "indeterminate" {
+		t.Fatalf("expected blocked/indeterminate, got: %+v", result)
+	}
+
+	// 4. Unavailable case: binary not found
+	code, stdout, stderr = runCLI("gate", "--plan", planPath, "--covenant", "nonexistent-covenant-bin")
+	if code == 0 {
+		t.Fatalf("exit code = 0, stdout = %s", stdout)
+	}
+	var blockedResult struct {
+		Status  string `json:"status"`
+		Problem string `json:"problem"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &blockedResult); err != nil {
+		t.Fatalf("unmarshal unavailable result: %v", err)
+	}
+	if blockedResult.Status != "blocked" || !strings.Contains(blockedResult.Problem, "unavailable") {
+		t.Fatalf("expected blocked/unavailable, got: %+v", blockedResult)
 	}
 }
 

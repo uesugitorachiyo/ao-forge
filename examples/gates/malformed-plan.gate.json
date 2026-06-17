@@ -1,0 +1,22 @@
+{
+  "schema_version": "ao.forge.covenant-gate-result.v0.1",
+  "status": "blocked",
+  "plan_id": "",
+  "execution_enabled": false,
+  "decision": {
+    "schema_version": "ao.forge.covenant-decision-fixture.v0.1",
+    "decision_id": "",
+    "target_plan_id": "",
+    "decision": "invalid",
+    "explanation": "",
+    "source": ""
+  },
+  "problem": "read plan: open nonexistent-plan.json: no such file or directory",
+  "next_actions": [
+    {
+      "action_id": "fix-covenant-gate",
+      "description": "Ensure the Covenant binary is available, the plan is valid, and any decision is resolved.",
+      "required": true
+    }
+  ]
+}

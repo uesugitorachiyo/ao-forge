@@ -25,7 +25,7 @@
     },
     "decision": {
       "type": "string",
-      "enum": ["allow", "deny"]
+      "enum": ["allow", "deny", "indeterminate"]
     },
     "explanation": {
       "type": "string",

@@ -14,7 +14,7 @@
   "next_actions": [
     {
       "action_id": "implement-ao2-adapter",
-      "description": "The local fixture gate allowed the plan; AO2 execution remains disabled until Slice 0.4.",
+      "description": "The local Covenant gate allowed the plan; AO2 execution remains disabled until Slice 0.4.",
       "required": true
     }
   ]

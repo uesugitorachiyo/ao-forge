@@ -1,0 +1,21 @@
+{
+  "schema_version": "ao.forge.covenant-gate-result.v0.1",
+  "status": "blocked",
+  "plan_id": "forge-plan-efedbfb309b1",
+  "execution_enabled": false,
+  "decision": {
+    "schema_version": "ao.forge.covenant-decision-fixture.v0.1",
+    "decision_id": "indeterminate-network-access",
+    "target_plan_id": "forge-plan-efedbfb309b1",
+    "decision": "indeterminate",
+    "explanation": "The plan requests network access, which requires operator approval and is indeterminate under standard policy.",
+    "source": "local-fixture"
+  },
+  "next_actions": [
+    {
+      "action_id": "request-operator-approval",
+      "description": "The Covenant gate returned indeterminate decision; request operator review or attach approval ticket.",
+      "required": true
+    }
+  ]
+}

@@ -2,16 +2,25 @@ package cli
 
 import (
 	"bytes"
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/uesugitorachiyo/ao-forge/internal/foundation"
 )
@@ -498,22 +507,46 @@ func readBrief(path string) (factoryBrief, []byte, error) {
 	if err != nil {
 		return factoryBrief{}, nil, fmt.Errorf("read brief: %w", err)
 	}
-	var raw any
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return factoryBrief{}, nil, fmt.Errorf("parse brief JSON: %w", err)
-	}
-	canonical, err := json.Marshal(raw)
-	if err != nil {
-		return factoryBrief{}, nil, fmt.Errorf("canonicalize brief JSON: %w", err)
-	}
-	if err := validateBriefRequiredFields(data); err != nil {
-		return factoryBrief{}, nil, err
-	}
 
 	var brief factoryBrief
-	if err := decodeJSONStrict(data, &brief); err != nil {
-		return factoryBrief{}, nil, fmt.Errorf("decode brief: %w", err)
+	var canonical []byte
+
+	if strings.HasSuffix(strings.ToLower(path), ".md") {
+		var parseErr error
+		brief, parseErr = parseMarkdownBrief(data)
+		if parseErr != nil {
+			return factoryBrief{}, nil, fmt.Errorf("parse markdown brief: %w", parseErr)
+		}
+		rawBytes, err := json.Marshal(brief)
+		if err != nil {
+			return factoryBrief{}, nil, fmt.Errorf("marshal parsed brief: %w", err)
+		}
+		var raw any
+		if err := json.Unmarshal(rawBytes, &raw); err != nil {
+			return factoryBrief{}, nil, fmt.Errorf("canonicalize parsed brief JSON: %w", err)
+		}
+		canonical, err = json.Marshal(raw)
+		if err != nil {
+			return factoryBrief{}, nil, fmt.Errorf("canonicalize parsed brief: %w", err)
+		}
+	} else {
+		var raw any
+		if err := json.Unmarshal(data, &raw); err != nil {
+			return factoryBrief{}, nil, fmt.Errorf("parse brief JSON: %w", err)
+		}
+		var err error
+		canonical, err = json.Marshal(raw)
+		if err != nil {
+			return factoryBrief{}, nil, fmt.Errorf("canonicalize brief JSON: %w", err)
+		}
+		if err := validateBriefRequiredFields(data); err != nil {
+			return factoryBrief{}, nil, err
+		}
+		if err := decodeJSONStrict(data, &brief); err != nil {
+			return factoryBrief{}, nil, fmt.Errorf("decode brief: %w", err)
+		}
 	}
+
 	if brief.SchemaVersion != briefSchemaVersion {
 		return factoryBrief{}, nil, fmt.Errorf("unsupported brief schema_version %q", brief.SchemaVersion)
 	}
@@ -1074,6 +1107,7 @@ func resolveAo2Binary() (string, error) {
 
 func runRun(args []string, stdout, stderr io.Writer) int {
 	var planPath, gateResultPath, outPath string
+	var controlPlaneURL string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--plan":
@@ -1096,6 +1130,13 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 				return 2
 			}
 			outPath = args[i+1]
+			i++
+		case "--control-plane":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				fmt.Fprintln(stderr, "forge run: --control-plane requires a value")
+				return 2
+			}
+			controlPlaneURL = args[i+1]
 			i++
 		default:
 			fmt.Fprintf(stderr, "forge run: unexpected argument %s\n", args[i])
@@ -1230,6 +1271,7 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 				fmt.Fprintf(stderr, "forge run: write packet: %v\n", err)
 				return 1
 			}
+			_ = writeMarkdownPacket(outPath, packet)
 			fmt.Fprintf(stdout, "factory_packet=%s\n", displayPath(outPath))
 		} else {
 			_, _ = stdout.Write(encoded)
@@ -1429,6 +1471,48 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 		})
 	}
 
+	// Control plane readback if required
+	if plan.Constraints.RequireControlPlaneReadback {
+		cpURL := resolveControlPlaneURL(controlPlaneURL)
+		cpToken := resolveControlPlaneToken()
+		if cpToken == "" {
+			explanation := "Control plane readback is required, but API token is missing"
+			return failClosedWithPacket("blocked", "blocked", explanation, "control-plane-unauthorized", "ao-forge", true, evidenceList)
+		}
+
+		cpReceiptData, cpErr := performControlPlaneUploadAndReadback(cpURL, cpToken, plan, evidenceList)
+		if cpErr != nil {
+			explanation := fmt.Sprintf("Control plane readback failed: %v", cpErr)
+			return failClosedWithPacket("blocked", "blocked", explanation, "control-plane-readback-failed", "ao-forge", true, evidenceList)
+		}
+
+		// Save the receipt as control-plane-receipt.json and append it to the packet's evidence list
+		receiptDir := "."
+		if outPath != "" {
+			receiptDir = filepath.Dir(outPath)
+		}
+		receiptPath := filepath.Join(receiptDir, "control-plane-receipt.json")
+		if err := writeFile(receiptPath, cpReceiptData); err != nil {
+			explanation := fmt.Sprintf("Failed to write control plane receipt: %v", err)
+			return failClosedWithPacket("failed", "failed", explanation, "control-plane-receipt-write-failed", "ao-forge", false, evidenceList)
+		}
+
+		sum := sha256.Sum256(cpReceiptData)
+		evidenceList = append(evidenceList, struct {
+			Label         string `json:"label"`
+			SchemaVersion string `json:"schema_version"`
+			Status        string `json:"status"`
+			Path          string `json:"path"`
+			SHA256        string `json:"sha256"`
+		}{
+			Label:         "control plane readback receipt",
+			SchemaVersion: "ao2.cp-ingest-receipt.v1",
+			Status:        "passed",
+			Path:          displayPath(receiptPath),
+			SHA256:        hex.EncodeToString(sum[:]),
+		})
+	}
+
 	// Construct and write final passed factory packet
 	packet := factoryPacket{
 		SchemaVersion: packetSchemaVersion,
@@ -1500,6 +1584,7 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "forge run: write final packet: %v\n", err)
 			return 1
 		}
+		_ = writeMarkdownPacket(outPath, packet)
 		fmt.Fprintf(stdout, "factory_packet=%s\n", displayPath(outPath))
 	} else {
 		_, _ = stdout.Write(packetData)
@@ -1510,6 +1595,8 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 
 func runOnce(args []string, stdout, stderr io.Writer) int {
 	var briefPath, covenantPath, outPath string
+	var controlPlaneURL string
+	var workspacePath string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--brief":
@@ -1533,6 +1620,20 @@ func runOnce(args []string, stdout, stderr io.Writer) int {
 			}
 			outPath = args[i+1]
 			i++
+		case "--control-plane":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				fmt.Fprintln(stderr, "forge once: --control-plane requires a value")
+				return 2
+			}
+			controlPlaneURL = args[i+1]
+			i++
+		case "--workspace":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				fmt.Fprintln(stderr, "forge once: --workspace requires a value")
+				return 2
+			}
+			workspacePath = args[i+1]
+			i++
 		default:
 			fmt.Fprintf(stderr, "forge once: unexpected argument %s\n", args[i])
 			return 2
@@ -1554,6 +1655,26 @@ func runOnce(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "forge once: %v\n", err)
 		return 1
 	}
+
+	if workspacePath != "" {
+		brief.Objective.Workspace = workspacePath
+		rawBytes, err := json.Marshal(brief)
+		if err != nil {
+			fmt.Fprintf(stderr, "forge once: marshal brief after workspace override: %v\n", err)
+			return 1
+		}
+		var raw any
+		if err := json.Unmarshal(rawBytes, &raw); err != nil {
+			fmt.Fprintf(stderr, "forge once: canonicalize brief after workspace override: %v\n", err)
+			return 1
+		}
+		canonical, err = json.Marshal(raw)
+		if err != nil {
+			fmt.Fprintf(stderr, "forge once: marshal canonical brief after workspace override: %v\n", err)
+			return 1
+		}
+	}
+
 	plan := buildPlan(brief, canonical)
 	if err := validatePlan(plan); err != nil {
 		fmt.Fprintf(stderr, "forge once: generated plan failed contract validation: %v\n", err)
@@ -1601,6 +1722,9 @@ func runOnce(args []string, stdout, stderr io.Writer) int {
 	if outPath != "" {
 		runArgs = append(runArgs, "--out", outPath)
 	}
+	if controlPlaneURL != "" {
+		runArgs = append(runArgs, "--control-plane", controlPlaneURL)
+	}
 
 	runCode := runRun(runArgs, stdout, stderr)
 	if gateCode != 0 && runCode == 0 {
@@ -1639,4 +1763,427 @@ func parseAo2DryRunOutput(output string) map[string]any {
 		}
 	}
 	return result
+}
+
+type cpOperatorPacket struct {
+	SchemaVersion  string               `json:"schema_version"`
+	RunID          string               `json:"run_id"`
+	Status         string               `json:"status"`
+	OperatorID     string               `json:"operator_id"`
+	GeneratedAtUTC string               `json:"generated_at_utc"`
+	Summary        cpPacketSummary      `json:"summary"`
+	Evidence       []cpPacketEvidence   `json:"evidence"`
+	TrustBoundary  cpTrustBoundary      `json:"trust_boundary"`
+}
+
+type cpPacketSummary struct {
+	RecommendedTask string `json:"recommended_task"`
+	EvidenceCount   int    `json:"evidence_count"`
+}
+
+type cpPacketEvidence struct {
+	Kind   string `json:"kind"`
+	SHA256 string `json:"sha256"`
+}
+
+type cpTrustBoundary struct {
+	ControlPlaneRole string `json:"control_plane_role"`
+	MutatesAo2       bool   `json:"mutates_ao2"`
+}
+
+type cpSignature struct {
+	SchemaVersion      string `json:"schema_version"`
+	SignatureAlgorithm string `json:"signature_algorithm"`
+	SignatureHex       string `json:"signature_hex"`
+	PublicKeyPEM       string `json:"public_key_pem"`
+	SignerID           string `json:"signer_id"`
+	SignatureSHA256    string `json:"signature_sha256,omitempty"`
+	PublicKeySHA256    string `json:"public_key_sha256,omitempty"`
+}
+
+type cpSignedUpload struct {
+	SchemaVersion     string          `json:"schema_version"`
+	OperatorPacket    cpOperatorPacket `json:"operator_packet"`
+	OperatorPacketB64 string          `json:"operator_packet_b64"`
+	Signature         cpSignature     `json:"signature"`
+}
+
+func generateTransientRSAKey() (*rsa.PrivateKey, string, error) {
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, "", err
+	}
+	pubASN1, err := x509.MarshalPKIXPublicKey(&priv.PublicKey)
+	if err != nil {
+		return nil, "", err
+	}
+	pubPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: pubASN1,
+	})
+	return priv, string(pubPEM), nil
+}
+
+func signPayloadRSA_SHA256(priv *rsa.PrivateKey, payload []byte) ([]byte, error) {
+	hashed := sha256.Sum256(payload)
+	signature, err := rsa.SignPKCS1v15(rand.Reader, priv, crypto.SHA256, hashed[:])
+	if err != nil {
+		return nil, err
+	}
+	return signature, nil
+}
+
+func resolveControlPlaneURL(flagVal string) string {
+	if flagVal != "" {
+		return flagVal
+	}
+	if env := os.Getenv("AO2_CP_URL"); env != "" {
+		return env
+	}
+	if env := os.Getenv("AO_FORGE_CP_URL"); env != "" {
+		return env
+	}
+	return "http://127.0.0.1:8744"
+}
+
+func resolveControlPlaneToken() string {
+	if token := os.Getenv("AO2_CP_API_TOKEN"); token != "" {
+		return token
+	}
+	if token := os.Getenv("AO_FORGE_CP_API_TOKEN"); token != "" {
+		return token
+	}
+	if token := os.Getenv("AO2_CP_AUTH_VALUE"); token != "" {
+		return token
+	}
+	return ""
+}
+
+func performControlPlaneUploadAndReadback(
+	controlPlaneURL string,
+	token string,
+	plan factoryPlan,
+	evidenceList []struct {
+		Label         string `json:"label"`
+		SchemaVersion string `json:"schema_version"`
+		Status        string `json:"status"`
+		Path          string `json:"path"`
+		SHA256        string `json:"sha256"`
+	},
+) ([]byte, error) {
+	privKey, pubKeyPEM, err := generateTransientRSAKey()
+	if err != nil {
+		return nil, fmt.Errorf("generate transient RSA key: %w", err)
+	}
+
+	cpPacket := cpOperatorPacket{
+		SchemaVersion:  "ao2.operator-evidence-packet.v1",
+		RunID:          plan.PlanID,
+		Status:         "passed",
+		OperatorID:     "ao-forge-operator",
+		GeneratedAtUTC: time.Now().UTC().Format(time.RFC3339),
+		Summary: cpPacketSummary{
+			RecommendedTask: "verify signed operator packet readback",
+			EvidenceCount:   len(evidenceList),
+		},
+		Evidence:      make([]cpPacketEvidence, 0, len(evidenceList)),
+		TrustBoundary: cpTrustBoundary{
+			ControlPlaneRole: "read_only_observer",
+			MutatesAo2:       false,
+		},
+	}
+	for _, ev := range evidenceList {
+		cpPacket.Evidence = append(cpPacket.Evidence, cpPacketEvidence{
+			Kind:   ev.Label,
+			SHA256: ev.SHA256,
+		})
+	}
+
+	packetData, err := json.MarshalIndent(cpPacket, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("marshal operator packet: %w", err)
+	}
+
+	signatureBytes, err := signPayloadRSA_SHA256(privKey, packetData)
+	if err != nil {
+		return nil, fmt.Errorf("sign operator packet: %w", err)
+	}
+	signatureHex := hex.EncodeToString(signatureBytes)
+
+	sigHashVal := sha256.Sum256(signatureBytes)
+	signatureSHA256 := hex.EncodeToString(sigHashVal[:])
+
+	pubKeyHashVal := sha256.Sum256([]byte(pubKeyPEM))
+	pubKeySHA256 := hex.EncodeToString(pubKeyHashVal[:])
+
+	uploadPayload := cpSignedUpload{
+		SchemaVersion:     "ao2.cp-operator-packet-signed-upload.v1",
+		OperatorPacket:    cpPacket,
+		OperatorPacketB64: base64.StdEncoding.EncodeToString(packetData),
+		Signature: cpSignature{
+			SchemaVersion:      "ao2.cp-operator-packet-signature.v1",
+			SignatureAlgorithm: "RSA/SHA-256",
+			SignatureHex:       signatureHex,
+			PublicKeyPEM:       pubKeyPEM,
+			SignerID:           "ao-forge-operator",
+			SignatureSHA256:    signatureSHA256,
+			PublicKeySHA256:    pubKeySHA256,
+		},
+	}
+
+	uploadData, err := json.Marshal(uploadPayload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal upload payload: %w", err)
+	}
+
+	uploadURL := strings.TrimSuffix(controlPlaneURL, "/") + "/api/v1/operator-packet/signed"
+	req, err := http.NewRequest("POST", uploadURL, bytes.NewReader(uploadData))
+	if err != nil {
+		return nil, fmt.Errorf("create POST request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("POST upload request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("upload failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	respData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read upload response: %w", err)
+	}
+
+	var receipt struct {
+		SchemaVersion         string    `json:"schema_version"`
+		SHA256                string    `json:"sha256"`
+		StoredAt              time.Time `json:"stored_at"`
+		IngestedSchemaVersion string    `json:"ingested_schema_version"`
+	}
+	if err := json.Unmarshal(respData, &receipt); err != nil {
+		return nil, fmt.Errorf("unmarshal ingest receipt: %w", err)
+	}
+
+	if receipt.SchemaVersion != "ao2.cp-ingest-receipt.v1" {
+		return nil, fmt.Errorf("unexpected receipt schema version: %q", receipt.SchemaVersion)
+	}
+	if receipt.SHA256 == "" {
+		return nil, fmt.Errorf("receipt missing sha256")
+	}
+
+	readbackURL := strings.TrimSuffix(controlPlaneURL, "/") + "/api/v1/operator-packet/" + receipt.SHA256
+	getReq, err := http.NewRequest("GET", readbackURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create GET request: %w", err)
+	}
+	if token != "" {
+		getReq.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	getResp, err := client.Do(getReq)
+	if err != nil {
+		return nil, fmt.Errorf("GET readback request failed: %w", err)
+	}
+	defer getResp.Body.Close()
+
+	if getResp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(getResp.Body)
+		return nil, fmt.Errorf("readback failed with status %d: %s", getResp.StatusCode, string(bodyBytes))
+	}
+
+	readbackBytes, err := io.ReadAll(getResp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read readback response: %w", err)
+	}
+
+	var readbackPacket cpOperatorPacket
+	if err := json.Unmarshal(readbackBytes, &readbackPacket); err != nil {
+		return nil, fmt.Errorf("unmarshal readback packet: %w", err)
+	}
+
+	var originalParsed cpOperatorPacket
+	if err := json.Unmarshal(packetData, &originalParsed); err != nil {
+		return nil, fmt.Errorf("unmarshal original packet: %w", err)
+	}
+
+	if !reflect.DeepEqual(readbackPacket, originalParsed) {
+		return nil, fmt.Errorf("readback payload mismatch from original packet")
+	}
+
+	return respData, nil
+}
+
+func parseMarkdownBrief(data []byte) (factoryBrief, error) {
+	var brief factoryBrief
+	brief.SchemaVersion = "ao.forge.factory-brief.v0.1"
+	brief.ExpectedWorkcells = []briefWorkcell{}
+	brief.ExpectedEvidence = []string{}
+
+	lines := strings.Split(string(data), "\n")
+	currentSection := ""
+
+	workcellRegex := regexp.MustCompile(`^\s*[-\*]\s*([a-zA-Z0-9_-]+)\s*\((prepare|execute|verify|close)\)(?:\s+(?:depends\s+on|depends_on):\s*([a-zA-Z0-9_,\s-]+))?\s*$`)
+
+	for _, line := range lines {
+		trimmedLine := strings.TrimSpace(line)
+		if trimmedLine == "" {
+			continue
+		}
+
+		if strings.HasPrefix(trimmedLine, "#") {
+			headerText := strings.ToLower(strings.TrimSpace(strings.TrimLeft(trimmedLine, "#")))
+			switch headerText {
+			case "objective":
+				currentSection = "objective"
+			case "workspace":
+				currentSection = "workspace"
+			case "constraints":
+				currentSection = "constraints"
+			case "expected workcells", "expected_workcells", "workcells":
+				currentSection = "workcells"
+			case "expected evidence", "expected_evidence", "evidence":
+				currentSection = "evidence"
+			default:
+				currentSection = ""
+			}
+			continue
+		}
+
+		switch currentSection {
+		case "objective":
+			if brief.Objective.Text == "" {
+				brief.Objective.Text = trimmedLine
+			} else {
+				brief.Objective.Text += " " + trimmedLine
+			}
+		case "workspace":
+			brief.Objective.Workspace = trimmedLine
+		case "constraints":
+			if strings.HasPrefix(trimmedLine, "-") || strings.HasPrefix(trimmedLine, "*") {
+				content := strings.TrimSpace(strings.TrimLeft(trimmedLine, "-*"))
+				parts := strings.SplitN(content, ":", 2)
+				if len(parts) == 2 {
+					key := strings.ToLower(strings.TrimSpace(parts[0]))
+					val := strings.ToLower(strings.TrimSpace(parts[1]))
+					boolVal := (val == "true")
+					switch key {
+					case "local first", "local_first":
+						brief.Constraints.LocalFirst = boolVal
+					case "allow network", "allow_network":
+						brief.Constraints.AllowNetwork = boolVal
+					case "allow release mutation", "allow_release_mutation":
+						brief.Constraints.AllowReleaseMutation = boolVal
+					case "require control plane readback", "require_control_plane_readback":
+						brief.Constraints.RequireControlPlaneReadback = boolVal
+					case "release mode", "release_mode":
+						brief.Objective.ReleaseMode = boolVal
+					}
+				}
+			}
+		case "workcells":
+			if strings.HasPrefix(trimmedLine, "-") || strings.HasPrefix(trimmedLine, "*") {
+				matches := workcellRegex.FindStringSubmatch(trimmedLine)
+				if len(matches) >= 3 {
+					wcID := matches[1]
+					wcKind := matches[2]
+					deps := []string{}
+					if len(matches) > 3 && matches[3] != "" {
+						depList := strings.Split(matches[3], ",")
+						for _, d := range depList {
+							trimmedDep := strings.TrimSpace(d)
+							if trimmedDep != "" {
+								deps = append(deps, trimmedDep)
+							}
+						}
+					}
+					brief.ExpectedWorkcells = append(brief.ExpectedWorkcells, briefWorkcell{
+						WorkcellID: wcID,
+						Kind:       wcKind,
+						DependsOn:  deps,
+					})
+				}
+			}
+		case "evidence":
+			if strings.HasPrefix(trimmedLine, "-") || strings.HasPrefix(trimmedLine, "*") {
+				evidenceItem := strings.TrimSpace(strings.TrimLeft(trimmedLine, "-*"))
+				if evidenceItem != "" {
+					brief.ExpectedEvidence = append(brief.ExpectedEvidence, evidenceItem)
+				}
+			}
+		}
+	}
+
+	return brief, nil
+}
+
+func writeMarkdownPacket(outPath string, packet factoryPacket) error {
+	if outPath == "" {
+		return nil
+	}
+	packetDir := filepath.Dir(outPath)
+	mdPath := filepath.Join(packetDir, "packet.md")
+
+	var buf bytes.Buffer
+	buf.WriteString("# AO Forge Factory Packet\n\n")
+	fmt.Fprintf(&buf, "- **Status**: %s\n", strings.ToUpper(packet.Status))
+	fmt.Fprintf(&buf, "- **Plan ID**: %s\n", packet.FactoryPlan.PlanID)
+	fmt.Fprintf(&buf, "- **Workcell Count**: %d\n\n", packet.FactoryPlan.WorkcellCount)
+
+	buf.WriteString("## Objective\n\n")
+	fmt.Fprintf(&buf, "%s\n", packet.Objective.Text)
+	fmt.Fprintf(&buf, "- **Workspace**: %s\n", packet.Objective.Workspace)
+	fmt.Fprintf(&buf, "- **Release Mode**: %t\n\n", packet.Objective.ReleaseMode)
+
+	buf.WriteString("## Policy Decisions\n\n")
+	buf.WriteString("| Decision ID | Target | Decision | Explanation | Source |\n")
+	buf.WriteString("| --- | --- | --- | --- | --- |\n")
+	for _, d := range packet.PolicyDecisions {
+		fmt.Fprintf(&buf, "| %s | %s | %s | %s | %s |\n", d.DecisionID, d.Target, d.Decision, d.Explanation, d.Source)
+	}
+	buf.WriteString("\n")
+
+	buf.WriteString("## Workcells\n\n")
+	buf.WriteString("| Workcell ID | Kind | Status | Run Mode | Summary |\n")
+	buf.WriteString("| --- | --- | --- | --- | --- |\n")
+	for _, wc := range packet.Workcells {
+		runMode := wc.AO2Run
+		if runMode == "" {
+			runMode = "none"
+		}
+		fmt.Fprintf(&buf, "| %s | %s | %s | %s | %s |\n", wc.WorkcellID, wc.Kind, wc.Status, runMode, wc.Summary)
+	}
+	buf.WriteString("\n")
+
+	buf.WriteString("## Evidence\n\n")
+	buf.WriteString("| Label | Schema Version | Status | Path | SHA-256 |\n")
+	buf.WriteString("| --- | --- | --- | --- | --- |\n")
+	for _, ev := range packet.Evidence {
+		fmt.Fprintf(&buf, "| %s | %s | %s | %s | %s |\n", ev.Label, ev.SchemaVersion, ev.Status, ev.Path, ev.SHA256)
+	}
+	buf.WriteString("\n")
+
+	buf.WriteString("## Trust Boundary\n\n")
+	fmt.Fprintf(&buf, "- **Local First**: %t\n", packet.TrustBoundary.LocalFirst)
+	fmt.Fprintf(&buf, "- **Mutates Releases**: %t\n", packet.TrustBoundary.MutatesReleases)
+	fmt.Fprintf(&buf, "- **Stores Credentials**: %t\n", packet.TrustBoundary.StoresCredentials)
+	fmt.Fprintf(&buf, "- **Control Plane Approves Work**: %t\n\n", packet.TrustBoundary.ControlPlaneApprovesWork)
+
+	buf.WriteString("## Next Actions\n\n")
+	for NaIndex, na := range packet.NextActions {
+		if NaIndex > 0 {
+			buf.WriteString("\n")
+		}
+		fmt.Fprintf(&buf, "- **%s**: %s (Required: %t)\n", na.ActionID, na.Description, na.Required)
+	}
+
+	return writeFile(mdPath, buf.Bytes())
 }

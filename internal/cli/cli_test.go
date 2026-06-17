@@ -741,7 +741,7 @@ func main() {
 		"objective": {
 			"text": "test",
 			"workspace": "test",
-			"release_mode": true
+			"release_mode": false
 		},
 		"constraints": {
 			"local_first": true,
@@ -2502,5 +2502,178 @@ func main() {
 	}
 	if !foundWC1 || !foundWC2 {
 		t.Fatalf("did not find both wc1 and wc2 evidence in packet")
+	}
+}
+
+func TestGateReleaseModeValidation(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Compile a dummy binary that acts as covenant
+	dummyCovSrc := filepath.Join(tmpDir, "dummy_covenant.go")
+	dummyCovBin := filepath.Join(tmpDir, "dummy_covenant")
+	if os.PathSeparator == '\\' {
+		dummyCovBin += ".exe"
+	}
+	covContent := `package main
+import (
+	"fmt"
+	"os"
+)
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "version" {
+		fmt.Println("{\"schema_version\": \"covenant.version-result.v1\", \"version\": \"v0.1.0\"}")
+		os.Exit(0)
+	}
+	os.Exit(1)
+}`
+	if err := os.WriteFile(dummyCovSrc, []byte(covContent), 0644); err != nil {
+		t.Fatalf("write dummy covenant src: %v", err)
+	}
+	cmdCov := exec.Command("go", "build", "-o", dummyCovBin, dummyCovSrc)
+	if out, err := cmdCov.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy covenant: %v (output: %q)", err, string(out))
+	}
+
+	// Helper to create a plan
+	makePlan := func(workspace string, releaseMode bool, allowMutation bool) string {
+		plan := factoryPlan{
+			SchemaVersion: "ao.forge.factory-plan.v0.1",
+			PlanID:        "forge-plan-efedbfb309b1",
+			Objective: factoryObjective{
+				Text:        "test release validation",
+				Workspace:   workspace,
+				ReleaseMode: releaseMode,
+			},
+			Constraints: factoryConstraints{
+				LocalFirst:           true,
+				AllowNetwork:         false,
+				AllowReleaseMutation: allowMutation,
+			},
+			PolicyGate: policyGate{
+				Required:    true,
+				Status:      "not_requested",
+				Explanation: "test",
+			},
+			Workcells: []planWorkcell{
+				{WorkcellID: "wc1", Kind: "prepare", Status: "planned", DependsOn: []string{}},
+			},
+			ExpectedEvidence: []string{"test"},
+			NextActions: []nextAction{
+				{ActionID: "test", Description: "test", Required: true},
+			},
+		}
+		data, _ := json.Marshal(plan)
+		planPath := filepath.Join(tmpDir, fmt.Sprintf("plan-%t-%t.json", releaseMode, allowMutation))
+		_ = os.WriteFile(planPath, data, 0644)
+		return planPath
+	}
+
+	// 1. Workspace does not exist -> Denied
+	plan1 := makePlan(filepath.Join(tmpDir, "nonexistent"), true, false)
+	code, stdout, stderr := runCLI("gate", "--plan", plan1, "--covenant", dummyCovBin)
+	if code != 1 {
+		t.Fatalf("expected code 1, got %d (stderr: %q)", code, stderr)
+	}
+	var gateRes1 covenantGateResult
+	if err := json.Unmarshal([]byte(stdout), &gateRes1); err != nil {
+		t.Fatalf("failed to parse gate result: %v", err)
+	}
+	if gateRes1.Status != "blocked" || gateRes1.Decision.DecisionID != "deny-dirty-release-workspace" {
+		t.Fatalf("unexpected gate result for nonexistent workspace: %+v", gateRes1)
+	}
+
+	// 2. Workspace exists but is not a git repo -> Denied
+	noGitDir := filepath.Join(tmpDir, "nogit")
+	_ = os.Mkdir(noGitDir, 0755)
+	plan2 := makePlan(noGitDir, true, false)
+	code, stdout, stderr = runCLI("gate", "--plan", plan2, "--covenant", dummyCovBin)
+	if code != 1 {
+		t.Fatalf("expected code 1, got %d (stderr: %q)", code, stderr)
+	}
+	var gateRes2 covenantGateResult
+	if err := json.Unmarshal([]byte(stdout), &gateRes2); err != nil {
+		t.Fatalf("failed to parse gate result: %v", err)
+	}
+	if gateRes2.Status != "blocked" || gateRes2.Decision.DecisionID != "deny-dirty-release-workspace" {
+		t.Fatalf("unexpected gate result for non-git workspace: %+v", gateRes2)
+	}
+
+	// 3. Workspace is a dirty git repo -> Denied
+	dirtyGitDir := filepath.Join(tmpDir, "dirtygit")
+	_ = os.Mkdir(dirtyGitDir, 0755)
+	runGit := func(dir string, args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v (output: %q)", args, err, string(out))
+		}
+	}
+	runGit(dirtyGitDir, "init")
+	_ = os.WriteFile(filepath.Join(dirtyGitDir, "dirty.txt"), []byte("dirty"), 0644)
+	// Not committed, so dirty
+
+	plan3 := makePlan(dirtyGitDir, true, false)
+	code, stdout, stderr = runCLI("gate", "--plan", plan3, "--covenant", dummyCovBin)
+	if code != 1 {
+		t.Fatalf("expected code 1, got %d (stderr: %q)", code, stderr)
+	}
+	var gateRes3 covenantGateResult
+	if err := json.Unmarshal([]byte(stdout), &gateRes3); err != nil {
+		t.Fatalf("failed to parse gate result: %v", err)
+	}
+	if gateRes3.Status != "blocked" || gateRes3.Decision.DecisionID != "deny-dirty-release-workspace" {
+		t.Fatalf("unexpected gate result for dirty git workspace: %+v", gateRes3)
+	}
+
+	// 4. Workspace is a clean git repo -> Success (Allowed)
+	cleanGitDir := filepath.Join(tmpDir, "cleangit")
+	_ = os.Mkdir(cleanGitDir, 0755)
+	runGit(cleanGitDir, "init")
+	runGit(cleanGitDir, "config", "user.email", "test@example.com")
+	runGit(cleanGitDir, "config", "user.name", "Test")
+	runGit(cleanGitDir, "config", "commit.gpgSign", "false")
+	_ = os.WriteFile(filepath.Join(cleanGitDir, "clean.txt"), []byte("clean"), 0644)
+	runGit(cleanGitDir, "add", "clean.txt")
+	runGit(cleanGitDir, "commit", "-m", "init")
+
+	plan4 := makePlan(cleanGitDir, true, false)
+	code, stdout, stderr = runCLI("gate", "--plan", plan4, "--covenant", dummyCovBin)
+	if code != 0 {
+		t.Fatalf("expected code 0, got %d (stderr: %q)", code, stderr)
+	}
+	var gateRes4 covenantGateResult
+	if err := json.Unmarshal([]byte(stdout), &gateRes4); err != nil {
+		t.Fatalf("failed to parse gate result: %v", err)
+	}
+	if gateRes4.Status != "allowed" || gateRes4.Decision.DecisionID != "allow-local-plan" {
+		t.Fatalf("unexpected gate result for clean git workspace: %+v", gateRes4)
+	}
+
+	// 5. AllowReleaseMutation: true, ReleaseMode: false -> Denied
+	plan5 := makePlan(cleanGitDir, false, true)
+	code, stdout, stderr = runCLI("gate", "--plan", plan5, "--covenant", dummyCovBin)
+	if code != 1 {
+		t.Fatalf("expected code 1, got %d (stderr: %q)", code, stderr)
+	}
+	var gateRes5 covenantGateResult
+	if err := json.Unmarshal([]byte(stdout), &gateRes5); err != nil {
+		t.Fatalf("failed to parse gate result: %v", err)
+	}
+	if gateRes5.Status != "denied" || gateRes5.Decision.DecisionID != "deny-non-release-mutation" {
+		t.Fatalf("unexpected gate result for non-release mutation request: %+v", gateRes5)
+	}
+
+	// 6. AllowReleaseMutation: true, ReleaseMode: true (and clean workspace) -> Blocked (Indeterminate)
+	plan6 := makePlan(cleanGitDir, true, true)
+	code, stdout, stderr = runCLI("gate", "--plan", plan6, "--covenant", dummyCovBin)
+	if code != 1 {
+		t.Fatalf("expected code 1, got %d (stderr: %q)", code, stderr)
+	}
+	var gateRes6 covenantGateResult
+	if err := json.Unmarshal([]byte(stdout), &gateRes6); err != nil {
+		t.Fatalf("failed to parse gate result: %v", err)
+	}
+	if gateRes6.Status != "blocked" || gateRes6.Decision.DecisionID != "indeterminate-release-mutation" {
+		t.Fatalf("unexpected gate result for indeterminate release mutation request: %+v", gateRes6)
 	}
 }

@@ -2901,3 +2901,175 @@ func main() {
 		t.Fatalf("unexpected packet properties for overridden indeterminate run: %+v", pkt4)
 	}
 }
+
+func TestForgeInitAndPacketPersistence(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Compile a dummy binary that acts as covenant
+	dummyCovSrc := filepath.Join(tmpDir, "dummy_covenant.go")
+	dummyCovBin := filepath.Join(tmpDir, "dummy_covenant")
+	if os.PathSeparator == '\\' {
+		dummyCovBin += ".exe"
+	}
+	covContent := `package main
+import (
+	"fmt"
+	"os"
+)
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "version" {
+		fmt.Println("{\"schema_version\": \"covenant.version-result.v1\", \"version\": \"v0.1.0\"}")
+		os.Exit(0)
+	}
+	os.Exit(1)
+}`
+	if err := os.WriteFile(dummyCovSrc, []byte(covContent), 0644); err != nil {
+		t.Fatalf("write dummy covenant src: %v", err)
+	}
+	cmdCov := exec.Command("go", "build", "-o", dummyCovBin, dummyCovSrc)
+	if out, err := cmdCov.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy covenant: %v (output: %q)", err, string(out))
+	}
+
+	cleanGitDir := filepath.Join(tmpDir, "cleangit")
+	_ = os.Mkdir(cleanGitDir, 0755)
+	runGit := func(dir string, args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v (output: %q)", args, err, string(out))
+		}
+	}
+	runGit(cleanGitDir, "init")
+	runGit(cleanGitDir, "config", "user.email", "test@example.com")
+	runGit(cleanGitDir, "config", "user.name", "Test")
+	runGit(cleanGitDir, "config", "commit.gpgSign", "false")
+	_ = os.WriteFile(filepath.Join(cleanGitDir, "clean.txt"), []byte("clean"), 0644)
+	runGit(cleanGitDir, "add", "clean.txt")
+	runGit(cleanGitDir, "commit", "-m", "init")
+
+	// Change current working directory to tmpDir to test local .forge creation
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer func() {
+		_ = os.Chdir(oldWd)
+	}()
+
+	// 1. Run init command
+	code, stdout, stderr := runCLI("init")
+	if code != 0 {
+		t.Fatalf("expected code 0 from init, got %d (stderr: %q)", code, stderr)
+	}
+	if !strings.Contains(stdout, "initialized under .forge") {
+		t.Fatalf("unexpected init stdout: %q", stdout)
+	}
+
+	// Verify .forge and .forge/runs exist
+	if info, err := os.Stat(".forge"); err != nil || !info.IsDir() {
+		t.Fatalf(".forge directory was not created")
+	}
+	if info, err := os.Stat(filepath.Join(".forge", "runs")); err != nil || !info.IsDir() {
+		t.Fatalf(".forge/runs directory was not created")
+	}
+
+	// 2. Run once command to execute and verify archiving
+	// Create a dummy brief pointing to cleanGitDir as workspace
+	briefContent := fmt.Sprintf(`# Objective
+test persistence once
+
+# Workspace
+%s
+
+# Constraints
+- local_first: true
+
+# Expected Workcells
+- wc1 (prepare)
+
+# Expected Evidence
+- test
+`, strings.ReplaceAll(cleanGitDir, "\\", "/"))
+	briefPath := filepath.Join(tmpDir, "brief.md")
+	if err := os.WriteFile(briefPath, []byte(briefContent), 0644); err != nil {
+		t.Fatalf("write brief: %v", err)
+	}
+
+	// Compile a dummy binary that acts as ao2
+	dummyAo2Src := filepath.Join(tmpDir, "dummy_ao2.go")
+	dummyAo2Bin := filepath.Join(tmpDir, "dummy_ao2")
+	if os.PathSeparator == '\\' {
+		dummyAo2Bin += ".exe"
+	}
+	ao2Content := `package main
+import (
+	"fmt"
+	"os"
+)
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "run" {
+		fmt.Println("status=dry_run_accepted")
+		os.Exit(0)
+	}
+	os.Exit(1)
+}`
+	if err := os.WriteFile(dummyAo2Src, []byte(ao2Content), 0644); err != nil {
+		t.Fatalf("write dummy ao2 src: %v", err)
+	}
+	cmdAo2 := exec.Command("go", "build", "-o", dummyAo2Bin, dummyAo2Src)
+	if out, err := cmdAo2.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy ao2: %v (output: %q)", err, string(out))
+	}
+
+	t.Setenv("AO2_PATH", dummyAo2Bin)
+
+	// Run once to auto-generate plan and execute
+	outPath := filepath.Join(tmpDir, "packet_once.json")
+	code, stdout, stderr = runCLI("once", "--brief", briefPath, "--covenant", dummyCovBin, "--out", outPath)
+	if code != 0 {
+		t.Fatalf("expected code 0 from once, got %d (stderr: %q)", code, stderr)
+	}
+
+	// Read packet to find the plan ID
+	packetData, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("failed to read once packet: %v", err)
+	}
+	var pkt factoryPacket
+	if err := json.Unmarshal(packetData, &pkt); err != nil {
+		t.Fatalf("failed to unmarshal once packet: %v", err)
+	}
+	planID := pkt.FactoryPlan.PlanID
+	if planID == "" {
+		t.Fatalf("plan ID was not generated")
+	}
+
+	// Verify files were archived under .forge/runs/<planID>/
+	archiveDir := filepath.Join(".forge", "runs", planID)
+	if _, err := os.Stat(filepath.Join(archiveDir, "plan.json")); err != nil {
+		t.Fatalf("plan.json was not archived")
+	}
+	if _, err := os.Stat(filepath.Join(archiveDir, "gate_result.json")); err != nil {
+		t.Fatalf("gate_result.json was not archived")
+	}
+	if _, err := os.Stat(filepath.Join(archiveDir, "factory-packet.json")); err != nil {
+		t.Fatalf("factory-packet.json was not archived")
+	}
+
+	// 3. Retrieve packet using forge packet subcommand
+	code, stdout, stderr = runCLI("packet", "--run", planID)
+	if code != 0 {
+		t.Fatalf("expected code 0 from packet command, got %d (stderr: %q)", code, stderr)
+	}
+	var retrievedPkt factoryPacket
+	if err := json.Unmarshal([]byte(stdout), &retrievedPkt); err != nil {
+		t.Fatalf("failed to parse retrieved packet: %v", err)
+	}
+	if retrievedPkt.FactoryPlan.PlanID != planID {
+		t.Fatalf("retrieved plan ID mismatch: expected %q, got %q", planID, retrievedPkt.FactoryPlan.PlanID)
+	}
+}

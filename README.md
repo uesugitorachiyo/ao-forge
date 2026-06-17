@@ -112,11 +112,11 @@ Commands that would run or execute work are intentionally disabled in
 Slice 0.2. They fail closed until later slices connect AO Covenant, AO2, and
 ao2-control-plane.
 
-## Private CI
+## Continuous Integration
 
-This repository is currently private. The GitHub Actions workflow is
-manual-only until private hosted runners or account minutes are confirmed.
-Before pushing or merging work, run the local gates:
+This repository is public. The GitHub Actions workflow runs automatically on every push to a branch and every pull request targeting `main`.
+
+Before pushing or merging work, you can run the local verification checks:
 
 ```sh
 go test ./...

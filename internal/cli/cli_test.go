@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func repoRoot(t *testing.T) string {
@@ -1848,6 +1850,490 @@ func main() {
 	} {
 		if !strings.Contains(mdContent, want) {
 			t.Fatalf("packet.md missing %q:\n%s", want, mdContent)
+		}
+	}
+}
+
+func TestSchedulerCycleDetection(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "forge-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	briefPath := filepath.Join(tmpDir, "cyclic-brief.json")
+	briefContent := `{
+		"schema_version": "ao.forge.factory-brief.v0.1",
+		"objective": {
+			"text": "test cycle",
+			"workspace": "test-ws",
+			"release_mode": false
+		},
+		"constraints": {
+			"local_first": true,
+			"allow_network": false,
+			"allow_release_mutation": false,
+			"require_control_plane_readback": false
+		},
+		"expected_workcells": [
+			{"workcell_id": "cell1", "kind": "prepare", "depends_on": ["cell2"]},
+			{"workcell_id": "cell2", "kind": "execute", "depends_on": ["cell1"]}
+		],
+		"expected_evidence": ["test"]
+	}`
+	if err := os.WriteFile(briefPath, []byte(briefContent), 0644); err != nil {
+		t.Fatalf("write cyclic brief: %v", err)
+	}
+
+	code, _, stderr := runCLI("plan", "--brief", briefPath)
+	if code != 1 {
+		t.Fatalf("expected code 1, got %d (stderr: %q)", code, stderr)
+	}
+	if !strings.Contains(stderr, "cyclic dependency detected") {
+		t.Fatalf("expected cyclic dependency error in stderr, got: %q", stderr)
+	}
+}
+
+func TestSchedulerConcurrentExecution(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "forge-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	traceFile := filepath.Join(tmpDir, "trace.log")
+
+	// Compile a mock ao2 that sleeps for 500ms and writes timestamps to a trace file
+	dummyAo2Src := filepath.Join(tmpDir, "dummy_ao2.go")
+	dummyAo2Bin := filepath.Join(tmpDir, "dummy_ao2")
+	if os.PathSeparator == '\\' {
+		dummyAo2Bin += ".exe"
+	}
+	ao2Content := fmt.Sprintf(`package main
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"time"
+)
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "run" {
+		var specFile string
+		for i := 0; i < len(os.Args); i++ {
+			if os.Args[i] == "--spec" && i+1 < len(os.Args) {
+				specFile = os.Args[i+1]
+			}
+		}
+		data, _ := os.ReadFile(specFile)
+		var spec map[string]any
+		json.Unmarshal(data, &spec)
+		specObj := spec["spec"].(map[string]any)
+		tasks := specObj["tasks"].([]any)
+		task := tasks[0].(map[string]any)
+		taskID := task["id"].(string)
+
+		start := time.Now().UnixNano() / int64(time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
+		end := time.Now().UnixNano() / int64(time.Millisecond)
+
+		f, _ := os.OpenFile(%q, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		fmt.Fprintf(f, "%%s: %%d - %%d\n", taskID, start, end)
+		f.Close()
+
+		fmt.Println("status=dry_run_accepted")
+		fmt.Println("schema_version=ao2.run/v1")
+		fmt.Println("plan_id=forge-plan-efedbfb309b1")
+		os.Exit(0)
+	}
+	os.Exit(1)
+}`, traceFile)
+
+	if err := os.WriteFile(dummyAo2Src, []byte(ao2Content), 0644); err != nil {
+		t.Fatalf("write dummy ao2 src: %v", err)
+	}
+	cmdAo2 := exec.Command("go", "build", "-o", dummyAo2Bin, dummyAo2Src)
+	if out, err := cmdAo2.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy ao2: %v (output: %q)", err, string(out))
+	}
+	t.Setenv("AO2_PATH", dummyAo2Bin)
+
+	// Write mock covenant decision fixture
+	dummyCovSrc := filepath.Join(tmpDir, "dummy_covenant.go")
+	dummyCovBin := filepath.Join(tmpDir, "dummy_covenant")
+	if os.PathSeparator == '\\' {
+		dummyCovBin += ".exe"
+	}
+	covContent := `package main
+import (
+	"fmt"
+	"os"
+)
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "version" {
+		fmt.Println("{\"schema_version\": \"covenant.version-result.v1\", \"version\": \"v0.1.0\"}")
+		os.Exit(0)
+	}
+	os.Exit(1)
+}`
+	if err := os.WriteFile(dummyCovSrc, []byte(covContent), 0644); err != nil {
+		t.Fatalf("write dummy covenant src: %v", err)
+	}
+	cmdCov := exec.Command("go", "build", "-o", dummyCovBin, dummyCovSrc)
+	if out, err := cmdCov.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy covenant: %v (output: %q)", err, string(out))
+	}
+
+	briefPath := filepath.Join(tmpDir, "brief.json")
+	briefContent := `{
+		"schema_version": "ao.forge.factory-brief.v0.1",
+		"objective": {
+			"text": "test concurrent execution",
+			"workspace": "test-ws",
+			"release_mode": false
+		},
+		"constraints": {
+			"local_first": true,
+			"allow_network": false,
+			"allow_release_mutation": false,
+			"require_control_plane_readback": false
+		},
+		"expected_workcells": [
+			{"workcell_id": "wc1", "kind": "prepare", "depends_on": []},
+			{"workcell_id": "wc2", "kind": "execute", "depends_on": []}
+		],
+		"expected_evidence": ["test"]
+	}`
+	if err := os.WriteFile(briefPath, []byte(briefContent), 0644); err != nil {
+		t.Fatalf("write brief: %v", err)
+	}
+
+	outPacket := filepath.Join(tmpDir, "packet.json")
+	start := time.Now()
+	code, stdoutVal, stderr := runCLI("once", "--brief", briefPath, "--covenant", dummyCovBin, "--out", outPacket)
+	duration := time.Since(start)
+
+	if code != 0 {
+		t.Fatalf("once failed: %s (stdout: %q)", stderr, stdoutVal)
+	}
+
+	// Print trace file contents
+	traceBytes, traceErr := os.ReadFile(traceFile)
+	if traceErr != nil {
+		t.Fatalf("Failed to read trace log: %v", traceErr)
+	}
+	t.Logf("Trace log:\n%s", string(traceBytes))
+
+	// Parse trace log to verify concurrent overlap
+	lines := strings.Split(strings.TrimSpace(string(traceBytes)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected exactly 2 lines in trace log, got %d", len(lines))
+	}
+	var start1, end1, start2, end2 int64
+	for _, line := range lines {
+		var name string
+		var s, e int64
+		if _, err := fmt.Sscanf(line, "%s %d - %d", &name, &s, &e); err != nil {
+			t.Fatalf("failed to parse trace line %q: %v", line, err)
+		}
+		if name == "wc1:" {
+			start1, end1 = s, e
+		} else if name == "wc2:" {
+			start2, end2 = s, e
+		}
+	}
+	if start1 >= end2 || start2 >= end1 {
+		t.Fatalf("expected executions to overlap (be concurrent), but wc1 ran %d-%d and wc2 ran %d-%d", start1, end1, start2, end2)
+	}
+
+	// Verify duration is reasonable (failsafe to ensure it did not hang)
+	if duration >= 2500*time.Millisecond {
+		t.Fatalf("execution took too long, expected under 2500ms, took %v", duration)
+	}
+
+	// Verify both workcells are passed in packet
+	data, err := os.ReadFile(outPacket)
+	if err != nil {
+		t.Fatalf("failed to read packet: %v", err)
+	}
+	var packet factoryPacket
+	if err := json.Unmarshal(data, &packet); err != nil {
+		t.Fatalf("failed to parse packet: %v", err)
+	}
+
+	if len(packet.Workcells) != 2 {
+		t.Fatalf("expected 2 workcells, got %d", len(packet.Workcells))
+	}
+	for _, wc := range packet.Workcells {
+		if wc.Status != "passed" {
+			t.Fatalf("expected workcell %s to be passed, got %s", wc.WorkcellID, wc.Status)
+		}
+	}
+}
+
+func TestSchedulerDependencyOrchestration(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "forge-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	traceFile := filepath.Join(tmpDir, "trace.log")
+
+	// Compile a mock ao2 that appends the executed task ID to a trace file
+	dummyAo2Src := filepath.Join(tmpDir, "dummy_ao2.go")
+	dummyAo2Bin := filepath.Join(tmpDir, "dummy_ao2")
+	if os.PathSeparator == '\\' {
+		dummyAo2Bin += ".exe"
+	}
+	ao2Content := fmt.Sprintf(`package main
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+)
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "run" {
+		// Read spec to find task ID
+		var specFile string
+		for i := 0; i < len(os.Args); i++ {
+			if os.Args[i] == "--spec" && i+1 < len(os.Args) {
+				specFile = os.Args[i+1]
+			}
+		}
+		data, _ := os.ReadFile(specFile)
+		var spec map[string]any
+		json.Unmarshal(data, &spec)
+		specObj := spec["spec"].(map[string]any)
+		tasks := specObj["tasks"].([]any)
+		task := tasks[0].(map[string]any)
+		taskID := task["id"].(string)
+
+		f, _ := os.OpenFile(%q, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		f.WriteString(taskID + "\n")
+		f.Close()
+
+		fmt.Println("status=dry_run_accepted")
+		fmt.Println("schema_version=ao2.run/v1")
+		fmt.Println("plan_id=forge-plan-efedbfb309b1")
+		os.Exit(0)
+	}
+	os.Exit(1)
+}`, traceFile)
+
+	if err := os.WriteFile(dummyAo2Src, []byte(ao2Content), 0644); err != nil {
+		t.Fatalf("write dummy ao2 src: %v", err)
+	}
+	cmdAo2 := exec.Command("go", "build", "-o", dummyAo2Bin, dummyAo2Src)
+	if out, err := cmdAo2.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy ao2: %v (output: %q)", err, string(out))
+	}
+	t.Setenv("AO2_PATH", dummyAo2Bin)
+
+	// Write mock covenant decision fixture
+	dummyCovSrc := filepath.Join(tmpDir, "dummy_covenant.go")
+	dummyCovBin := filepath.Join(tmpDir, "dummy_covenant")
+	if os.PathSeparator == '\\' {
+		dummyCovBin += ".exe"
+	}
+	covContent := `package main
+import (
+	"fmt"
+	"os"
+)
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "version" {
+		fmt.Println("{\"schema_version\": \"covenant.version-result.v1\", \"version\": \"v0.1.0\"}")
+		os.Exit(0)
+	}
+	os.Exit(1)
+}`
+	if err := os.WriteFile(dummyCovSrc, []byte(covContent), 0644); err != nil {
+		t.Fatalf("write dummy covenant src: %v", err)
+	}
+	cmdCov := exec.Command("go", "build", "-o", dummyCovBin, dummyCovSrc)
+	if out, err := cmdCov.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy covenant: %v (output: %q)", err, string(out))
+	}
+
+	briefPath := filepath.Join(tmpDir, "brief.json")
+	briefContent := `{
+		"schema_version": "ao.forge.factory-brief.v0.1",
+		"objective": {
+			"text": "test dependency orchestration",
+			"workspace": "test-ws",
+			"release_mode": false
+		},
+		"constraints": {
+			"local_first": true,
+			"allow_network": false,
+			"allow_release_mutation": false,
+			"require_control_plane_readback": false
+		},
+		"expected_workcells": [
+			{"workcell_id": "wc1", "kind": "prepare", "depends_on": ["wc2"]},
+			{"workcell_id": "wc2", "kind": "execute", "depends_on": []}
+		],
+		"expected_evidence": ["test"]
+	}`
+	if err := os.WriteFile(briefPath, []byte(briefContent), 0644); err != nil {
+		t.Fatalf("write brief: %v", err)
+	}
+
+	outPacket := filepath.Join(tmpDir, "packet.json")
+	code, _, stderr := runCLI("once", "--brief", briefPath, "--covenant", dummyCovBin, "--out", outPacket)
+	if code != 0 {
+		t.Fatalf("once failed: %s", stderr)
+	}
+
+	traceBytes, err := os.ReadFile(traceFile)
+	if err != nil {
+		t.Fatalf("failed to read trace: %v", err)
+	}
+	traceLines := strings.Split(strings.TrimSpace(string(traceBytes)), "\n")
+	if len(traceLines) != 2 {
+		t.Fatalf("expected 2 executed workcells, got %d (trace: %q)", len(traceLines), string(traceBytes))
+	}
+	if traceLines[0] != "wc2" || traceLines[1] != "wc1" {
+		t.Fatalf("expected execution order wc2 -> wc1, got: %v", traceLines)
+	}
+}
+
+func TestSchedulerFailurePropagation(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "forge-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Compile a mock ao2 that fails for wc_fail
+	dummyAo2Src := filepath.Join(tmpDir, "dummy_ao2.go")
+	dummyAo2Bin := filepath.Join(tmpDir, "dummy_ao2")
+	if os.PathSeparator == '\\' {
+		dummyAo2Bin += ".exe"
+	}
+	ao2Content := `package main
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+)
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "run" {
+		var specFile string
+		for i := 0; i < len(os.Args); i++ {
+			if os.Args[i] == "--spec" && i+1 < len(os.Args) {
+				specFile = os.Args[i+1]
+			}
+		}
+		data, _ := os.ReadFile(specFile)
+		var spec map[string]any
+		json.Unmarshal(data, &spec)
+		specObj := spec["spec"].(map[string]any)
+		tasks := specObj["tasks"].([]any)
+		task := tasks[0].(map[string]any)
+		taskID := task["id"].(string)
+
+		if taskID == "wc_fail" {
+			os.Exit(1)
+		}
+		fmt.Println("status=dry_run_accepted")
+		fmt.Println("schema_version=ao2.run/v1")
+		fmt.Println("plan_id=forge-plan-efedbfb309b1")
+		os.Exit(0)
+	}
+	os.Exit(1)
+}`
+	if err := os.WriteFile(dummyAo2Src, []byte(ao2Content), 0644); err != nil {
+		t.Fatalf("write dummy ao2 src: %v", err)
+	}
+	cmdAo2 := exec.Command("go", "build", "-o", dummyAo2Bin, dummyAo2Src)
+	if out, err := cmdAo2.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy ao2: %v (output: %q)", err, string(out))
+	}
+	t.Setenv("AO2_PATH", dummyAo2Bin)
+
+	// Write mock covenant decision fixture
+	dummyCovSrc := filepath.Join(tmpDir, "dummy_covenant.go")
+	dummyCovBin := filepath.Join(tmpDir, "dummy_covenant")
+	if os.PathSeparator == '\\' {
+		dummyCovBin += ".exe"
+	}
+	covContent := `package main
+import (
+	"fmt"
+	"os"
+)
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "version" {
+		fmt.Println("{\"schema_version\": \"covenant.version-result.v1\", \"version\": \"v0.1.0\"}")
+		os.Exit(0)
+	}
+	os.Exit(1)
+}`
+	if err := os.WriteFile(dummyCovSrc, []byte(covContent), 0644); err != nil {
+		t.Fatalf("write dummy covenant src: %v", err)
+	}
+	cmdCov := exec.Command("go", "build", "-o", dummyCovBin, dummyCovSrc)
+	if out, err := cmdCov.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy covenant: %v (output: %q)", err, string(out))
+	}
+
+	briefPath := filepath.Join(tmpDir, "brief.json")
+	briefContent := `{
+		"schema_version": "ao.forge.factory-brief.v0.1",
+		"objective": {
+			"text": "test failure propagation",
+			"workspace": "test-ws",
+			"release_mode": false
+		},
+		"constraints": {
+			"local_first": true,
+			"allow_network": false,
+			"allow_release_mutation": false,
+			"require_control_plane_readback": false
+		},
+		"expected_workcells": [
+			{"workcell_id": "wc_fail", "kind": "prepare", "depends_on": []},
+			{"workcell_id": "wc_dep", "kind": "execute", "depends_on": ["wc_fail"]}
+		],
+		"expected_evidence": ["test"]
+	}`
+	if err := os.WriteFile(briefPath, []byte(briefContent), 0644); err != nil {
+		t.Fatalf("write brief: %v", err)
+	}
+
+	outPacket := filepath.Join(tmpDir, "packet.json")
+	code, _, stderr := runCLI("once", "--brief", briefPath, "--covenant", dummyCovBin, "--out", outPacket)
+	if code != 1 {
+		t.Fatalf("expected once to fail with exit code 1, got %d (stderr: %q)", code, stderr)
+	}
+
+	data, err := os.ReadFile(outPacket)
+	if err != nil {
+		t.Fatalf("failed to read packet: %v", err)
+	}
+	var packet factoryPacket
+	if err := json.Unmarshal(data, &packet); err != nil {
+		t.Fatalf("failed to parse packet: %v", err)
+	}
+
+	if packet.Status != "failed" {
+		t.Fatalf("expected packet status to be failed, got %q", packet.Status)
+	}
+	if len(packet.Workcells) != 2 {
+		t.Fatalf("expected 2 workcells, got %d", len(packet.Workcells))
+	}
+
+	// wc_fail should be failed, wc_dep should be skipped
+	for _, wc := range packet.Workcells {
+		if wc.WorkcellID == "wc_fail" {
+			if wc.Status != "failed" {
+				t.Fatalf("expected wc_fail status to be failed, got %q", wc.Status)
+			}
+		} else if wc.WorkcellID == "wc_dep" {
+			if wc.Status != "skipped" {
+				t.Fatalf("expected wc_dep status to be skipped, got %q", wc.Status)
+			}
 		}
 	}
 }

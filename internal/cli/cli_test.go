@@ -1236,6 +1236,12 @@ func main() {
 		fmt.Println("mutates_ao_artifacts=false")
 		fmt.Println("factory_v3_drives_workflow=false")
 		fmt.Println("spec_sha256=abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd")
+		if out := os.Getenv("AO2_MOCK_STDOUT"); out != "" {
+			fmt.Print(out)
+		}
+		if errOut := os.Getenv("AO2_MOCK_STDERR"); errOut != "" {
+			fmt.Fprint(os.Stderr, errOut)
+		}
 		os.Exit(0)
 	}
 	os.Exit(1)
@@ -3301,3 +3307,251 @@ func TestLiveRunControlPlaneOptionalWarning(t *testing.T) {
 		t.Fatalf("stderr missing warning about optional control plane readback failure: %q", stderr)
 	}
 }
+
+func TestWorkcellRubricValidationSuccess(t *testing.T) {
+	tmpDir := t.TempDir()
+	dummyBin := compileDummyAo2(t, tmpDir)
+	t.Setenv("AO2_PATH", dummyBin)
+
+	// Write mock covenant
+	dummyCovSrc := filepath.Join(tmpDir, "dummy_covenant.go")
+	dummyCovBin := filepath.Join(tmpDir, "dummy_covenant")
+	if os.PathSeparator == '\\' {
+		dummyCovBin += ".exe"
+	}
+	covContent := `package main
+import (
+	"fmt"
+	"os"
+)
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "version" {
+		fmt.Println("{\"schema_version\": \"covenant.version-result.v1\", \"version\": \"v0.1.0\"}")
+		os.Exit(0)
+	}
+	os.Exit(1)
+}`
+	if err := os.WriteFile(dummyCovSrc, []byte(covContent), 0644); err != nil {
+		t.Fatalf("write dummy covenant src: %v", err)
+	}
+	cmdCov := exec.Command("go", "build", "-o", dummyCovBin, dummyCovSrc)
+	if out, err := cmdCov.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy covenant: %v (output: %q)", err, string(out))
+	}
+
+	// Set env vars for mock ao2 output
+	t.Setenv("AO2_MOCK_STDOUT", "BUILD SUCCESSFUL\ntests passed\ncoverage: 85.3% of statements\n")
+	t.Setenv("AO2_MOCK_STDERR", "")
+
+	briefPath := filepath.Join(tmpDir, "brief.json")
+	briefContent := `{
+		"schema_version": "ao.forge.factory-brief.v0.1",
+		"objective": {
+			"text": "test rubric success",
+			"workspace": "test-ws",
+			"release_mode": false
+		},
+		"constraints": {
+			"local_first": true,
+			"allow_network": false,
+			"allow_release_mutation": false,
+			"require_control_plane_readback": false
+		},
+		"expected_workcells": [
+			{
+				"workcell_id": "cell1",
+				"kind": "prepare",
+				"depends_on": [],
+				"rubric": {
+					"required_patterns": ["BUILD SUCCESSFUL", "tests passed"],
+					"forbidden_patterns": ["ERROR", "FATAL"],
+					"min_coverage": 80.0
+				}
+			}
+		],
+		"expected_evidence": ["test"]
+	}`
+	if err := os.WriteFile(briefPath, []byte(briefContent), 0644); err != nil {
+		t.Fatalf("write brief: %v", err)
+	}
+
+	outPacket := filepath.Join(tmpDir, "packet.json")
+	code, stdout, stderr := runCLI("once", "--brief", briefPath, "--covenant", dummyCovBin, "--out", outPacket)
+	if code != 0 {
+		t.Fatalf("expected once to succeed with exit code 0, got %d (stdout: %q, stderr: %q)", code, stdout, stderr)
+	}
+
+	data, err := os.ReadFile(outPacket)
+	if err != nil {
+		t.Fatalf("failed to read packet: %v", err)
+	}
+	var packet factoryPacket
+	if err := json.Unmarshal(data, &packet); err != nil {
+		t.Fatalf("failed to parse packet: %v", err)
+	}
+
+	if packet.Status != "passed" {
+		t.Fatalf("expected packet status to be passed, got %q", packet.Status)
+	}
+	if len(packet.Workcells) != 1 {
+		t.Fatalf("expected 1 workcell, got %d", len(packet.Workcells))
+	}
+	if packet.Workcells[0].Status != "passed" {
+		t.Fatalf("expected workcell status to be passed, got %q (summary: %q)", packet.Workcells[0].Status, packet.Workcells[0].Summary)
+	}
+}
+
+func TestWorkcellRubricValidationFailure(t *testing.T) {
+	tmpDir := t.TempDir()
+	dummyBin := compileDummyAo2(t, tmpDir)
+	t.Setenv("AO2_PATH", dummyBin)
+
+	// Write mock covenant
+	dummyCovSrc := filepath.Join(tmpDir, "dummy_covenant.go")
+	dummyCovBin := filepath.Join(tmpDir, "dummy_covenant")
+	if os.PathSeparator == '\\' {
+		dummyCovBin += ".exe"
+	}
+	covContent := `package main
+import (
+	"fmt"
+	"os"
+)
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "version" {
+		fmt.Println("{\"schema_version\": \"covenant.version-result.v1\", \"version\": \"v0.1.0\"}")
+		os.Exit(0)
+	}
+	os.Exit(1)
+}`
+	if err := os.WriteFile(dummyCovSrc, []byte(covContent), 0644); err != nil {
+		t.Fatalf("write dummy covenant src: %v", err)
+	}
+	cmdCov := exec.Command("go", "build", "-o", dummyCovBin, dummyCovSrc)
+	if out, err := cmdCov.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy covenant: %v (output: %q)", err, string(out))
+	}
+
+	briefPath := filepath.Join(tmpDir, "brief.json")
+	briefContent := `{
+		"schema_version": "ao.forge.factory-brief.v0.1",
+		"objective": {
+			"text": "test rubric failure",
+			"workspace": "test-ws",
+			"release_mode": false
+		},
+		"constraints": {
+			"local_first": true,
+			"allow_network": false,
+			"allow_release_mutation": false,
+			"require_control_plane_readback": false
+		},
+		"expected_workcells": [
+			{
+				"workcell_id": "cell1",
+				"kind": "prepare",
+				"depends_on": [],
+				"rubric": {
+					"required_patterns": ["BUILD SUCCESSFUL"],
+					"forbidden_patterns": ["ERROR"],
+					"min_coverage": 80.0
+				}
+			}
+		],
+		"expected_evidence": ["test"]
+	}`
+	if err := os.WriteFile(briefPath, []byte(briefContent), 0644); err != nil {
+		t.Fatalf("write brief: %v", err)
+	}
+
+	t.Run("missing required pattern", func(t *testing.T) {
+		t.Setenv("AO2_MOCK_STDOUT", "BUILD FAILED\ntests passed\ncoverage: 85.3% of statements\n")
+		t.Setenv("AO2_MOCK_STDERR", "")
+
+		outPacket := filepath.Join(tmpDir, "packet_fail1.json")
+		code, _, stderr := runCLI("once", "--brief", briefPath, "--covenant", dummyCovBin, "--out", outPacket)
+		if code != 1 {
+			t.Fatalf("expected once to fail with exit code 1, got %d (stderr: %q)", code, stderr)
+		}
+
+		data, err := os.ReadFile(outPacket)
+		if err != nil {
+			t.Fatalf("failed to read packet: %v", err)
+		}
+		var packet factoryPacket
+		if err := json.Unmarshal(data, &packet); err != nil {
+			t.Fatalf("failed to parse packet: %v", err)
+		}
+
+		if packet.Status != "failed" {
+			t.Fatalf("expected packet status to be failed, got %q", packet.Status)
+		}
+		if packet.Workcells[0].Status != "failed" {
+			t.Fatalf("expected workcell status to be failed, got %q", packet.Workcells[0].Status)
+		}
+		if !strings.Contains(packet.Workcells[0].Summary, `required pattern "BUILD SUCCESSFUL" not found`) {
+			t.Fatalf("unexpected failure summary: %q", packet.Workcells[0].Summary)
+		}
+	})
+
+	t.Run("forbidden pattern present", func(t *testing.T) {
+		t.Setenv("AO2_MOCK_STDOUT", "BUILD SUCCESSFUL\ntests passed\nERROR: compile failed\ncoverage: 85.3% of statements\n")
+		t.Setenv("AO2_MOCK_STDERR", "")
+
+		outPacket := filepath.Join(tmpDir, "packet_fail2.json")
+		code, _, stderr := runCLI("once", "--brief", briefPath, "--covenant", dummyCovBin, "--out", outPacket)
+		if code != 1 {
+			t.Fatalf("expected once to fail with exit code 1, got %d (stderr: %q)", code, stderr)
+		}
+
+		data, err := os.ReadFile(outPacket)
+		if err != nil {
+			t.Fatalf("failed to read packet: %v", err)
+		}
+		var packet factoryPacket
+		if err := json.Unmarshal(data, &packet); err != nil {
+			t.Fatalf("failed to parse packet: %v", err)
+		}
+
+		if packet.Status != "failed" {
+			t.Fatalf("expected packet status to be failed, got %q", packet.Status)
+		}
+		if packet.Workcells[0].Status != "failed" {
+			t.Fatalf("expected workcell status to be failed, got %q", packet.Workcells[0].Status)
+		}
+		if !strings.Contains(packet.Workcells[0].Summary, `forbidden pattern "ERROR" found`) {
+			t.Fatalf("unexpected failure summary: %q", packet.Workcells[0].Summary)
+		}
+	})
+
+	t.Run("low coverage", func(t *testing.T) {
+		t.Setenv("AO2_MOCK_STDOUT", "BUILD SUCCESSFUL\ntests passed\ncoverage: 75.3% of statements\n")
+		t.Setenv("AO2_MOCK_STDERR", "")
+
+		outPacket := filepath.Join(tmpDir, "packet_fail3.json")
+		code, _, stderr := runCLI("once", "--brief", briefPath, "--covenant", dummyCovBin, "--out", outPacket)
+		if code != 1 {
+			t.Fatalf("expected once to fail with exit code 1, got %d (stderr: %q)", code, stderr)
+		}
+
+		data, err := os.ReadFile(outPacket)
+		if err != nil {
+			t.Fatalf("failed to read packet: %v", err)
+		}
+		var packet factoryPacket
+		if err := json.Unmarshal(data, &packet); err != nil {
+			t.Fatalf("failed to parse packet: %v", err)
+		}
+
+		if packet.Status != "failed" {
+			t.Fatalf("expected packet status to be failed, got %q", packet.Status)
+		}
+		if packet.Workcells[0].Status != "failed" {
+			t.Fatalf("expected workcell status to be failed, got %q", packet.Workcells[0].Status)
+		}
+		if !strings.Contains(packet.Workcells[0].Summary, `coverage 75.3% is below minimum 80.0%`) {
+			t.Fatalf("unexpected failure summary: %q", packet.Workcells[0].Summary)
+		}
+	})
+}
+

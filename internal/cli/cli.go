@@ -171,9 +171,10 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runInspect(args[1:], stdout, stderr)
 	case "doctor":
 		return runDoctor(args[1:], stdout, stderr)
-	case "run", "once":
-		fmt.Fprintf(stderr, "forge %s: execution is disabled until the AO2 adapter slice; run `forge gate --plan <file> --covenant <covenant>` first\n", args[0])
-		return 2
+	case "run":
+		return runRun(args[1:], stdout, stderr)
+	case "once":
+		return runOnce(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n\n", args[0])
 		printHelp(stderr)
@@ -188,6 +189,8 @@ Usage:
   forge --help
   forge plan --brief <factory-brief.json> [--out <factory-plan.json>]
   forge gate --plan <factory-plan.json> --covenant <path-to-covenant-or-config> [--out <gate-result.json>]
+  forge run --plan <factory-plan.json> --gate-result <gate-result.json> [--out <factory-packet.json>]
+  forge once --brief <factory-brief.json> --covenant <path-to-covenant-or-config> [--out <factory-packet.json>]
   forge inspect --packet <factory-packet.json>
   forge doctor --foundation <foundation-baseline.json> [--json]
 
@@ -196,10 +199,8 @@ Factory terms:
   workcell        bounded unit of factory work with dependencies and evidence
   factory packet  operator-ready JSON summary of plan, gates, evidence, and next actions
 
-Slice 0.3 status:
-  planning, live Covenant gate adapter, and packet inspection are enabled.
-  execution remains disabled until the AO2 adapter and evidence router slices
-  are implemented.
+Slice 0.4 status:
+  planning, live Covenant gate adapter, packet inspection, and dry-run execution are enabled.
 `)
 }
 
@@ -986,4 +987,656 @@ func truncateCommit(s string, limit int) string {
 		return s[:limit]
 	}
 	return s
+}
+
+type ao2RunSpec struct {
+	APIVersion string         `json:"apiVersion"`
+	Kind       string         `json:"kind"`
+	Metadata   runMetadata    `json:"metadata"`
+	Spec       runSpecDetails `json:"spec"`
+}
+
+type runMetadata struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+type runSpecDetails struct {
+	Source        runSource     `json:"source"`
+	PlanKind      string        `json:"plan_kind"`
+	Goal          string        `json:"goal"`
+	Target        runTarget     `json:"target"`
+	TrustBoundary trustBoundary `json:"trust_boundary"`
+	Tasks         []runTask     `json:"tasks"`
+}
+
+type runSource struct {
+	SchemaVersion string `json:"schema_version"`
+	PlanID        string `json:"plan_id"`
+}
+
+type runTarget struct {
+	RepoPath string `json:"repo_path"`
+}
+
+type trustBoundary struct {
+	ControlPlaneRole   string `json:"control_plane_role"`
+	MutatesAoArtifacts bool   `json:"mutates_ao_artifacts"`
+}
+
+type runTask struct {
+	ID        string   `json:"id"`
+	Kind      string   `json:"kind"`
+	Deps      []string `json:"deps"`
+	Rationale string   `json:"rationale"`
+}
+
+func mapWorkcellKind(k string) string {
+	switch k {
+	case "prepare":
+		return "create"
+	case "execute":
+		return "test"
+	case "verify", "close":
+		return "verify"
+	default:
+		return "verify"
+	}
+}
+
+func resolveAo2Binary() (string, error) {
+	if p := os.Getenv("AO2_PATH"); p != "" {
+		if _, err := os.Stat(p); err == nil {
+			return p, nil
+		}
+		return "", fmt.Errorf("AO2_PATH is set to %q but file does not exist", p)
+	}
+
+	if root, ok := findRepoRoot(); ok {
+		candidates := []string{
+			filepath.Join(root, "../ao2/target/release/ao2"),
+			filepath.Join(root, "../ao2/target/debug/ao2"),
+			filepath.Join(root, "../ao2/ao2"),
+		}
+		for _, c := range candidates {
+			if _, err := os.Stat(c); err == nil {
+				return c, nil
+			}
+		}
+	}
+
+	if p, err := exec.LookPath("ao2"); err == nil {
+		return p, nil
+	}
+
+	return "", fmt.Errorf("ao2 binary not found (checked AO2_PATH, sibling directory ../ao2, and PATH)")
+}
+
+func runRun(args []string, stdout, stderr io.Writer) int {
+	var planPath, gateResultPath, outPath string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--plan":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				fmt.Fprintln(stderr, "forge run: --plan requires a value")
+				return 2
+			}
+			planPath = args[i+1]
+			i++
+		case "--gate-result":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				fmt.Fprintln(stderr, "forge run: --gate-result requires a value")
+				return 2
+			}
+			gateResultPath = args[i+1]
+			i++
+		case "--out":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				fmt.Fprintln(stderr, "forge run: --out requires a value")
+				return 2
+			}
+			outPath = args[i+1]
+			i++
+		default:
+			fmt.Fprintf(stderr, "forge run: unexpected argument %s\n", args[i])
+			return 2
+		}
+	}
+
+	if planPath == "" {
+		fmt.Fprintln(stderr, "forge run: missing required --plan")
+		return 2
+	}
+	if gateResultPath == "" {
+		fmt.Fprintln(stderr, "forge run: missing required --gate-result")
+		return 2
+	}
+
+	plan, err := readPlan(planPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge run: read plan: %v\n", err)
+		return 1
+	}
+
+	// Helper function to write blocked packet when failing closed early
+	failClosedWithPacket := func(packetStatus string, workcellStatus string, explanation string, decisionID string, source string, isIndeterminate bool, evidence []struct {
+		Label         string `json:"label"`
+		SchemaVersion string `json:"schema_version"`
+		Status        string `json:"status"`
+		Path          string `json:"path"`
+		SHA256        string `json:"sha256"`
+	}) int {
+		packet := factoryPacket{
+			SchemaVersion: packetSchemaVersion,
+			Status:        packetStatus,
+		}
+		packet.Objective.Text = plan.Objective.Text
+		packet.Objective.Workspace = plan.Objective.Workspace
+		packet.Objective.ReleaseMode = plan.Objective.ReleaseMode
+		packet.FactoryPlan.PlanID = plan.PlanID
+		packet.FactoryPlan.WorkcellCount = len(plan.Workcells)
+		
+		decisionEnum := "deny"
+		if isIndeterminate {
+			decisionEnum = "requires_operator_approval"
+		}
+		packet.PolicyDecisions = []struct {
+			DecisionID  string `json:"decision_id"`
+			Target      string `json:"target"`
+			Decision    string `json:"decision"`
+			Explanation string `json:"explanation"`
+			Source      string `json:"source"`
+		}{
+			{
+				DecisionID:  decisionID,
+				Target:      "factory-plan",
+				Decision:    decisionEnum,
+				Explanation: explanation,
+				Source:      source,
+			},
+		}
+
+		packet.Workcells = make([]struct {
+			WorkcellID string   `json:"workcell_id"`
+			Kind       string   `json:"kind"`
+			Status     string   `json:"status"`
+			DependsOn  []string `json:"depends_on"`
+			AO2Run     string   `json:"ao2_run"`
+			Summary    string   `json:"summary"`
+		}, len(plan.Workcells))
+
+		for i, wc := range plan.Workcells {
+			packet.Workcells[i].WorkcellID = wc.WorkcellID
+			packet.Workcells[i].Kind = wc.Kind
+			packet.Workcells[i].Status = workcellStatus
+			packet.Workcells[i].DependsOn = cloneStrings(wc.DependsOn)
+			packet.Workcells[i].Summary = explanation
+		}
+
+		if evidence != nil {
+			packet.Evidence = evidence
+		} else {
+			packet.Evidence = []struct {
+				Label         string `json:"label"`
+				SchemaVersion string `json:"schema_version"`
+				Status        string `json:"status"`
+				Path          string `json:"path"`
+				SHA256        string `json:"sha256"`
+			}{}
+			// Attempt to include the plan file in evidence anyway if possible
+			if data, err := os.ReadFile(planPath); err == nil {
+				h := sha256.Sum256(data)
+				packet.Evidence = append(packet.Evidence, struct {
+					Label         string `json:"label"`
+					SchemaVersion string `json:"schema_version"`
+					Status        string `json:"status"`
+					Path          string `json:"path"`
+					SHA256        string `json:"sha256"`
+				}{
+					Label:         "factory plan",
+					SchemaVersion: planSchemaVersion,
+					Status:        "planned",
+					Path:          displayPath(planPath),
+					SHA256:        hex.EncodeToString(h[:]),
+				})
+			}
+		}
+
+		packet.TrustBoundary.LocalFirst = plan.Constraints.LocalFirst
+		packet.TrustBoundary.MutatesReleases = false
+		packet.TrustBoundary.StoresCredentials = false
+		packet.TrustBoundary.ControlPlaneApprovesWork = false
+
+		actionID := "revise-plan-or-stop"
+		if packetStatus == "blocked" {
+			actionID = "request-operator-approval"
+		}
+		packet.NextActions = []nextAction{
+			{
+				ActionID:    actionID,
+				Description: explanation,
+				Required:    true,
+			},
+		}
+
+		encoded, err := marshalIndented(packet)
+		if err != nil {
+			fmt.Fprintf(stderr, "forge run: encode packet: %v\n", err)
+			return 1
+		}
+
+		if outPath != "" {
+			if err := writeFile(outPath, encoded); err != nil {
+				fmt.Fprintf(stderr, "forge run: write packet: %v\n", err)
+				return 1
+			}
+			fmt.Fprintf(stdout, "factory_packet=%s\n", displayPath(outPath))
+		} else {
+			_, _ = stdout.Write(encoded)
+		}
+		return 1
+	}
+
+	gateData, err := os.ReadFile(gateResultPath)
+	if err != nil {
+		explanation := fmt.Sprintf("Gate result is unavailable or missing: %v", err)
+		return failClosedWithPacket("blocked", "blocked", explanation, "gate-missing", "ao-forge", true, nil)
+	}
+
+	var gate covenantGateResult
+	if err := json.Unmarshal(gateData, &gate); err != nil {
+		explanation := fmt.Sprintf("Gate result is malformed: %v", err)
+		return failClosedWithPacket("blocked", "blocked", explanation, "gate-malformed", "ao-forge", true, nil)
+	}
+
+	// Verify target plan ID matches
+	if gate.PlanID != plan.PlanID {
+		explanation := fmt.Sprintf("Gate result PlanID %q does not match plan PlanID %q", gate.PlanID, plan.PlanID)
+		return failClosedWithPacket("blocked", "blocked", explanation, "gate-plan-mismatch", "ao-forge", true, nil)
+	}
+
+	// Fail closed if gate result status is not allowed
+	if gate.Status != "allowed" {
+		packetStatus := "blocked"
+		workcellStatus := "blocked"
+		isIndet := true
+		if gate.Status == "denied" {
+			packetStatus = "denied"
+			workcellStatus = "denied"
+			isIndet = false
+		}
+		return failClosedWithPacket(packetStatus, workcellStatus, gate.Decision.Explanation, gate.Decision.DecisionID, gate.Decision.Source, isIndet, nil)
+	}
+
+	// Gate is allowed. Find and verify ao2 binary
+	ao2Path, err := resolveAo2Binary()
+	if err != nil {
+		explanation := fmt.Sprintf("AO2 binary is unavailable: %v", err)
+		return failClosedWithPacket("blocked", "blocked", explanation, "ao2-unavailable", "ao-forge", true, nil)
+	}
+
+	// Construct Ao2RunSpec
+	specTasks := make([]runTask, 0, len(plan.Workcells))
+	for _, wc := range plan.Workcells {
+		specTasks = append(specTasks, runTask{
+			ID:        wc.WorkcellID,
+			Kind:      mapWorkcellKind(wc.Kind),
+			Deps:      cloneStrings(wc.DependsOn),
+			Rationale: "ao-forge workcell " + wc.WorkcellID,
+		})
+	}
+
+	runSpec := ao2RunSpec{
+		APIVersion: "ao2.run/v1",
+		Kind:       "Run",
+		Metadata: runMetadata{
+			Name:        plan.PlanID,
+			Description: plan.Objective.Text,
+		},
+		Spec: runSpecDetails{
+			Source: runSource{
+				SchemaVersion: "ao2.sdd-plan.v1",
+				PlanID:        plan.PlanID,
+			},
+			PlanKind: "build",
+			Goal:     plan.Objective.Text,
+			Target: runTarget{
+				RepoPath: plan.Objective.Workspace,
+			},
+			TrustBoundary: trustBoundary{
+				ControlPlaneRole:   "read_only_observer",
+				MutatesAoArtifacts: false,
+			},
+			Tasks: specTasks,
+		},
+	}
+
+	specData, err := marshalIndented(runSpec)
+	if err != nil {
+		explanation := fmt.Sprintf("Failed to marshal ao2 run spec: %v", err)
+		return failClosedWithPacket("blocked", "blocked", explanation, "spec-generation-failed", "ao-forge", true, nil)
+	}
+
+	tempSpec, err := os.CreateTemp("", "ao2-runspec-*.json")
+	if err != nil {
+		explanation := fmt.Sprintf("Failed to create temporary spec file: %v", err)
+		return failClosedWithPacket("blocked", "blocked", explanation, "spec-temp-failed", "ao-forge", true, nil)
+	}
+	defer os.Remove(tempSpec.Name())
+
+	if _, err := tempSpec.Write(specData); err != nil {
+		tempSpec.Close()
+		explanation := fmt.Sprintf("Failed to write temporary spec file: %v", err)
+		return failClosedWithPacket("blocked", "blocked", explanation, "spec-write-failed", "ao-forge", true, nil)
+	}
+	tempSpec.Close()
+
+	// Execute ao2 run --dry-run
+	cmd := exec.Command(ao2Path, "run", "--dry-run", "--spec", tempSpec.Name())
+	var stdoutBuf, stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+
+	if err := cmd.Run(); err != nil {
+		explanation := fmt.Sprintf("ao2 run failed: %v (stderr: %q)", err, stderrBuf.String())
+		return failClosedWithPacket("failed", "failed", explanation, "ao2-execution-failed", "ao-forge", false, nil)
+	}
+
+	stdoutStr := stdoutBuf.String()
+	if !strings.Contains(stdoutStr, "status=dry_run_accepted") {
+		explanation := fmt.Sprintf("ao2 run output did not confirm acceptance: %q (stderr: %q)", stdoutStr, stderrBuf.String())
+		return failClosedWithPacket("failed", "failed", explanation, "ao2-not-accepted", "ao-forge", false, nil)
+	}
+
+	// Parse dry-run output and write ao2-run-summary.json evidence
+	parsedSummary := parseAo2DryRunOutput(stdoutStr)
+	summaryData, err := marshalIndented(parsedSummary)
+	if err != nil {
+		explanation := fmt.Sprintf("Failed to marshal ao2 run summary: %v", err)
+		return failClosedWithPacket("failed", "failed", explanation, "summary-marshal-failed", "ao-forge", false, nil)
+	}
+
+	summaryDir := "."
+	if outPath != "" {
+		summaryDir = filepath.Dir(outPath)
+	}
+	summaryPath := filepath.Join(summaryDir, "ao2-run-summary.json")
+	if err := writeFile(summaryPath, summaryData); err != nil {
+		explanation := fmt.Sprintf("Failed to write ao2 run summary: %v", err)
+		return failClosedWithPacket("failed", "failed", explanation, "summary-write-failed", "ao-forge", false, nil)
+	}
+
+	// Prepare final evidence list
+	var evidenceList []struct {
+		Label         string `json:"label"`
+		SchemaVersion string `json:"schema_version"`
+		Status        string `json:"status"`
+		Path          string `json:"path"`
+		SHA256        string `json:"sha256"`
+	}
+
+	// 1. Factory Plan
+	if pData, err := os.ReadFile(planPath); err == nil {
+		sum := sha256.Sum256(pData)
+		evidenceList = append(evidenceList, struct {
+			Label         string `json:"label"`
+			SchemaVersion string `json:"schema_version"`
+			Status        string `json:"status"`
+			Path          string `json:"path"`
+			SHA256        string `json:"sha256"`
+		}{
+			Label:         "factory plan",
+			SchemaVersion: planSchemaVersion,
+			Status:        "planned",
+			Path:          displayPath(planPath),
+			SHA256:        hex.EncodeToString(sum[:]),
+		})
+	}
+
+	// 2. Covenant Gate Result
+	if gData, err := os.ReadFile(gateResultPath); err == nil {
+		sum := sha256.Sum256(gData)
+		evidenceList = append(evidenceList, struct {
+			Label         string `json:"label"`
+			SchemaVersion string `json:"schema_version"`
+			Status        string `json:"status"`
+			Path          string `json:"path"`
+			SHA256        string `json:"sha256"`
+		}{
+			Label:         "covenant policy decision",
+			SchemaVersion: gateResultSchemaVersion,
+			Status:        gate.Status,
+			Path:          displayPath(gateResultPath),
+			SHA256:        hex.EncodeToString(sum[:]),
+		})
+	}
+
+	// 3. AO2 Run Summary
+	if sData, err := os.ReadFile(summaryPath); err == nil {
+		sum := sha256.Sum256(sData)
+		evidenceList = append(evidenceList, struct {
+			Label         string `json:"label"`
+			SchemaVersion string `json:"schema_version"`
+			Status        string `json:"status"`
+			Path          string `json:"path"`
+			SHA256        string `json:"sha256"`
+		}{
+			Label:         "ao2 run summary",
+			SchemaVersion: "ao2.run/v1",
+			Status:        "dry_run_accepted",
+			Path:          displayPath(summaryPath),
+			SHA256:        hex.EncodeToString(sum[:]),
+		})
+	}
+
+	// Construct and write final passed factory packet
+	packet := factoryPacket{
+		SchemaVersion: packetSchemaVersion,
+		Status:        "passed",
+	}
+	packet.Objective.Text = plan.Objective.Text
+	packet.Objective.Workspace = plan.Objective.Workspace
+	packet.Objective.ReleaseMode = plan.Objective.ReleaseMode
+	packet.FactoryPlan.PlanID = plan.PlanID
+	packet.FactoryPlan.WorkcellCount = len(plan.Workcells)
+
+	packet.PolicyDecisions = []struct {
+		DecisionID  string `json:"decision_id"`
+		Target      string `json:"target"`
+		Decision    string `json:"decision"`
+		Explanation string `json:"explanation"`
+		Source      string `json:"source"`
+	}{
+		{
+			DecisionID:  gate.Decision.DecisionID,
+			Target:      "factory-plan",
+			Decision:    "allow",
+			Explanation: gate.Decision.Explanation,
+			Source:      gate.Decision.Source,
+		},
+	}
+
+	packet.Workcells = make([]struct {
+		WorkcellID string   `json:"workcell_id"`
+		Kind       string   `json:"kind"`
+		Status     string   `json:"status"`
+		DependsOn  []string `json:"depends_on"`
+		AO2Run     string   `json:"ao2_run"`
+		Summary    string   `json:"summary"`
+	}, len(plan.Workcells))
+
+	for i, wc := range plan.Workcells {
+		packet.Workcells[i].WorkcellID = wc.WorkcellID
+		packet.Workcells[i].Kind = wc.Kind
+		packet.Workcells[i].Status = "passed"
+		packet.Workcells[i].DependsOn = cloneStrings(wc.DependsOn)
+		packet.Workcells[i].AO2Run = "dry-run"
+		packet.Workcells[i].Summary = "Dry-run accepted by ao2"
+	}
+
+	packet.Evidence = evidenceList
+
+	packet.TrustBoundary.LocalFirst = plan.Constraints.LocalFirst
+	packet.TrustBoundary.MutatesReleases = false
+	packet.TrustBoundary.StoresCredentials = false
+	packet.TrustBoundary.ControlPlaneApprovesWork = false
+
+	packet.NextActions = []nextAction{
+		{
+			ActionID:    "close-factory-packet",
+			Description: "Review the factory packet and dry-run evidence.",
+			Required:    false,
+		},
+	}
+
+	packetData, err := marshalIndented(packet)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge run: encode final packet: %v\n", err)
+		return 1
+	}
+
+	if outPath != "" {
+		if err := writeFile(outPath, packetData); err != nil {
+			fmt.Fprintf(stderr, "forge run: write final packet: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "factory_packet=%s\n", displayPath(outPath))
+	} else {
+		_, _ = stdout.Write(packetData)
+	}
+
+	return 0
+}
+
+func runOnce(args []string, stdout, stderr io.Writer) int {
+	var briefPath, covenantPath, outPath string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--brief":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				fmt.Fprintln(stderr, "forge once: --brief requires a value")
+				return 2
+			}
+			briefPath = args[i+1]
+			i++
+		case "--covenant":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				fmt.Fprintln(stderr, "forge once: --covenant requires a value")
+				return 2
+			}
+			covenantPath = args[i+1]
+			i++
+		case "--out":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				fmt.Fprintln(stderr, "forge once: --out requires a value")
+				return 2
+			}
+			outPath = args[i+1]
+			i++
+		default:
+			fmt.Fprintf(stderr, "forge once: unexpected argument %s\n", args[i])
+			return 2
+		}
+	}
+
+	if briefPath == "" {
+		fmt.Fprintln(stderr, "forge once: missing required --brief")
+		return 2
+	}
+	if covenantPath == "" {
+		fmt.Fprintln(stderr, "forge once: missing required --covenant")
+		return 2
+	}
+
+	// 1. Generate plan from brief
+	brief, canonical, err := readBrief(briefPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge once: %v\n", err)
+		return 1
+	}
+	plan := buildPlan(brief, canonical)
+	if err := validatePlan(plan); err != nil {
+		fmt.Fprintf(stderr, "forge once: generated plan failed contract validation: %v\n", err)
+		return 1
+	}
+	planData, err := marshalIndented(plan)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge once: encode plan: %v\n", err)
+		return 1
+	}
+
+	tempPlan, err := os.CreateTemp("", "once-plan-*.json")
+	if err != nil {
+		fmt.Fprintf(stderr, "forge once: create temporary plan file: %v\n", err)
+		return 1
+	}
+	defer os.Remove(tempPlan.Name())
+	if _, err := tempPlan.Write(planData); err != nil {
+		tempPlan.Close()
+		fmt.Fprintf(stderr, "forge once: write temporary plan file: %v\n", err)
+		return 1
+	}
+	tempPlan.Close()
+
+	// 2. Evaluate policy gate
+	var gateStdout, gateStderr bytes.Buffer
+	gateCode := runGate([]string{"--plan", tempPlan.Name(), "--covenant", covenantPath}, &gateStdout, &gateStderr)
+
+	// Since we want to fail closed if gate fails, but write a valid packet summary, we write gate output to temp file
+	tempGate, err := os.CreateTemp("", "once-gate-*.json")
+	if err != nil {
+		fmt.Fprintf(stderr, "forge once: create temporary gate file: %v\n", err)
+		return 1
+	}
+	defer os.Remove(tempGate.Name())
+	if _, err := tempGate.Write(gateStdout.Bytes()); err != nil {
+		tempGate.Close()
+		fmt.Fprintf(stderr, "forge once: write temporary gate file: %v\n", err)
+		return 1
+	}
+	tempGate.Close()
+
+	// 3. Execute runRun with our temp plan and gate result files
+	runArgs := []string{"--plan", tempPlan.Name(), "--gate-result", tempGate.Name()}
+	if outPath != "" {
+		runArgs = append(runArgs, "--out", outPath)
+	}
+
+	runCode := runRun(runArgs, stdout, stderr)
+	if gateCode != 0 && runCode == 0 {
+		return gateCode
+	}
+	return runCode
+}
+
+func parseAo2DryRunOutput(output string) map[string]any {
+	result := make(map[string]any)
+	result["schema_version"] = "ao2.run/v1"
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := parts[0]
+		val := parts[1]
+		switch key {
+		case "task_count":
+			var count int
+			if _, err := fmt.Sscanf(val, "%d", &count); err == nil {
+				result[key] = count
+			} else {
+				result[key] = val
+			}
+		case "mutates_ao_artifacts", "factory_v3_drives_workflow":
+			result[key] = (val == "true")
+		default:
+			result[key] = val
+		}
+	}
+	return result
 }

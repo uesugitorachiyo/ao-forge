@@ -3555,3 +3555,456 @@ func main() {
 	})
 }
 
+func compileTestAo2(t *testing.T, tmpDir string, tracePath string) string {
+	t.Helper()
+	dummySrc := filepath.Join(tmpDir, "dummy_ao2.go")
+	dummyBin := filepath.Join(tmpDir, "dummy_ao2")
+	if os.PathSeparator == '\\' {
+		dummyBin += ".exe"
+	}
+	srcContent := fmt.Sprintf(`package main
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+)
+
+type runSpecDetails struct {
+	Tasks []struct {
+		ID string "json:\"id\""
+	} "json:\"tasks\""
+}
+
+type ao2RunSpec struct {
+	Spec runSpecDetails "json:\"spec\""
+}
+
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "run" {
+		var specPath string
+		for i, arg := range os.Args {
+			if arg == "--spec" && i+1 < len(os.Args) {
+				specPath = os.Args[i+1]
+			}
+		}
+		if specPath != "" {
+			data, err := os.ReadFile(specPath)
+			if err == nil {
+				var spec ao2RunSpec
+				if err := json.Unmarshal(data, &spec); err == nil && len(spec.Spec.Tasks) > 0 {
+					taskID := spec.Spec.Tasks[0].ID
+					f, err := os.OpenFile(%q, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+					if err == nil {
+						fmt.Fprintln(f, taskID)
+						f.Close()
+					}
+				}
+			}
+		}
+
+		hasDryRun := false
+		for _, arg := range os.Args {
+			if arg == "--dry-run" {
+				hasDryRun = true
+			}
+		}
+		if hasDryRun {
+			fmt.Println("status=dry_run_accepted")
+		} else {
+			fmt.Println("status=governed_run_started")
+		}
+		fmt.Println("schema_version=ao2.run/v1")
+		fmt.Println("plan_id=forge-plan-efedbfb309b1")
+		fmt.Println("task_count=1")
+		fmt.Println("target_repo=fixtures/discount-service")
+		fmt.Println("control_plane_role=read_only_observer")
+		fmt.Println("mutates_ao_artifacts=false")
+		fmt.Println("factory_v3_drives_workflow=false")
+		fmt.Println("spec_sha256=abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd")
+		os.Exit(0)
+	}
+	os.Exit(1)
+}`, tracePath)
+	if err := os.WriteFile(dummySrc, []byte(srcContent), 0644); err != nil {
+		t.Fatalf("write dummy ao2 src: %v", err)
+	}
+	cmd := exec.Command("go", "build", "-o", dummyBin, dummySrc)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy ao2: %v (output: %q)", err, string(out))
+	}
+	return dummyBin
+}
+
+func TestForgeResumeSuccess(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// 1. Set up working directory inside tmpDir to avoid polluting local files
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer func() {
+		_ = os.Chdir(oldWd)
+	}()
+
+	// 2. Compile dummy ao2 binary with trace logging
+	traceFile := filepath.Join(tmpDir, "trace.log")
+	dummyBin := compileTestAo2(t, tmpDir, traceFile)
+	t.Setenv("AO2_PATH", dummyBin)
+
+	// 3. Initialize .forge directory structure
+	if code, _, stderr := runCLI("init"); code != 0 {
+		t.Fatalf("forge init failed with code %d: %s", code, stderr)
+	}
+
+	runID := "forge-plan-efedbfb309b1"
+	runDir := filepath.Join(".forge", "runs", runID)
+	if err := os.MkdirAll(runDir, 0755); err != nil {
+		t.Fatalf("mkdir runs/%s: %v", runID, err)
+	}
+
+	// 4. Write mock files simulating a failed run where wc1 passed and wc2 failed
+	planPath := filepath.Join(runDir, "plan.json")
+	planContent := `{
+		"schema_version": "ao.forge.factory-plan.v0.1",
+		"plan_id": "forge-plan-efedbfb309b1",
+		"objective": {
+			"text": "test resume",
+			"workspace": "test-ws",
+			"release_mode": false
+		},
+		"constraints": {
+			"local_first": true,
+			"allow_network": false,
+			"allow_release_mutation": false,
+			"require_control_plane_readback": false
+		},
+		"execution_enabled": false,
+		"policy_gate": {
+			"required": true,
+			"status": "allowed",
+			"explanation": "gate is allowed"
+		},
+		"workcells": [
+			{
+				"workcell_id": "wc1",
+				"kind": "prepare",
+				"status": "planned",
+				"depends_on": []
+			},
+			{
+				"workcell_id": "wc2",
+				"kind": "execute",
+				"status": "planned",
+				"depends_on": ["wc1"]
+			}
+		],
+		"expected_evidence": ["test"],
+		"next_actions": [
+			{"action_id": "test", "description": "test", "required": true}
+		]
+	}`
+	if err := os.WriteFile(planPath, []byte(planContent), 0644); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+
+	gatePath := filepath.Join(runDir, "gate_result.json")
+	gateContent := `{
+		"schema_version": "covenant.version-result.v1",
+		"status": "allowed",
+		"plan_id": "forge-plan-efedbfb309b1",
+		"execution_enabled": true,
+		"decision": {
+			"schema_version": "covenant.decision.v1",
+			"decision_id": "test-decision",
+			"target_plan_id": "forge-plan-efedbfb309b1",
+			"decision": "allow",
+			"explanation": "test allowed",
+			"source": "test-covenant"
+		}
+	}`
+	if err := os.WriteFile(gatePath, []byte(gateContent), 0644); err != nil {
+		t.Fatalf("write gate result: %v", err)
+	}
+
+	packetPath := filepath.Join(runDir, "factory-packet.json")
+	packetContent := `{
+		"schema_version": "ao.forge.factory-packet.v0.1",
+		"status": "failed",
+		"objective": {
+			"text": "test resume",
+			"workspace": "test-ws",
+			"release_mode": false
+		},
+		"factory_plan": {
+			"plan_id": "forge-plan-efedbfb309b1",
+			"workcell_count": 2
+		},
+		"workcells": [
+			{
+				"workcell_id": "wc1",
+				"kind": "prepare",
+				"status": "passed",
+				"depends_on": [],
+				"ao2_run": "dry-run",
+				"summary": "Dry-run accepted by ao2"
+			},
+			{
+				"workcell_id": "wc2",
+				"kind": "execute",
+				"status": "failed",
+				"depends_on": ["wc1"],
+				"ao2_run": "none",
+				"summary": "some error"
+			}
+		]
+	}`
+	if err := os.WriteFile(packetPath, []byte(packetContent), 0644); err != nil {
+		t.Fatalf("write packet: %v", err)
+	}
+
+	wc1EvidencePath := filepath.Join(runDir, "ao2-wc-wc1-evidence.json")
+	wc1EvidenceContent := `{
+		"schema_version": "ao2.workcell-evidence.v1",
+		"workcell_id": "wc1",
+		"status": "passed",
+		"stdout": "wc1 stdout",
+		"stderr": "wc1 stderr",
+		"spec_sha256": "wc1_spec_sha"
+	}`
+	if err := os.WriteFile(wc1EvidencePath, []byte(wc1EvidenceContent), 0644); err != nil {
+		t.Fatalf("write wc1 evidence: %v", err)
+	}
+
+	// 5. Run resume command
+	outPath := filepath.Join(tmpDir, "final-packet.json")
+	code, stdout, stderr := runCLI("resume", "--run", runID, "--out", outPath)
+	if code != 0 {
+		t.Fatalf("expected resume to succeed, got %d. stderr: %s, stdout: %s", code, stderr, stdout)
+	}
+
+	// 6. Verify only wc2 was executed
+	traceData, err := os.ReadFile(traceFile)
+	if err != nil {
+		t.Fatalf("read trace file: %v", err)
+	}
+	executedTasks := strings.Fields(string(traceData))
+	if len(executedTasks) != 1 {
+		t.Fatalf("expected exactly 1 task to execute, executed: %v", executedTasks)
+	}
+	if executedTasks[0] != "wc2" {
+		t.Fatalf("expected wc2 to execute, got: %s", executedTasks[0])
+	}
+
+	// 7. Verify the final packet has both wc1 and wc2 as passed, and preserves wc1 evidence
+	finalData, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read final packet: %v", err)
+	}
+	var finalPacket factoryPacket
+	if err := json.Unmarshal(finalData, &finalPacket); err != nil {
+		t.Fatalf("unmarshal final packet: %v", err)
+	}
+
+	if finalPacket.Status != "passed" {
+		t.Fatalf("expected final packet status to be passed, got %s", finalPacket.Status)
+	}
+	if len(finalPacket.Workcells) != 2 {
+		t.Fatalf("expected 2 workcells in final packet, got %d", len(finalPacket.Workcells))
+	}
+	if finalPacket.Workcells[0].WorkcellID != "wc1" || finalPacket.Workcells[0].Status != "passed" {
+		t.Fatalf("expected wc1 to be passed, got %+v", finalPacket.Workcells[0])
+	}
+	if finalPacket.Workcells[1].WorkcellID != "wc2" || finalPacket.Workcells[1].Status != "passed" {
+		t.Fatalf("expected wc2 to be passed, got %+v", finalPacket.Workcells[1])
+	}
+
+	// Make sure evidence files are archived in the runs directory
+	wc1ArchivedEv := filepath.Join(runDir, "ao2-wc-wc1-evidence.json")
+	wc2ArchivedEv := filepath.Join(runDir, "ao2-wc-wc2-evidence.json")
+	if _, err := os.Stat(wc1ArchivedEv); err != nil {
+		t.Fatalf("expected wc1 evidence to exist in run archive: %v", err)
+	}
+	if _, err := os.Stat(wc2ArchivedEv); err != nil {
+		t.Fatalf("expected wc2 evidence to exist in run archive: %v", err)
+	}
+}
+
+func TestForgeResumeFailure(t *testing.T) {
+	// 1. Missing --run option
+	t.Run("missing --run option", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		oldWd, err := os.Getwd()
+		if err != nil {
+			t.Fatalf("getwd: %v", err)
+		}
+		if err := os.Chdir(tmpDir); err != nil {
+			t.Fatalf("chdir: %v", err)
+		}
+		defer func() {
+			_ = os.Chdir(oldWd)
+		}()
+
+		// Running forge resume without --run should exit with code 2
+		code, _, stderr := runCLI("resume")
+		if code != 2 {
+			t.Fatalf("expected exit code 2 when --run is missing, got %d. stderr: %q", code, stderr)
+		}
+		if !strings.Contains(stderr, "missing required --run") {
+			t.Fatalf("expected error message to contain 'missing required --run', got %q", stderr)
+		}
+	})
+
+	// 2. Missing .forge directory
+	t.Run("missing .forge directory", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		oldWd, err := os.Getwd()
+		if err != nil {
+			t.Fatalf("getwd: %v", err)
+		}
+		if err := os.Chdir(tmpDir); err != nil {
+			t.Fatalf("chdir: %v", err)
+		}
+		defer func() {
+			_ = os.Chdir(oldWd)
+		}()
+
+		// Running forge resume with --run but no .forge should exit with code 1
+		code, _, stderr := runCLI("resume", "--run", "forge-plan-efedbfb309b1")
+		if code != 1 {
+			t.Fatalf("expected exit code 1 when .forge is missing, got %d. stderr: %q", code, stderr)
+		}
+		if !strings.Contains(stderr, "local state directory .forge not found") {
+			t.Fatalf("expected error message to contain 'local state directory .forge not found', got %q", stderr)
+		}
+	})
+
+	// 3. Missing run directory
+	t.Run("missing run directory", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		oldWd, err := os.Getwd()
+		if err != nil {
+			t.Fatalf("getwd: %v", err)
+		}
+		if err := os.Chdir(tmpDir); err != nil {
+			t.Fatalf("chdir: %v", err)
+		}
+		defer func() {
+			_ = os.Chdir(oldWd)
+		}()
+
+		// Create .forge but not the run directory
+		if err := os.MkdirAll(filepath.Join(".forge", "runs"), 0755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+
+		code, _, stderr := runCLI("resume", "--run", "forge-plan-efedbfb309b1")
+		if code != 1 {
+			t.Fatalf("expected exit code 1 when run directory is missing, got %d. stderr: %q", code, stderr)
+		}
+		if !strings.Contains(stderr, `run ID "forge-plan-efedbfb309b1" not found`) {
+			t.Fatalf("expected error message to contain 'run ID \"forge-plan-efedbfb309b1\" not found', got %q", stderr)
+		}
+	})
+
+	// 4. Missing plan.json or gate_result.json
+	t.Run("missing plan.json", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		oldWd, err := os.Getwd()
+		if err != nil {
+			t.Fatalf("getwd: %v", err)
+		}
+		if err := os.Chdir(tmpDir); err != nil {
+			t.Fatalf("chdir: %v", err)
+		}
+		defer func() {
+			_ = os.Chdir(oldWd)
+		}()
+
+		runID := "forge-plan-efedbfb309b1"
+		runDir := filepath.Join(".forge", "runs", runID)
+		if err := os.MkdirAll(runDir, 0755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+
+		// Leave plan.json missing
+		code, _, stderr := runCLI("resume", "--run", runID)
+		if code != 1 {
+			t.Fatalf("expected exit code 1 when plan.json is missing, got %d. stderr: %q", code, stderr)
+		}
+		if !strings.Contains(stderr, "plan.json not found in run directory") {
+			t.Fatalf("expected error message to contain 'plan.json not found in run directory', got %q", stderr)
+		}
+	})
+
+	t.Run("missing gate_result.json", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		oldWd, err := os.Getwd()
+		if err != nil {
+			t.Fatalf("getwd: %v", err)
+		}
+		if err := os.Chdir(tmpDir); err != nil {
+			t.Fatalf("chdir: %v", err)
+		}
+		defer func() {
+			_ = os.Chdir(oldWd)
+		}()
+
+		runID := "forge-plan-efedbfb309b1"
+		runDir := filepath.Join(".forge", "runs", runID)
+		if err := os.MkdirAll(runDir, 0755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+
+		// Write a valid plan.json but leave gate_result.json missing
+		planPath := filepath.Join(runDir, "plan.json")
+		planContent := `{
+			"schema_version": "ao.forge.factory-plan.v0.1",
+			"plan_id": "forge-plan-efedbfb309b1",
+			"objective": {
+				"text": "test resume failure",
+				"workspace": "test-ws",
+				"release_mode": false
+			},
+			"constraints": {
+				"local_first": true,
+				"allow_network": false,
+				"allow_release_mutation": false,
+				"require_control_plane_readback": false
+			},
+			"execution_enabled": false,
+			"policy_gate": {
+				"required": true,
+				"status": "allowed",
+				"explanation": "gate is allowed"
+			},
+			"workcells": [
+				{
+					"workcell_id": "wc1",
+					"kind": "prepare",
+					"status": "planned",
+					"depends_on": []
+				}
+			],
+			"expected_evidence": ["test"],
+			"next_actions": [
+				{"action_id": "test", "description": "test", "required": true}
+			]
+		}`
+		if err := os.WriteFile(planPath, []byte(planContent), 0644); err != nil {
+			t.Fatalf("write plan: %v", err)
+		}
+
+		code, _, stderr := runCLI("resume", "--run", runID)
+		if code != 1 {
+			t.Fatalf("expected exit code 1 when gate_result.json is missing, got %d. stderr: %q", code, stderr)
+		}
+		if !strings.Contains(stderr, "gate_result.json not found in run directory") {
+			t.Fatalf("expected error message to contain 'gate_result.json not found in run directory', got %q", stderr)
+		}
+	})
+}
+

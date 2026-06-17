@@ -1372,24 +1372,80 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 		return failClosedWithPacket("blocked", "blocked", explanation, "ao2-unavailable", "ao-forge", true, nil)
 	}
 
-	var runErr error
-	schedulerStates, runErr = runWorkcellsConcurrent(context.Background(), plan, ao2Path, stdout, stderr)
-	if runErr != nil {
-		explanation := fmt.Sprintf("Workcell execution failed: %v", runErr)
-		return failClosedWithPacket("failed", "failed", explanation, "ao2-execution-failed", "ao-forge", false, nil)
+	// Construct the overall Ao2RunSpec to compute its spec_sha256 dynamically
+	specTasks := make([]runTask, 0, len(plan.Workcells))
+	for _, wc := range plan.Workcells {
+		specTasks = append(specTasks, runTask{
+			ID:        wc.WorkcellID,
+			Kind:      mapWorkcellKind(wc.Kind),
+			Deps:      cloneStrings(wc.DependsOn),
+			Rationale: "ao-forge workcell " + wc.WorkcellID,
+		})
 	}
 
-	// Build a template run summary to preserve the expected ao2-run-summary.json evidence
+	overallSpec := ao2RunSpec{
+		APIVersion: "ao2.run/v1",
+		Kind:       "Run",
+		Metadata: runMetadata{
+			Name:        plan.PlanID,
+			Description: plan.Objective.Text,
+		},
+		Spec: runSpecDetails{
+			Source: runSource{
+				SchemaVersion: "ao2.sdd-plan.v1",
+				PlanID:        plan.PlanID,
+			},
+			PlanKind: "build",
+			Goal:     plan.Objective.Text,
+			Target: runTarget{
+				RepoPath: plan.Objective.Workspace,
+			},
+			TrustBoundary: trustBoundary{
+				ControlPlaneRole:   "read_only_observer",
+				MutatesAoArtifacts: false,
+			},
+			Tasks: specTasks,
+		},
+	}
+
+	overallSpecData, err := json.Marshal(overallSpec)
+	if err != nil {
+		explanation := fmt.Sprintf("Failed to marshal overall ao2 run spec: %v", err)
+		return failClosedWithPacket("failed", "failed", explanation, "spec-generation-failed", "ao-forge", false, nil)
+	}
+	overallSpecSum := sha256.Sum256(overallSpecData)
+	overallSpecSHA256 := hex.EncodeToString(overallSpecSum[:])
+
+	summaryDir := "."
+	if outPath != "" {
+		summaryDir = filepath.Dir(outPath)
+	}
+
+	// 1. Run Workcells
+	var runErr error
+	schedulerStates, runErr = runWorkcellsConcurrent(context.Background(), plan, ao2Path, stdout, stderr)
+
+	// Determine status
+	runSummaryStatus := "dry_run_accepted"
+	packetStatus := "passed"
+	workcellStatus := "passed"
+	if runErr != nil {
+		runSummaryStatus = "dry_run_failed"
+		packetStatus = "failed"
+		workcellStatus = "failed"
+	}
+
+	// Build run summary
 	parsedSummary := map[string]any{
 		"schema_version":             "ao2.run/v1",
-		"status":                     "dry_run_accepted",
+		"status":                     runSummaryStatus,
 		"plan_id":                    plan.PlanID,
 		"task_count":                 len(plan.Workcells),
 		"target_repo":                plan.Objective.Workspace,
 		"control_plane_role":         "read_only_observer",
 		"mutates_ao_artifacts":       false,
 		"factory_v3_drives_workflow": false,
-		"spec_sha256":                "abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+		"spec_sha256":                overallSpecSHA256,
 	}
 
 	summaryData, err := marshalIndented(parsedSummary)
@@ -1398,10 +1454,6 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 		return failClosedWithPacket("failed", "failed", explanation, "summary-marshal-failed", "ao-forge", false, nil)
 	}
 
-	summaryDir := "."
-	if outPath != "" {
-		summaryDir = filepath.Dir(outPath)
-	}
 	summaryPath := filepath.Join(summaryDir, "ao2-run-summary.json")
 	if err := writeFile(summaryPath, summaryData); err != nil {
 		explanation := fmt.Sprintf("Failed to write ao2 run summary: %v", err)
@@ -1465,10 +1517,54 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 		}{
 			Label:         "ao2 run summary",
 			SchemaVersion: "ao2.run/v1",
-			Status:        "dry_run_accepted",
+			Status:        runSummaryStatus,
 			Path:          displayPath(summaryPath),
 			SHA256:        hex.EncodeToString(sum[:]),
 		})
+	}
+
+	// 4. Individual Workcell Evidence
+	for _, state := range schedulerStates {
+		if state.Status == "passed" || state.Status == "failed" {
+			wcEv := map[string]any{
+				"schema_version": "ao2.workcell-evidence.v1",
+				"workcell_id":    state.ID,
+				"status":         state.Status,
+				"stdout":         state.Stdout,
+				"stderr":         state.Stderr,
+				"spec_sha256":    state.SpecSHA256,
+			}
+			wcEvData, err := marshalIndented(wcEv)
+			if err != nil {
+				explanation := fmt.Sprintf("Failed to marshal workcell %s evidence: %v", state.ID, err)
+				return failClosedWithPacket("failed", "failed", explanation, "wc-evidence-marshal-failed", "ao-forge", false, evidenceList)
+			}
+			wcEvPath := filepath.Join(summaryDir, fmt.Sprintf("ao2-wc-%s-evidence.json", state.ID))
+			if err := writeFile(wcEvPath, wcEvData); err != nil {
+				explanation := fmt.Sprintf("Failed to write workcell %s evidence: %v", state.ID, err)
+				return failClosedWithPacket("failed", "failed", explanation, "wc-evidence-write-failed", "ao-forge", false, evidenceList)
+			}
+			sum := sha256.Sum256(wcEvData)
+			evidenceList = append(evidenceList, struct {
+				Label         string `json:"label"`
+				SchemaVersion string `json:"schema_version"`
+				Status        string `json:"status"`
+				Path          string `json:"path"`
+				SHA256        string `json:"sha256"`
+			}{
+				Label:         fmt.Sprintf("workcell %s evidence", state.ID),
+				SchemaVersion: "ao2.workcell-evidence.v1",
+				Status:        state.Status,
+				Path:          displayPath(wcEvPath),
+				SHA256:        hex.EncodeToString(sum[:]),
+			})
+		}
+	}
+
+	// If scheduler failed, fail closed now with all collected evidence
+	if runErr != nil {
+		explanation := fmt.Sprintf("Workcell execution failed: %v", runErr)
+		return failClosedWithPacket(packetStatus, workcellStatus, explanation, "ao2-execution-failed", "ao-forge", false, evidenceList)
 	}
 
 	// Control plane readback if required
@@ -2198,11 +2294,14 @@ func writeMarkdownPacket(outPath string, packet factoryPacket) error {
 }
 
 type workcellRunState struct {
-	ID        string
-	Kind      string
-	DependsOn []string
-	Status    string // "pending", "running", "passed", "failed", "skipped"
-	Summary   string
+	ID         string
+	Kind       string
+	DependsOn  []string
+	Status     string // "pending", "running", "passed", "failed", "skipped"
+	Summary    string
+	Stdout     string
+	Stderr     string
+	SpecSHA256 string
 }
 
 func runWorkcellsConcurrent(ctx context.Context, plan factoryPlan, ao2Path string, stdout, stderr io.Writer) ([]workcellRunState, error) {
@@ -2369,6 +2468,9 @@ func executeSingleWorkcell(ctx context.Context, plan factoryPlan, wcState *workc
 		return fmt.Errorf("failed to marshal ao2 run spec for %s: %v", wcState.ID, err)
 	}
 
+	specSum := sha256.Sum256(specData)
+	wcState.SpecSHA256 = hex.EncodeToString(specSum[:])
+
 	tempSpec, err := os.CreateTemp("", "ao2-runspec-"+wcState.ID+"-*.json")
 	if err != nil {
 		return fmt.Errorf("failed to create temp spec for %s: %v", wcState.ID, err)
@@ -2387,13 +2489,16 @@ func executeSingleWorkcell(ctx context.Context, plan factoryPlan, wcState *workc
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
 
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("ao2 run failed for %s: %v (stderr: %q)", wcState.ID, err, stderrBuf.String())
+	runErr := cmd.Run()
+	wcState.Stdout = stdoutBuf.String()
+	wcState.Stderr = stderrBuf.String()
+
+	if runErr != nil {
+		return fmt.Errorf("ao2 run failed for %s: %v (stderr: %q)", wcState.ID, runErr, wcState.Stderr)
 	}
 
-	stdoutStr := stdoutBuf.String()
-	if !strings.Contains(stdoutStr, "status=dry_run_accepted") {
-		return fmt.Errorf("ao2 run output for %s did not confirm acceptance: %q (stderr: %q)", wcState.ID, stdoutStr, stderrBuf.String())
+	if !strings.Contains(wcState.Stdout, "status=dry_run_accepted") {
+		return fmt.Errorf("ao2 run output for %s did not confirm acceptance: %q (stderr: %q)", wcState.ID, wcState.Stdout, wcState.Stderr)
 	}
 
 	return nil

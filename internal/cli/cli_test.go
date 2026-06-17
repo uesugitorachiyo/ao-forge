@@ -3,8 +3,11 @@ package cli
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1195,5 +1198,656 @@ func TestDoctorCLI(t *testing.T) {
 	}
 	if len(result.Components) != 1 || result.Components[0].Name != "dummy" || !result.Components[0].Exists {
 		t.Fatalf("unexpected component results: %+v", result.Components)
+	}
+}
+
+func compileDummyAo2(t *testing.T, tmpDir string) string {
+	t.Helper()
+	dummySrc := filepath.Join(tmpDir, "dummy_ao2.go")
+	dummyBin := filepath.Join(tmpDir, "dummy_ao2")
+	if os.PathSeparator == '\\' {
+		dummyBin += ".exe"
+	}
+	srcContent := `package main
+import (
+	"fmt"
+	"os"
+)
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "run" {
+		fmt.Println("status=dry_run_accepted")
+		fmt.Println("schema_version=ao2.run/v1")
+		fmt.Println("plan_id=forge-plan-efedbfb309b1")
+		fmt.Println("task_count=1")
+		fmt.Println("target_repo=fixtures/discount-service")
+		fmt.Println("control_plane_role=read_only_observer")
+		fmt.Println("mutates_ao_artifacts=false")
+		fmt.Println("factory_v3_drives_workflow=false")
+		fmt.Println("spec_sha256=abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd")
+		os.Exit(0)
+	}
+	os.Exit(1)
+}`
+	if err := os.WriteFile(dummySrc, []byte(srcContent), 0644); err != nil {
+		t.Fatalf("write dummy ao2 src: %v", err)
+	}
+	cmd := exec.Command("go", "build", "-o", dummyBin, dummySrc)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy ao2: %v (output: %q)", err, string(out))
+	}
+	return dummyBin
+}
+
+func TestRunSucceedsWithControlPlaneReadback(t *testing.T) {
+	tmpDir := t.TempDir()
+	dummyBin := compileDummyAo2(t, tmpDir)
+	t.Setenv("AO2_PATH", dummyBin)
+
+	// Set API token env var
+	t.Setenv("AO2_CP_API_TOKEN", "valid-token")
+
+	// Setup mock plan and gate result
+	planPath := filepath.Join(tmpDir, "plan.json")
+	planContent := `{
+		"schema_version": "ao.forge.factory-plan.v0.1",
+		"plan_id": "forge-plan-efedbfb309b1",
+		"objective": {
+			"text": "test",
+			"workspace": "test",
+			"release_mode": false
+		},
+		"constraints": {
+			"local_first": true,
+			"allow_network": false,
+			"allow_release_mutation": false,
+			"require_control_plane_readback": true
+		},
+		"execution_enabled": false,
+		"policy_gate": {
+			"required": true,
+			"status": "not_requested",
+			"explanation": "test"
+		},
+		"workcells": [
+			{"workcell_id": "cell1", "kind": "prepare", "status": "planned", "depends_on": []}
+		],
+		"expected_evidence": ["factory plan"],
+		"next_actions": [
+			{"action_id": "test", "description": "test", "required": true}
+		]
+	}`
+	if err := os.WriteFile(planPath, []byte(planContent), 0644); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+
+	gatePath := filepath.Join(tmpDir, "gate.json")
+	gateContent := `{
+		"schema_version": "ao.forge.covenant-gate-result.v0.1",
+		"status": "allowed",
+		"plan_id": "forge-plan-efedbfb309b1",
+		"execution_enabled": false,
+		"decision": {
+			"schema_version": "ao.forge.covenant-decision-fixture.v0.1",
+			"decision_id": "allow-local-plan",
+			"target_plan_id": "forge-plan-efedbfb309b1",
+			"decision": "allow",
+			"explanation": "Covenant decision allowed",
+			"source": "test"
+		},
+		"next_actions": [
+			{"action_id": "test", "description": "test", "required": true}
+		]
+	}`
+	if err := os.WriteFile(gatePath, []byte(gateContent), 0644); err != nil {
+		t.Fatalf("write gate result: %v", err)
+	}
+
+	// Mock control plane endpoints
+	var uploadedPacket []byte
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify auth header
+		auth := r.Header.Get("Authorization")
+		if auth != "Bearer valid-token" {
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":"unauthorized"}`))
+			return
+		}
+
+		if r.Method == "POST" && r.URL.Path == "/api/v1/operator-packet/signed" {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			// Verify signature schema and upload schema
+			if body["schema_version"] != "ao2.cp-operator-packet-signed-upload.v1" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			
+			// Decode and store the operator packet (decoded from base64 string or packet)
+			b64Str, ok := body["operator_packet_b64"].(string)
+			if !ok {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			decoded, err := base64.StdEncoding.DecodeString(b64Str)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			uploadedPacket = decoded
+
+			// Return ingest receipt
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{
+				"schema_version": "ao2.cp-ingest-receipt.v1",
+				"sha256": "fake-sha-256",
+				"stored_at": "2026-06-17T12:00:00Z",
+				"ingested_schema_version": "ao2.operator-evidence-packet.v1"
+			}`))
+			return
+		}
+
+		if r.Method == "GET" && r.URL.Path == "/api/v1/operator-packet/fake-sha-256" {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(uploadedPacket)
+			return
+		}
+
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+
+	outPath := filepath.Join(tmpDir, "packet-out.json")
+	code, _, stderr := runCLI("run", "--plan", planPath, "--gate-result", gatePath, "--out", outPath, "--control-plane", ts.URL)
+	if code != 0 {
+		t.Fatalf("expected code 0, got %d (stderr: %s)", code, stderr)
+	}
+
+	// Verify control-plane-receipt.json exists and final packet has it in evidence
+	receiptPath := filepath.Join(tmpDir, "control-plane-receipt.json")
+	receiptData, err := os.ReadFile(receiptPath)
+	if err != nil {
+		t.Fatalf("failed to read receipt: %v", err)
+	}
+	var receipt struct {
+		SchemaVersion string `json:"schema_version"`
+	}
+	if err := json.Unmarshal(receiptData, &receipt); err != nil {
+		t.Fatalf("receipt not JSON: %v", err)
+	}
+	if receipt.SchemaVersion != "ao2.cp-ingest-receipt.v1" {
+		t.Fatalf("unexpected receipt schema: %s", receipt.SchemaVersion)
+	}
+
+	packetBytes, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("failed to read out packet: %v", err)
+	}
+	var passedPacket struct {
+		Status   string `json:"status"`
+		Evidence []struct {
+			Label         string `json:"label"`
+			SchemaVersion string `json:"schema_version"`
+		} `json:"evidence"`
+	}
+	if err := json.Unmarshal(packetBytes, &passedPacket); err != nil {
+		t.Fatalf("packet not JSON: %v", err)
+	}
+	if passedPacket.Status != "passed" {
+		t.Fatalf("packet status expected passed, got %s", passedPacket.Status)
+	}
+
+	foundReceipt := false
+	for _, ev := range passedPacket.Evidence {
+		if ev.Label == "control plane readback receipt" && ev.SchemaVersion == "ao2.cp-ingest-receipt.v1" {
+			foundReceipt = true
+		}
+	}
+	if !foundReceipt {
+		t.Fatalf("evidence list missing control plane readback receipt: %+v", passedPacket.Evidence)
+	}
+}
+
+func TestRunFailsClosedWhenControlPlaneUnavailable(t *testing.T) {
+	tmpDir := t.TempDir()
+	dummyBin := compileDummyAo2(t, tmpDir)
+	t.Setenv("AO2_PATH", dummyBin)
+	t.Setenv("AO2_CP_API_TOKEN", "valid-token")
+
+	planPath := filepath.Join(tmpDir, "plan.json")
+	planContent := `{
+		"schema_version": "ao.forge.factory-plan.v0.1",
+		"plan_id": "forge-plan-efedbfb309b1",
+		"objective": {"text": "test", "workspace": "test", "release_mode": false},
+		"constraints": {"local_first": true, "allow_network": false, "allow_release_mutation": false, "require_control_plane_readback": true},
+		"execution_enabled": false,
+		"policy_gate": {"required": true, "status": "not_requested", "explanation": "test"},
+		"workcells": [{"workcell_id": "cell1", "kind": "prepare", "status": "planned", "depends_on": []}],
+		"expected_evidence": ["factory plan"],
+		"next_actions": [{"action_id": "test", "description": "test", "required": true}]
+	}`
+	os.WriteFile(planPath, []byte(planContent), 0644)
+
+	gatePath := filepath.Join(tmpDir, "gate.json")
+	gateContent := `{
+		"schema_version": "ao.forge.covenant-gate-result.v0.1",
+		"status": "allowed",
+		"plan_id": "forge-plan-efedbfb309b1",
+		"execution_enabled": false,
+		"decision": {"schema_version": "ao.forge.covenant-decision-fixture.v0.1", "decision_id": "allow-local-plan", "target_plan_id": "forge-plan-efedbfb309b1", "decision": "allow", "explanation": "test", "source": "test"},
+		"next_actions": [{"action_id": "test", "description": "test", "required": true}]
+	}`
+	os.WriteFile(gatePath, []byte(gateContent), 0644)
+
+	// Call using a non-existent control plane server URL
+	outPath := filepath.Join(tmpDir, "packet-out.json")
+	code, _, _ := runCLI("run", "--plan", planPath, "--gate-result", gatePath, "--out", outPath, "--control-plane", "http://127.0.0.1:48744")
+	if code == 0 {
+		t.Fatalf("expected failure code, got %d", code)
+	}
+
+	packetBytes, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("failed to read out packet: %v", err)
+	}
+	var blockedPacket struct {
+		Status string `json:"status"`
+	}
+	json.Unmarshal(packetBytes, &blockedPacket)
+	if blockedPacket.Status != "blocked" {
+		t.Fatalf("expected status blocked, got %s", blockedPacket.Status)
+	}
+}
+
+func TestRunFailsClosedWhenControlPlaneTokenMissing(t *testing.T) {
+	tmpDir := t.TempDir()
+	dummyBin := compileDummyAo2(t, tmpDir)
+	t.Setenv("AO2_PATH", dummyBin)
+	
+	// Unset token
+	t.Setenv("AO2_CP_API_TOKEN", "")
+	t.Setenv("AO_FORGE_CP_API_TOKEN", "")
+	t.Setenv("AO2_CP_AUTH_VALUE", "")
+
+	planPath := filepath.Join(tmpDir, "plan.json")
+	planContent := `{
+		"schema_version": "ao.forge.factory-plan.v0.1",
+		"plan_id": "forge-plan-efedbfb309b1",
+		"objective": {"text": "test", "workspace": "test", "release_mode": false},
+		"constraints": {"local_first": true, "allow_network": false, "allow_release_mutation": false, "require_control_plane_readback": true},
+		"execution_enabled": false,
+		"policy_gate": {"required": true, "status": "not_requested", "explanation": "test"},
+		"workcells": [{"workcell_id": "cell1", "kind": "prepare", "status": "planned", "depends_on": []}],
+		"expected_evidence": ["factory plan"],
+		"next_actions": [{"action_id": "test", "description": "test", "required": true}]
+	}`
+	os.WriteFile(planPath, []byte(planContent), 0644)
+
+	gatePath := filepath.Join(tmpDir, "gate.json")
+	gateContent := `{
+		"schema_version": "ao.forge.covenant-gate-result.v0.1",
+		"status": "allowed",
+		"plan_id": "forge-plan-efedbfb309b1",
+		"execution_enabled": false,
+		"decision": {"schema_version": "ao.forge.covenant-decision-fixture.v0.1", "decision_id": "allow-local-plan", "target_plan_id": "forge-plan-efedbfb309b1", "decision": "allow", "explanation": "test", "source": "test"},
+		"next_actions": [{"action_id": "test", "description": "test", "required": true}]
+	}`
+	os.WriteFile(gatePath, []byte(gateContent), 0644)
+
+	outPath := filepath.Join(tmpDir, "packet-out.json")
+	code, _, _ := runCLI("run", "--plan", planPath, "--gate-result", gatePath, "--out", outPath, "--control-plane", "http://127.0.0.1:8744")
+	if code == 0 {
+		t.Fatalf("expected failure code, got %d", code)
+	}
+
+	packetBytes, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("failed to read out packet: %v", err)
+	}
+	var blockedPacket struct {
+		Status string `json:"status"`
+	}
+	json.Unmarshal(packetBytes, &blockedPacket)
+	if blockedPacket.Status != "blocked" {
+		t.Fatalf("expected status blocked, got %s", blockedPacket.Status)
+	}
+}
+
+func TestRunFailsClosedWhenControlPlaneReadbackPayloadDiffers(t *testing.T) {
+	tmpDir := t.TempDir()
+	dummyBin := compileDummyAo2(t, tmpDir)
+	t.Setenv("AO2_PATH", dummyBin)
+	t.Setenv("AO2_CP_API_TOKEN", "valid-token")
+
+	planPath := filepath.Join(tmpDir, "plan.json")
+	planContent := `{
+		"schema_version": "ao.forge.factory-plan.v0.1",
+		"plan_id": "forge-plan-efedbfb309b1",
+		"objective": {"text": "test", "workspace": "test", "release_mode": false},
+		"constraints": {"local_first": true, "allow_network": false, "allow_release_mutation": false, "require_control_plane_readback": true},
+		"execution_enabled": false,
+		"policy_gate": {"required": true, "status": "not_requested", "explanation": "test"},
+		"workcells": [{"workcell_id": "cell1", "kind": "prepare", "status": "planned", "depends_on": []}],
+		"expected_evidence": ["factory plan"],
+		"next_actions": [{"action_id": "test", "description": "test", "required": true}]
+	}`
+	os.WriteFile(planPath, []byte(planContent), 0644)
+
+	gatePath := filepath.Join(tmpDir, "gate.json")
+	gateContent := `{
+		"schema_version": "ao.forge.covenant-gate-result.v0.1",
+		"status": "allowed",
+		"plan_id": "forge-plan-efedbfb309b1",
+		"execution_enabled": false,
+		"decision": {"schema_version": "ao.forge.covenant-decision-fixture.v0.1", "decision_id": "allow-local-plan", "target_plan_id": "forge-plan-efedbfb309b1", "decision": "allow", "explanation": "test", "source": "test"},
+		"next_actions": [{"action_id": "test", "description": "test", "required": true}]
+	}`
+	os.WriteFile(gatePath, []byte(gateContent), 0644)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && r.URL.Path == "/api/v1/operator-packet/signed" {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{
+				"schema_version": "ao2.cp-ingest-receipt.v1",
+				"sha256": "fake-sha-256",
+				"stored_at": "2026-06-17T12:00:00Z",
+				"ingested_schema_version": "ao2.operator-evidence-packet.v1"
+			}`))
+			return
+		}
+
+		if r.Method == "GET" && r.URL.Path == "/api/v1/operator-packet/fake-sha-256" {
+			w.Header().Set("Content-Type", "application/json")
+			// Return a different payload (status is denied) to simulate drift/tampering
+			w.Write([]byte(`{
+				"schema_version": "ao2.operator-evidence-packet.v1",
+				"run_id": "forge-plan-efedbfb309b1",
+				"status": "denied",
+				"operator_id": "ao-forge-operator",
+				"generated_at_utc": "2026-06-17T12:00:00Z",
+				"summary": {"recommended_task": "verify signed operator packet readback", "evidence_count": 3},
+				"evidence": [],
+				"trust_boundary": {"control_plane_role": "read_only_observer", "mutates_ao2": false}
+			}`))
+			return
+		}
+	}))
+	defer ts.Close()
+
+	outPath := filepath.Join(tmpDir, "packet-out.json")
+	code, _, _ := runCLI("run", "--plan", planPath, "--gate-result", gatePath, "--out", outPath, "--control-plane", ts.URL)
+	if code == 0 {
+		t.Fatalf("expected failure code, got %d", code)
+	}
+
+	packetBytes, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("failed to read out packet: %v", err)
+	}
+	var blockedPacket struct {
+		Status string `json:"status"`
+	}
+	json.Unmarshal(packetBytes, &blockedPacket)
+	if blockedPacket.Status != "blocked" {
+		t.Fatalf("expected status blocked, got %s", blockedPacket.Status)
+	}
+}
+
+func TestParseMarkdownBrief(t *testing.T) {
+	tmpDir := t.TempDir()
+	mdPath := filepath.Join(tmpDir, "brief.md")
+	mdContent := `# Objective
+Run a governed risky PR improvement against the fixture repository.
+
+# Workspace
+fixtures/discount-service
+
+# Constraints
+- Local First: true
+- Allow Network: false
+- Allow Release Mutation: false
+- Require Control Plane Readback: true
+- Release Mode: false
+
+# Expected Workcells
+- prepare-fixture (prepare)
+- run-ao2-risky-pr (execute) depends on: prepare-fixture
+- close-factory-packet (close) depends on: run-ao2-risky-pr
+
+# Expected Evidence
+- ao2 run summary
+- covenant policy decision
+- factory packet
+- control plane readback receipt
+`
+	if err := os.WriteFile(mdPath, []byte(mdContent), 0644); err != nil {
+		t.Fatalf("failed to write md brief: %v", err)
+	}
+
+	brief, canonical, err := readBrief(mdPath)
+	if err != nil {
+		t.Fatalf("failed to read md brief: %v", err)
+	}
+
+	if brief.Objective.Text != "Run a governed risky PR improvement against the fixture repository." {
+		t.Fatalf("unexpected objective text: %s", brief.Objective.Text)
+	}
+	if brief.Objective.Workspace != "fixtures/discount-service" {
+		t.Fatalf("unexpected workspace: %s", brief.Objective.Workspace)
+	}
+	if !brief.Constraints.LocalFirst || brief.Constraints.AllowNetwork || brief.Constraints.AllowReleaseMutation || !brief.Constraints.RequireControlPlaneReadback {
+		t.Fatalf("unexpected constraints: %+v", brief.Constraints)
+	}
+	if len(brief.ExpectedWorkcells) != 3 {
+		t.Fatalf("expected 3 workcells, got %d", len(brief.ExpectedWorkcells))
+	}
+	if brief.ExpectedWorkcells[1].WorkcellID != "run-ao2-risky-pr" || brief.ExpectedWorkcells[1].Kind != "execute" || len(brief.ExpectedWorkcells[1].DependsOn) != 1 || brief.ExpectedWorkcells[1].DependsOn[0] != "prepare-fixture" {
+		t.Fatalf("unexpected workcells: %+v", brief.ExpectedWorkcells)
+	}
+	if len(brief.ExpectedEvidence) != 4 || brief.ExpectedEvidence[3] != "control plane readback receipt" {
+		t.Fatalf("unexpected evidence: %+v", brief.ExpectedEvidence)
+	}
+
+	// Verify plan determinism matches JSON brief plan
+	jsonPath := filepath.Join(tmpDir, "brief.json")
+	jsonContent := `{
+		"schema_version": "ao.forge.factory-brief.v0.1",
+		"objective": {
+			"text": "Run a governed risky PR improvement against the fixture repository.",
+			"workspace": "fixtures/discount-service",
+			"release_mode": false
+		},
+		"constraints": {
+			"local_first": true,
+			"allow_network": false,
+			"allow_release_mutation": false,
+			"require_control_plane_readback": true
+		},
+		"expected_workcells": [
+			{"workcell_id": "prepare-fixture", "kind": "prepare", "depends_on": []},
+			{"workcell_id": "run-ao2-risky-pr", "kind": "execute", "depends_on": ["prepare-fixture"]},
+			{"workcell_id": "close-factory-packet", "kind": "close", "depends_on": ["run-ao2-risky-pr"]}
+		],
+		"expected_evidence": [
+			"ao2 run summary",
+			"covenant policy decision",
+			"factory packet",
+			"control plane readback receipt"
+		]
+	}`
+	if err := os.WriteFile(jsonPath, []byte(jsonContent), 0644); err != nil {
+		t.Fatalf("failed to write json brief: %v", err)
+	}
+
+	_, jsonCanonical, err := readBrief(jsonPath)
+	if err != nil {
+		t.Fatalf("failed to read json brief: %v", err)
+	}
+
+	// Canonical bytes should be exactly equal
+	if string(canonical) != string(jsonCanonical) {
+		t.Fatalf("canonical JSON bytes mismatch:\nmd:   %s\njson: %s", string(canonical), string(jsonCanonical))
+	}
+
+	// Deterministic plan ID should match
+	mdPlanID := planID(canonical)
+	jsonPlanID := planID(jsonCanonical)
+	if mdPlanID != jsonPlanID {
+		t.Fatalf("deterministic plan IDs drifted: md %s, json %s", mdPlanID, jsonPlanID)
+	}
+}
+
+func TestOnceSucceedsWithWorkspaceOverride(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Compile dummy ao2
+	dummyAo2 := compileDummyAo2(t, tmpDir)
+	t.Setenv("AO2_PATH", dummyAo2)
+
+	// Compile dummy covenant
+	dummyCovSrc := filepath.Join(tmpDir, "dummy_covenant.go")
+	dummyCovBin := filepath.Join(tmpDir, "dummy_covenant")
+	if os.PathSeparator == '\\' {
+		dummyCovBin += ".exe"
+	}
+	covContent := `package main
+import (
+	"fmt"
+	"os"
+)
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "version" && len(os.Args) > 2 && os.Args[2] == "--json" {
+		fmt.Println("{\"schema_version\": \"covenant.version-result.v1\", \"version\": \"v0.1.0\"}")
+		os.Exit(0)
+	}
+	os.Exit(1)
+}`
+	os.WriteFile(dummyCovSrc, []byte(covContent), 0644)
+	exec.Command("go", "build", "-o", dummyCovBin, dummyCovSrc).Run()
+
+	briefPath := filepath.Join(tmpDir, "brief.json")
+	briefContent := `{
+		"schema_version": "ao.forge.factory-brief.v0.1",
+		"objective": {
+			"text": "test override",
+			"workspace": "original-workspace",
+			"release_mode": false
+		},
+		"constraints": {
+			"local_first": true,
+			"allow_network": false,
+			"allow_release_mutation": false,
+			"require_control_plane_readback": false
+		},
+		"expected_workcells": [
+			{"workcell_id": "cell1", "kind": "prepare", "depends_on": []}
+		],
+		"expected_evidence": ["test"]
+	}`
+	os.WriteFile(briefPath, []byte(briefContent), 0644)
+
+	outPacket := filepath.Join(tmpDir, "packet.json")
+	code, _, stderr := runCLI("once", "--brief", briefPath, "--covenant", dummyCovBin, "--out", outPacket, "--workspace", "overridden-workspace")
+	if code != 0 {
+		t.Fatalf("once with workspace override failed: %s", stderr)
+	}
+
+	packetBytes, err := os.ReadFile(outPacket)
+	if err != nil {
+		t.Fatalf("failed to read out packet: %v", err)
+	}
+	var packet struct {
+		Objective struct {
+			Workspace string `json:"workspace"`
+		} `json:"objective"`
+	}
+	if err := json.Unmarshal(packetBytes, &packet); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if packet.Objective.Workspace != "overridden-workspace" {
+		t.Fatalf("expected workspace overridden-workspace, got %s", packet.Objective.Workspace)
+	}
+}
+
+func TestOnceEmitsMarkdownPacket(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Compile dummy ao2
+	dummyAo2 := compileDummyAo2(t, tmpDir)
+	t.Setenv("AO2_PATH", dummyAo2)
+
+	// Compile dummy covenant
+	dummyCovSrc := filepath.Join(tmpDir, "dummy_covenant.go")
+	dummyCovBin := filepath.Join(tmpDir, "dummy_covenant")
+	if os.PathSeparator == '\\' {
+		dummyCovBin += ".exe"
+	}
+	covContent := `package main
+import (
+	"fmt"
+	"os"
+)
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "version" && len(os.Args) > 2 && os.Args[2] == "--json" {
+		fmt.Println("{\"schema_version\": \"covenant.version-result.v1\", \"version\": \"v0.1.0\"}")
+		os.Exit(0)
+	}
+	os.Exit(1)
+}`
+	os.WriteFile(dummyCovSrc, []byte(covContent), 0644)
+	exec.Command("go", "build", "-o", dummyCovBin, dummyCovSrc).Run()
+
+	briefPath := filepath.Join(tmpDir, "brief.json")
+	briefContent := `{
+		"schema_version": "ao.forge.factory-brief.v0.1",
+		"objective": {
+			"text": "test md",
+			"workspace": "test-ws",
+			"release_mode": false
+		},
+		"constraints": {
+			"local_first": true,
+			"allow_network": false,
+			"allow_release_mutation": false,
+			"require_control_plane_readback": false
+		},
+		"expected_workcells": [
+			{"workcell_id": "cell1", "kind": "prepare", "depends_on": []}
+		],
+		"expected_evidence": ["test"]
+	}`
+	os.WriteFile(briefPath, []byte(briefContent), 0644)
+
+	outPacket := filepath.Join(tmpDir, "factory-packet.json")
+	code, _, stderr := runCLI("once", "--brief", briefPath, "--covenant", dummyCovBin, "--out", outPacket)
+	if code != 0 {
+		t.Fatalf("once failed: %s", stderr)
+	}
+
+	// Verify packet.md exists in the same directory as factory-packet.json
+	mdPath := filepath.Join(tmpDir, "packet.md")
+	mdBytes, err := os.ReadFile(mdPath)
+	if err != nil {
+		t.Fatalf("failed to read packet.md: %v", err)
+	}
+	mdContent := string(mdBytes)
+
+	for _, want := range []string{
+		"# AO Forge Factory Packet",
+		"- **Status**: PASSED",
+		"## Objective",
+		"test md",
+		"- **Workspace**: test-ws",
+		"## Workcells",
+		"| Workcell ID | Kind | Status | Run Mode | Summary |",
+		"| cell1 | prepare | passed | dry-run | Dry-run accepted by ao2 |",
+		"## Evidence",
+		"## Next Actions",
+	} {
+		if !strings.Contains(mdContent, want) {
+			t.Fatalf("packet.md missing %q:\n%s", want, mdContent)
+		}
 	}
 }

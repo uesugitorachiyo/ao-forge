@@ -1619,46 +1619,56 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 		return failClosedWithPacket(packetStatus, workcellStatus, explanation, "ao2-execution-failed", "ao-forge", false, evidenceList)
 	}
 
-	// Control plane readback if required
-	if plan.Constraints.RequireControlPlaneReadback {
+	// Control plane readback if required or if in live mode
+	isCPRequired := plan.Constraints.RequireControlPlaneReadback
+	if isCPRequired || liveMode {
 		cpURL := resolveControlPlaneURL(controlPlaneURL)
 		cpToken := resolveControlPlaneToken()
 		if cpToken == "" {
-			explanation := "Control plane readback is required, but API token is missing"
-			return failClosedWithPacket("blocked", "blocked", explanation, "control-plane-unauthorized", "ao-forge", true, evidenceList)
+			if isCPRequired {
+				explanation := "Control plane readback is required, but API token is missing"
+				return failClosedWithPacket("blocked", "blocked", explanation, "control-plane-unauthorized", "ao-forge", true, evidenceList)
+			}
+			fmt.Fprintln(stderr, "Warning: Control plane API token is missing, skipping optional control plane upload")
+		} else {
+			cpReceiptData, cpErr := performControlPlaneUploadAndReadback(cpURL, cpToken, plan, evidenceList)
+			if cpErr != nil {
+				if isCPRequired {
+					explanation := fmt.Sprintf("Control plane readback failed: %v", cpErr)
+					return failClosedWithPacket("blocked", "blocked", explanation, "control-plane-readback-failed", "ao-forge", true, evidenceList)
+				}
+				fmt.Fprintf(stderr, "Warning: Optional control plane readback failed: %v\n", cpErr)
+			} else {
+				// Save the receipt as control-plane-receipt.json and append it to the packet's evidence list
+				receiptDir := "."
+				if outPath != "" {
+					receiptDir = filepath.Dir(outPath)
+				}
+				receiptPath := filepath.Join(receiptDir, "control-plane-receipt.json")
+				if err := writeFile(receiptPath, cpReceiptData); err != nil {
+					if isCPRequired {
+						explanation := fmt.Sprintf("Failed to write control plane receipt: %v", err)
+						return failClosedWithPacket("failed", "failed", explanation, "control-plane-receipt-write-failed", "ao-forge", false, evidenceList)
+					}
+					fmt.Fprintf(stderr, "Warning: Failed to write optional control plane receipt: %v\n", err)
+				} else {
+					sum := sha256.Sum256(cpReceiptData)
+					evidenceList = append(evidenceList, struct {
+						Label         string `json:"label"`
+						SchemaVersion string `json:"schema_version"`
+						Status        string `json:"status"`
+						Path          string `json:"path"`
+						SHA256        string `json:"sha256"`
+					}{
+						Label:         "control plane readback receipt",
+						SchemaVersion: "ao2.cp-ingest-receipt.v1",
+						Status:        "passed",
+						Path:          displayPath(receiptPath),
+						SHA256:        hex.EncodeToString(sum[:]),
+					})
+				}
+			}
 		}
-
-		cpReceiptData, cpErr := performControlPlaneUploadAndReadback(cpURL, cpToken, plan, evidenceList)
-		if cpErr != nil {
-			explanation := fmt.Sprintf("Control plane readback failed: %v", cpErr)
-			return failClosedWithPacket("blocked", "blocked", explanation, "control-plane-readback-failed", "ao-forge", true, evidenceList)
-		}
-
-		// Save the receipt as control-plane-receipt.json and append it to the packet's evidence list
-		receiptDir := "."
-		if outPath != "" {
-			receiptDir = filepath.Dir(outPath)
-		}
-		receiptPath := filepath.Join(receiptDir, "control-plane-receipt.json")
-		if err := writeFile(receiptPath, cpReceiptData); err != nil {
-			explanation := fmt.Sprintf("Failed to write control plane receipt: %v", err)
-			return failClosedWithPacket("failed", "failed", explanation, "control-plane-receipt-write-failed", "ao-forge", false, evidenceList)
-		}
-
-		sum := sha256.Sum256(cpReceiptData)
-		evidenceList = append(evidenceList, struct {
-			Label         string `json:"label"`
-			SchemaVersion string `json:"schema_version"`
-			Status        string `json:"status"`
-			Path          string `json:"path"`
-			SHA256        string `json:"sha256"`
-		}{
-			Label:         "control plane readback receipt",
-			SchemaVersion: "ao2.cp-ingest-receipt.v1",
-			Status:        "passed",
-			Path:          displayPath(receiptPath),
-			SHA256:        hex.EncodeToString(sum[:]),
-		})
 	}
 
 	// Construct and write final passed factory packet

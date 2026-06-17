@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -54,10 +55,17 @@ type factoryBrief struct {
 	ExpectedEvidence  []string        `json:"expected_evidence"`
 }
 
+type workcellRubric struct {
+	RequiredPatterns  []string `json:"required_patterns,omitempty"`
+	ForbiddenPatterns []string `json:"forbidden_patterns,omitempty"`
+	MinCoverage       *float64 `json:"min_coverage,omitempty"`
+}
+
 type briefWorkcell struct {
-	WorkcellID string   `json:"workcell_id"`
-	Kind       string   `json:"kind"`
-	DependsOn  []string `json:"depends_on"`
+	WorkcellID string          `json:"workcell_id"`
+	Kind       string          `json:"kind"`
+	DependsOn  []string        `json:"depends_on"`
+	Rubric     *workcellRubric `json:"rubric,omitempty"`
 }
 
 type factoryPlan struct {
@@ -92,10 +100,11 @@ type policyGate struct {
 }
 
 type planWorkcell struct {
-	WorkcellID string   `json:"workcell_id"`
-	Kind       string   `json:"kind"`
-	Status     string   `json:"status"`
-	DependsOn  []string `json:"depends_on"`
+	WorkcellID string          `json:"workcell_id"`
+	Kind       string          `json:"kind"`
+	Status     string          `json:"status"`
+	DependsOn  []string        `json:"depends_on"`
+	Rubric     *workcellRubric `json:"rubric,omitempty"`
 }
 
 type nextAction struct {
@@ -865,6 +874,7 @@ func buildPlan(brief factoryBrief, canonicalBrief []byte) factoryPlan {
 			Kind:       cell.Kind,
 			Status:     "planned",
 			DependsOn:  cloneStrings(cell.DependsOn),
+			Rubric:     cell.Rubric,
 		})
 	}
 	return factoryPlan{
@@ -2392,6 +2402,7 @@ type workcellRunState struct {
 	Stdout     string
 	Stderr     string
 	SpecSHA256 string
+	Rubric     *workcellRubric
 }
 
 func runWorkcellsConcurrent(ctx context.Context, plan factoryPlan, ao2Path string, stdout, stderr io.Writer, liveMode bool) ([]workcellRunState, error) {
@@ -2403,6 +2414,7 @@ func runWorkcellsConcurrent(ctx context.Context, plan factoryPlan, ao2Path strin
 			Kind:      wc.Kind,
 			DependsOn: wc.DependsOn,
 			Status:    "pending",
+			Rubric:    wc.Rubric,
 		}
 	}
 
@@ -2606,6 +2618,53 @@ func executeSingleWorkcell(ctx context.Context, plan factoryPlan, wcState *workc
 	} else {
 		if !strings.Contains(wcState.Stdout, "status=dry_run_accepted") {
 			return fmt.Errorf("ao2 run output for %s did not confirm acceptance: %q (stderr: %q)", wcState.ID, wcState.Stdout, wcState.Stderr)
+		}
+	}
+
+	if wcState.Rubric != nil {
+		combined := wcState.Stdout + "\n" + wcState.Stderr
+		for _, pattern := range wcState.Rubric.RequiredPatterns {
+			if !strings.Contains(combined, pattern) {
+				return fmt.Errorf("rubric validation failed for %s: required pattern %q not found in output", wcState.ID, pattern)
+			}
+		}
+		for _, pattern := range wcState.Rubric.ForbiddenPatterns {
+			if strings.Contains(combined, pattern) {
+				return fmt.Errorf("rubric validation failed for %s: forbidden pattern %q found in output", wcState.ID, pattern)
+			}
+		}
+		if wcState.Rubric.MinCoverage != nil {
+			var parsedCoverage *float64
+			prefixRegex := regexp.MustCompile(`(?i)(?:coverage\s*:\s*|coverage\s+is\s+|coverage\s+of\s+)([0-9.]+)\s*%`)
+			matches := prefixRegex.FindStringSubmatch(combined)
+			if len(matches) >= 2 {
+				val, err := strconv.ParseFloat(matches[1], 64)
+				if err == nil {
+					parsedCoverage = &val
+				}
+			}
+			if parsedCoverage == nil {
+				fallbackRegex := regexp.MustCompile(`([0-9.]+)\s*%`)
+				lines := strings.Split(combined, "\n")
+				for _, line := range lines {
+					if strings.Contains(strings.ToLower(line), "coverage") {
+						m := fallbackRegex.FindStringSubmatch(line)
+						if len(m) >= 2 {
+							val, err := strconv.ParseFloat(m[1], 64)
+							if err == nil {
+								parsedCoverage = &val
+								break
+							}
+						}
+					}
+				}
+			}
+			if parsedCoverage == nil {
+				return fmt.Errorf("rubric validation failed for %s: coverage metric not found in output", wcState.ID)
+			}
+			if *parsedCoverage < *wcState.Rubric.MinCoverage {
+				return fmt.Errorf("rubric validation failed for %s: coverage %0.1f%% is below minimum %0.1f%%", wcState.ID, *parsedCoverage, *wcState.Rubric.MinCoverage)
+			}
 		}
 	}
 

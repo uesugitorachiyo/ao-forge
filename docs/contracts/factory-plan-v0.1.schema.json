@@ -109,6 +109,23 @@
             "items": {
               "type": "string"
             }
+          },
+          "rubric": {
+            "type": "object",
+            "properties": {
+              "required_patterns": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "forbidden_patterns": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "min_coverage": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": false
           }
         },
         "additionalProperties": false

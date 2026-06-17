@@ -174,6 +174,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	switch args[0] {
+	case "init":
+		return runInit(args[1:], stdout, stderr)
 	case "plan":
 		return runPlan(args[1:], stdout, stderr)
 	case "gate":
@@ -186,6 +188,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runRun(args[1:], stdout, stderr)
 	case "once":
 		return runOnce(args[1:], stdout, stderr)
+	case "packet":
+		return runPacketCommand(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n\n", args[0])
 		printHelp(stderr)
@@ -198,10 +202,12 @@ func printHelp(w io.Writer) {
 
 Usage:
   forge --help
+  forge init
   forge plan --brief <factory-brief.json> [--out <factory-plan.json>]
   forge gate --plan <factory-plan.json> --covenant <path-to-covenant-or-config> [--out <gate-result.json>]
-  forge run --plan <factory-plan.json> --gate-result <gate-result.json> [--out <factory-packet.json>]
-  forge once --brief <factory-brief.json> --covenant <path-to-covenant-or-config> [--out <factory-packet.json>]
+  forge run --plan <factory-plan.json> --gate-result <gate-result.json> [--out <factory-packet.json>] [--live] [--confirm-release]
+  forge once --brief <factory-brief.json> --covenant <path-to-covenant-or-config> [--out <factory-packet.json>] [--live] [--confirm-release]
+  forge packet --run <run-id> [--out <factory-packet.json>]
   forge inspect --packet <factory-packet.json>
   forge doctor --foundation <foundation-baseline.json> [--json]
 
@@ -210,8 +216,8 @@ Factory terms:
   workcell        bounded unit of factory work with dependencies and evidence
   factory packet  operator-ready JSON summary of plan, gates, evidence, and next actions
 
-Slice 0.4 status:
-  planning, live Covenant gate adapter, packet inspection, and dry-run execution are enabled.
+Slice 1.5 status:
+  durable state persistence, live/dry-run execution orchestration, and validation are enabled.
 `)
 }
 
@@ -1347,6 +1353,10 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 
+		if plan.PlanID != "" {
+			archiveRunState(plan.PlanID, planPath, gateResultPath, "", encoded, packet)
+		}
+
 		if outPath != "" {
 			if err := writeFile(outPath, encoded); err != nil {
 				fmt.Fprintf(stderr, "forge run: write packet: %v\n", err)
@@ -1739,6 +1749,8 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "forge run: encode final packet: %v\n", err)
 		return 1
 	}
+
+	archiveRunState(plan.PlanID, planPath, gateResultPath, summaryPath, packetData, packet)
 
 	if outPath != "" {
 		if err := writeFile(outPath, packetData); err != nil {
@@ -2616,4 +2628,109 @@ func verifyReleaseWorkspace(workspacePath string) error {
 	}
 
 	return nil
+}
+
+func runInit(args []string, stdout, stderr io.Writer) int {
+	dotForge := ".forge"
+	if err := os.MkdirAll(filepath.Join(dotForge, "runs"), 0755); err != nil {
+		fmt.Fprintf(stderr, "forge init: failed to create runs directory: %v\n", err)
+		return 1
+	}
+
+	configPath := filepath.Join(dotForge, "config.json")
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		cfg := map[string]any{
+			"default_covenant":      "docs/foundation/foundation-baseline.v0.1.json",
+			"default_control_plane": "http://127.0.0.1:8744",
+		}
+		data, err := json.MarshalIndent(cfg, "", "  ")
+		if err == nil {
+			_ = os.WriteFile(configPath, data, 0644)
+		}
+	}
+
+	fmt.Fprintln(stdout, "AO Forge repository state initialized under .forge/")
+	return 0
+}
+
+func runPacketCommand(args []string, stdout, stderr io.Writer) int {
+	var runID, outPath string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--run":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				fmt.Fprintln(stderr, "forge packet: --run requires a value")
+				return 2
+			}
+			runID = args[i+1]
+			i++
+		case "--out":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				fmt.Fprintln(stderr, "forge packet: --out requires a value")
+				return 2
+			}
+			outPath = args[i+1]
+			i++
+		default:
+			fmt.Fprintf(stderr, "forge packet: unexpected argument %s\n", args[i])
+			return 2
+		}
+	}
+
+	if runID == "" {
+		fmt.Fprintln(stderr, "forge packet: missing required --run")
+		return 2
+	}
+
+	packetPath := filepath.Join(".forge", "runs", runID, "factory-packet.json")
+	data, err := os.ReadFile(packetPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge packet: run %q not found or packet is missing: %v\n", runID, err)
+		return 1
+	}
+
+	if outPath != "" {
+		if err := writeFile(outPath, data); err != nil {
+			fmt.Fprintf(stderr, "forge packet: failed to write packet output: %v\n", err)
+			return 1
+		}
+		var pkt factoryPacket
+		if err := json.Unmarshal(data, &pkt); err == nil {
+			_ = writeMarkdownPacket(outPath, pkt)
+		}
+		fmt.Fprintf(stdout, "factory_packet=%s\n", displayPath(outPath))
+	} else {
+		_, _ = stdout.Write(data)
+	}
+
+	return 0
+}
+
+func archiveRunState(runID string, planPath string, gateResultPath string, summaryPath string, packetData []byte, packet factoryPacket) {
+	dotForge := ".forge"
+	if info, err := os.Stat(dotForge); err != nil || !info.IsDir() {
+		return
+	}
+
+	runDir := filepath.Join(dotForge, "runs", runID)
+	if err := os.MkdirAll(runDir, 0755); err != nil {
+		return
+	}
+
+	if planData, err := os.ReadFile(planPath); err == nil {
+		_ = os.WriteFile(filepath.Join(runDir, "plan.json"), planData, 0644)
+	}
+
+	if gateData, err := os.ReadFile(gateResultPath); err == nil {
+		_ = os.WriteFile(filepath.Join(runDir, "gate_result.json"), gateData, 0644)
+	}
+
+	if summaryPath != "" {
+		if summaryData, err := os.ReadFile(summaryPath); err == nil {
+			_ = os.WriteFile(filepath.Join(runDir, "ao2-run-summary.json"), summaryData, 0644)
+		}
+	}
+
+	_ = os.WriteFile(filepath.Join(runDir, "factory-packet.json"), packetData, 0644)
+	_ = writeMarkdownPacket(filepath.Join(runDir, "factory-packet.json"), packet)
 }

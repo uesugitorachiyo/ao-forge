@@ -993,8 +993,8 @@ func main() {
 			t.Fatalf("unexpected workcell: %+v", wc)
 		}
 	}
-	if len(passedPacket.Evidence) != 3 {
-		t.Fatalf("expected 3 evidence items, got %d", len(passedPacket.Evidence))
+	if len(passedPacket.Evidence) != 6 {
+		t.Fatalf("expected 6 evidence items, got %d", len(passedPacket.Evidence))
 	}
 }
 
@@ -2335,5 +2335,172 @@ func main() {
 				t.Fatalf("expected wc_dep status to be skipped, got %q", wc.Status)
 			}
 		}
+	}
+}
+
+func TestOnceEmitsWorkcellEvidence(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Compile a dummy binary that acts as ao2, outputting different lines to stdout
+	dummyAo2Src := filepath.Join(tmpDir, "dummy_ao2.go")
+	dummyAo2Bin := filepath.Join(tmpDir, "dummy_ao2")
+	if os.PathSeparator == '\\' {
+		dummyAo2Bin += ".exe"
+	}
+	ao2Content := `package main
+import (
+	"fmt"
+	"os"
+)
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "run" {
+		fmt.Println("status=dry_run_accepted")
+		fmt.Println("schema_version=ao2.run/v1")
+		fmt.Println("plan_id=forge-plan-efedbfb309b1")
+		fmt.Println("task_count=2")
+		fmt.Println("target_repo=fixtures/discount-service")
+		fmt.Println("control_plane_role=read_only_observer")
+		fmt.Println("mutates_ao_artifacts=false")
+		fmt.Println("factory_v3_drives_workflow=false")
+		fmt.Println("spec_sha256=abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd")
+		os.Exit(0)
+	}
+	os.Exit(1)
+}`
+	if err := os.WriteFile(dummyAo2Src, []byte(ao2Content), 0644); err != nil {
+		t.Fatalf("write dummy ao2 src: %v", err)
+	}
+	cmdAo2 := exec.Command("go", "build", "-o", dummyAo2Bin, dummyAo2Src)
+	if out, err := cmdAo2.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy ao2: %v (output: %q)", err, string(out))
+	}
+	t.Setenv("AO2_PATH", dummyAo2Bin)
+
+	// Compile a dummy binary that acts as covenant
+	dummyCovSrc := filepath.Join(tmpDir, "dummy_covenant.go")
+	dummyCovBin := filepath.Join(tmpDir, "dummy_covenant")
+	if os.PathSeparator == '\\' {
+		dummyCovBin += ".exe"
+	}
+	covContent := `package main
+import (
+	"fmt"
+	"os"
+)
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "version" {
+		fmt.Println("{\"schema_version\": \"covenant.version-result.v1\", \"version\": \"v0.1.0\"}")
+		os.Exit(0)
+	}
+	os.Exit(1)
+}`
+	if err := os.WriteFile(dummyCovSrc, []byte(covContent), 0644); err != nil {
+		t.Fatalf("write dummy covenant src: %v", err)
+	}
+	cmdCov := exec.Command("go", "build", "-o", dummyCovBin, dummyCovSrc)
+	if out, err := cmdCov.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy covenant: %v (output: %q)", err, string(out))
+	}
+
+	briefPath := filepath.Join(tmpDir, "brief.json")
+	briefContent := `{
+		"schema_version": "ao.forge.factory-brief.v0.1",
+		"objective": {
+			"text": "test dynamic evidence",
+			"workspace": "test-ws",
+			"release_mode": false
+		},
+		"constraints": {
+			"local_first": true,
+			"allow_network": false,
+			"allow_release_mutation": false,
+			"require_control_plane_readback": false
+		},
+		"expected_workcells": [
+			{"workcell_id": "wc1", "kind": "prepare", "depends_on": []},
+			{"workcell_id": "wc2", "kind": "execute", "depends_on": []}
+		],
+		"expected_evidence": ["test"]
+	}`
+	if err := os.WriteFile(briefPath, []byte(briefContent), 0644); err != nil {
+		t.Fatalf("write brief: %v", err)
+	}
+
+	outPacket := filepath.Join(tmpDir, "packet.json")
+	code, stdoutVal, stderr := runCLI("once", "--brief", briefPath, "--covenant", dummyCovBin, "--out", outPacket)
+	if code != 0 {
+		t.Fatalf("once failed: %s (stdout: %q)", stderr, stdoutVal)
+	}
+
+	// 1. Verify ao2-run-summary.json exists and does NOT contain abcdef...
+	summaryPath := filepath.Join(tmpDir, "ao2-run-summary.json")
+	summaryBytes, err := os.ReadFile(summaryPath)
+	if err != nil {
+		t.Fatalf("failed to read run summary: %v", err)
+	}
+	var runSummary map[string]any
+	if err := json.Unmarshal(summaryBytes, &runSummary); err != nil {
+		t.Fatalf("failed to parse run summary: %v", err)
+	}
+	specSHA := runSummary["spec_sha256"].(string)
+	if specSHA == "" || specSHA == "abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd" {
+		t.Fatalf("expected dynamically computed spec_sha256, got: %q", specSHA)
+	}
+
+	// 2. Verify individual workcell evidence files were written and are valid
+	wc1EvPath := filepath.Join(tmpDir, "ao2-wc-wc1-evidence.json")
+	wc1EvBytes, err := os.ReadFile(wc1EvPath)
+	if err != nil {
+		t.Fatalf("failed to read wc1 evidence: %v", err)
+	}
+	var wc1Ev map[string]any
+	if err := json.Unmarshal(wc1EvBytes, &wc1Ev); err != nil {
+		t.Fatalf("failed to parse wc1 evidence: %v", err)
+	}
+	if wc1Ev["schema_version"] != "ao2.workcell-evidence.v1" {
+		t.Fatalf("expected schema ao2.workcell-evidence.v1, got: %q", wc1Ev["schema_version"])
+	}
+	if wc1Ev["workcell_id"] != "wc1" || wc1Ev["status"] != "passed" {
+		t.Fatalf("unexpected wc1 content: %+v", wc1Ev)
+	}
+	if !strings.Contains(wc1Ev["stdout"].(string), "status=dry_run_accepted") {
+		t.Fatalf("wc1 stdout should contain status=dry_run_accepted, got: %q", wc1Ev["stdout"])
+	}
+
+	wc2EvPath := filepath.Join(tmpDir, "ao2-wc-wc2-evidence.json")
+	if _, err := os.Stat(wc2EvPath); err != nil {
+		t.Fatalf("failed to read wc2 evidence: %v", err)
+	}
+
+	// 3. Verify packet contains 5 evidence items
+	data, err := os.ReadFile(outPacket)
+	if err != nil {
+		t.Fatalf("failed to read packet: %v", err)
+	}
+	var packet factoryPacket
+	if err := json.Unmarshal(data, &packet); err != nil {
+		t.Fatalf("failed to parse packet: %v", err)
+	}
+	if len(packet.Evidence) != 5 {
+		t.Fatalf("expected 5 evidence items, got %d", len(packet.Evidence))
+	}
+
+	foundWC1, foundWC2 := false, false
+	for _, ev := range packet.Evidence {
+		if ev.Label == "workcell wc1 evidence" {
+			foundWC1 = true
+			if ev.SchemaVersion != "ao2.workcell-evidence.v1" {
+				t.Fatalf("unexpected wc1 evidence schema: %q", ev.SchemaVersion)
+			}
+		}
+		if ev.Label == "workcell wc2 evidence" {
+			foundWC2 = true
+			if ev.SchemaVersion != "ao2.workcell-evidence.v1" {
+				t.Fatalf("unexpected wc2 evidence schema: %q", ev.SchemaVersion)
+			}
+		}
+	}
+	if !foundWC1 || !foundWC2 {
+		t.Fatalf("did not find both wc1 and wc2 evidence in packet")
 	}
 }

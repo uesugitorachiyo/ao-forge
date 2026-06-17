@@ -1,0 +1,8 @@
+{
+  "schema_version": "ao.forge.covenant-decision-fixture.v0.1",
+  "decision_id": "allow-local-plan",
+  "target_plan_id": "forge-plan-efedbfb309b1",
+  "decision": "allow",
+  "explanation": "The plan is local-first, does not allow network access, does not mutate releases, and keeps execution disabled until the AO2 adapter slice.",
+  "source": "local-fixture"
+}

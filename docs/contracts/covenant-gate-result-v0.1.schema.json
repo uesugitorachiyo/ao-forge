@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/uesugitorachiyo/ao-forge/docs/contracts/covenant-gate-result-v0.1.schema.json",
+  "title": "AO Forge Covenant Gate Result v0.1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "status",
+    "plan_id",
+    "execution_enabled",
+    "decision",
+    "next_actions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "ao.forge.covenant-gate-result.v0.1"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["allowed", "denied", "blocked"]
+    },
+    "plan_id": {
+      "type": "string"
+    },
+    "execution_enabled": {
+      "const": false
+    },
+    "decision": {
+      "type": "object",
+      "required": ["decision"],
+      "properties": {
+        "schema_version": {
+          "type": "string"
+        },
+        "decision_id": {
+          "type": "string"
+        },
+        "target_plan_id": {
+          "type": "string"
+        },
+        "decision": {
+          "type": "string",
+          "enum": ["allow", "deny", "invalid"]
+        },
+        "explanation": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "problem": {
+      "type": "string"
+    },
+    "next_actions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["action_id", "description", "required"],
+        "properties": {
+          "action_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "required": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

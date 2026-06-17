@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/uesugitorachiyo/ao-forge/docs/contracts/covenant-decision-fixture-v0.1.schema.json",
+  "title": "AO Forge Covenant Decision Fixture v0.1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "decision_id",
+    "target_plan_id",
+    "decision",
+    "explanation",
+    "source"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "ao.forge.covenant-decision-fixture.v0.1"
+    },
+    "decision_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "target_plan_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "decision": {
+      "type": "string",
+      "enum": ["allow", "deny"]
+    },
+    "explanation": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "additionalProperties": false
+}

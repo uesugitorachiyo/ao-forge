@@ -1,0 +1,21 @@
+{
+  "schema_version": "ao.forge.covenant-gate-result.v0.1",
+  "status": "allowed",
+  "plan_id": "forge-plan-efedbfb309b1",
+  "execution_enabled": false,
+  "decision": {
+    "schema_version": "ao.forge.covenant-decision-fixture.v0.1",
+    "decision_id": "allow-local-plan",
+    "target_plan_id": "forge-plan-efedbfb309b1",
+    "decision": "allow",
+    "explanation": "The plan is local-first, does not allow network access, does not mutate releases, and keeps execution disabled until the AO2 adapter slice.",
+    "source": "local-fixture"
+  },
+  "next_actions": [
+    {
+      "action_id": "implement-ao2-adapter",
+      "description": "The local fixture gate allowed the plan; AO2 execution remains disabled until Slice 0.4.",
+      "required": true
+    }
+  ]
+}

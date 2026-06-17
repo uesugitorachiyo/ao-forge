@@ -1,0 +1,8 @@
+{
+  "schema_version": "ao.forge.covenant-decision-fixture.v0.1",
+  "decision_id": "deny-release-mutation",
+  "target_plan_id": "forge-plan-efedbfb309b1",
+  "decision": "deny",
+  "explanation": "The fixture denies release mutation because Slice 0.3 does not include an explicit release-mode gate or AO Covenant release policy evidence.",
+  "source": "local-fixture"
+}

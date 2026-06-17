@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/uesugitorachiyo/ao-forge/docs/contracts/factory-plan-v0.1.schema.json",
+  "title": "AO Forge Factory Plan v0.1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "plan_id",
+    "objective",
+    "constraints",
+    "execution_enabled",
+    "policy_gate",
+    "workcells",
+    "expected_evidence",
+    "next_actions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "ao.forge.factory-plan.v0.1"
+    },
+    "plan_id": {
+      "type": "string",
+      "pattern": "^forge-plan-[a-f0-9]{12}$"
+    },
+    "objective": {
+      "type": "object",
+      "required": ["text", "workspace", "release_mode"],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workspace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "release_mode": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "constraints": {
+      "type": "object",
+      "required": [
+        "local_first",
+        "allow_network",
+        "allow_release_mutation",
+        "require_control_plane_readback"
+      ],
+      "properties": {
+        "local_first": {
+          "type": "boolean"
+        },
+        "allow_network": {
+          "type": "boolean"
+        },
+        "allow_release_mutation": {
+          "type": "boolean"
+        },
+        "require_control_plane_readback": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "execution_enabled": {
+      "const": false
+    },
+    "policy_gate": {
+      "type": "object",
+      "required": ["required", "status", "explanation"],
+      "properties": {
+        "required": {
+          "const": true
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "explanation": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "workcells": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["workcell_id", "kind", "status", "depends_on"],
+        "properties": {
+          "workcell_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["prepare", "execute", "verify", "close"]
+          },
+          "status": {
+            "type": "string",
+            "minLength": 1
+          },
+          "depends_on": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "expected_evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "next_actions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["action_id", "description", "required"],
+        "properties": {
+          "action_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "required": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

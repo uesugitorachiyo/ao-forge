@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/uesugitorachiyo/ao-forge/docs/contracts/factory-brief-v0.1.schema.json",
+  "title": "AO Forge Factory Brief v0.1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "objective",
+    "constraints",
+    "expected_workcells",
+    "expected_evidence"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "ao.forge.factory-brief.v0.1"
+    },
+    "objective": {
+      "type": "object",
+      "required": ["text", "workspace", "release_mode"],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workspace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "release_mode": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "constraints": {
+      "type": "object",
+      "required": [
+        "local_first",
+        "allow_network",
+        "allow_release_mutation",
+        "require_control_plane_readback"
+      ],
+      "properties": {
+        "local_first": {
+          "type": "boolean"
+        },
+        "allow_network": {
+          "type": "boolean"
+        },
+        "allow_release_mutation": {
+          "type": "boolean"
+        },
+        "require_control_plane_readback": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "expected_workcells": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["workcell_id", "kind", "depends_on"],
+        "properties": {
+          "workcell_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["prepare", "execute", "verify", "close"]
+          },
+          "depends_on": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "expected_evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "additionalProperties": false
+}

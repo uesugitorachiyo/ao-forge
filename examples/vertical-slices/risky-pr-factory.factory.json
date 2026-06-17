@@ -1,0 +1,37 @@
+{
+  "schema_version": "ao.forge.factory-brief.v0.1",
+  "objective": {
+    "text": "Run a governed risky PR improvement against the fixture repository.",
+    "workspace": "fixtures/discount-service",
+    "release_mode": false
+  },
+  "constraints": {
+    "local_first": true,
+    "allow_network": false,
+    "allow_release_mutation": false,
+    "require_control_plane_readback": false
+  },
+  "expected_workcells": [
+    {
+      "workcell_id": "prepare-fixture",
+      "kind": "prepare",
+      "depends_on": []
+    },
+    {
+      "workcell_id": "run-ao2-risky-pr",
+      "kind": "execute",
+      "depends_on": ["prepare-fixture"]
+    },
+    {
+      "workcell_id": "close-factory-packet",
+      "kind": "close",
+      "depends_on": ["run-ao2-risky-pr"]
+    }
+  ],
+  "expected_evidence": [
+    "ao2 run summary",
+    "covenant policy decision",
+    "factory packet"
+  ]
+}
+

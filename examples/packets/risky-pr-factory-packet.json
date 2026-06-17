@@ -1,0 +1,67 @@
+{
+  "schema_version": "ao.forge.factory-packet.v0.1",
+  "status": "blocked",
+  "objective": {
+    "text": "Run a governed risky PR improvement against the fixture repository.",
+    "workspace": "fixtures/discount-service",
+    "release_mode": false
+  },
+  "factory_plan": {
+    "plan_id": "forge-plan-efedbfb309b1",
+    "workcell_count": 3
+  },
+  "policy_decisions": [
+    {
+      "decision_id": "policy-not-requested",
+      "target": "factory-plan",
+      "decision": "requires_operator_approval",
+      "explanation": "Slice 0.2 can plan and inspect packets, but execution remains disabled until the Covenant gate fixture is implemented.",
+      "source": "ao-forge-slice-0.2"
+    }
+  ],
+  "workcells": [
+    {
+      "workcell_id": "prepare-fixture",
+      "kind": "prepare",
+      "status": "blocked",
+      "depends_on": [],
+      "summary": "Prepared by plan output only; execution disabled."
+    },
+    {
+      "workcell_id": "run-ao2-risky-pr",
+      "kind": "execute",
+      "status": "blocked",
+      "depends_on": ["prepare-fixture"],
+      "summary": "AO2 execution adapter not available in slice 0.2."
+    },
+    {
+      "workcell_id": "close-factory-packet",
+      "kind": "close",
+      "status": "blocked",
+      "depends_on": ["run-ao2-risky-pr"],
+      "summary": "Factory packet inspection fixture only."
+    }
+  ],
+  "evidence": [
+    {
+      "label": "factory plan fixture",
+      "schema_version": "ao.forge.factory-plan.v0.1",
+      "status": "planned",
+      "path": "examples/vertical-slices/risky-pr-factory.factory.json",
+      "sha256": "bff321beffe8511dc5fbe6603484fcf6dfd60c8ee740929e100c2108bb4a9fa9"
+    }
+  ],
+  "trust_boundary": {
+    "local_first": true,
+    "mutates_releases": false,
+    "stores_credentials": false,
+    "control_plane_approves_work": false
+  },
+  "next_actions": [
+    {
+      "action_id": "run-covenant-gate",
+      "description": "Implement the Covenant gate fixture before any AO2 execution is enabled.",
+      "required": true
+    }
+  ]
+}

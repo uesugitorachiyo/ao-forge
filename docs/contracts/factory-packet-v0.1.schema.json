@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/uesugitorachiyo/ao-forge/docs/contracts/factory-packet-v0.1.schema.json",
+  "title": "AO Forge Factory Packet v0.1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "status",
+    "objective",
+    "factory_plan",
+    "policy_decisions",
+    "workcells",
+    "evidence",
+    "trust_boundary",
+    "next_actions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "ao.forge.factory-packet.v0.1"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["passed", "failed", "blocked", "denied"]
+    },
+    "objective": {
+      "type": "object",
+      "required": ["text", "workspace"],
+      "properties": {
+        "text": { "type": "string", "minLength": 1 },
+        "workspace": { "type": "string", "minLength": 1 },
+        "release_mode": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "factory_plan": {
+      "type": "object",
+      "required": ["plan_id", "workcell_count"],
+      "properties": {
+        "plan_id": { "type": "string", "minLength": 1 },
+        "workcell_count": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "policy_decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["decision_id", "target", "decision", "explanation"],
+        "properties": {
+          "decision_id": { "type": "string", "minLength": 1 },
+          "target": { "type": "string", "minLength": 1 },
+          "decision": {
+            "type": "string",
+            "enum": ["allow", "deny", "requires_operator_approval"]
+          },
+          "explanation": { "type": "string", "minLength": 1 },
+          "source": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "workcells": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["workcell_id", "kind", "status", "depends_on"],
+        "properties": {
+          "workcell_id": { "type": "string", "minLength": 1 },
+          "kind": {
+            "type": "string",
+            "enum": ["prepare", "execute", "verify", "close"]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["passed", "failed", "blocked", "skipped", "denied"]
+          },
+          "depends_on": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "ao2_run": { "type": "string" },
+          "summary": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["label", "schema_version", "status", "path"],
+        "properties": {
+          "label": { "type": "string", "minLength": 1 },
+          "schema_version": { "type": "string", "minLength": 1 },
+          "status": { "type": "string", "minLength": 1 },
+          "path": { "type": "string", "minLength": 1 },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "trust_boundary": {
+      "type": "object",
+      "required": [
+        "local_first",
+        "mutates_releases",
+        "stores_credentials",
+        "control_plane_approves_work"
+      ],
+      "properties": {
+        "local_first": { "type": "boolean" },
+        "mutates_releases": { "type": "boolean" },
+        "stores_credentials": { "type": "boolean" },
+        "control_plane_approves_work": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "next_actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["action_id", "description", "required"],
+        "properties": {
+          "action_id": { "type": "string", "minLength": 1 },
+          "description": { "type": "string", "minLength": 1 },
+          "required": { "type": "boolean" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
+

@@ -2677,3 +2677,227 @@ func main() {
 		t.Fatalf("unexpected gate result for indeterminate release mutation request: %+v", gateRes6)
 	}
 }
+
+func TestGateLiveExecutionMode(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Compile a dummy binary that acts as covenant
+	dummyCovSrc := filepath.Join(tmpDir, "dummy_covenant.go")
+	dummyCovBin := filepath.Join(tmpDir, "dummy_covenant")
+	if os.PathSeparator == '\\' {
+		dummyCovBin += ".exe"
+	}
+	covContent := `package main
+import (
+	"fmt"
+	"os"
+)
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "version" {
+		fmt.Println("{\"schema_version\": \"covenant.version-result.v1\", \"version\": \"v0.1.0\"}")
+		os.Exit(0)
+	}
+	os.Exit(1)
+}`
+	if err := os.WriteFile(dummyCovSrc, []byte(covContent), 0644); err != nil {
+		t.Fatalf("write dummy covenant src: %v", err)
+	}
+	cmdCov := exec.Command("go", "build", "-o", dummyCovBin, dummyCovSrc)
+	if out, err := cmdCov.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy covenant: %v (output: %q)", err, string(out))
+	}
+
+	// Compile a dummy binary that acts as ao2
+	dummyAo2Src := filepath.Join(tmpDir, "dummy_ao2.go")
+	dummyAo2Bin := filepath.Join(tmpDir, "dummy_ao2")
+	if os.PathSeparator == '\\' {
+		dummyAo2Bin += ".exe"
+	}
+	ao2Content := `package main
+import (
+	"fmt"
+	"os"
+)
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "run" {
+		hasDryRun := false
+		specPath := ""
+		for i := 2; i < len(os.Args); i++ {
+			if os.Args[i] == "--dry-run" {
+				hasDryRun = true
+			} else if os.Args[i] == "--spec" && i+1 < len(os.Args) {
+				specPath = os.Args[i+1]
+			}
+		}
+		if specPath != "" {
+			if hasDryRun {
+				fmt.Println("status=dry_run_accepted")
+			} else {
+				fmt.Println("status=governed_run_started")
+			}
+			os.Exit(0)
+		}
+	}
+	os.Exit(1)
+}`
+	if err := os.WriteFile(dummyAo2Src, []byte(ao2Content), 0644); err != nil {
+		t.Fatalf("write dummy ao2 src: %v", err)
+	}
+	cmdAo2 := exec.Command("go", "build", "-o", dummyAo2Bin, dummyAo2Src)
+	if out, err := cmdAo2.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy ao2: %v (output: %q)", err, string(out))
+	}
+
+	// Set AO2_PATH env var so resolver finds it
+	t.Setenv("AO2_PATH", dummyAo2Bin)
+
+	// Helper to create a plan
+	makePlan := func(workspace string, releaseMode bool, allowMutation bool) string {
+		plan := factoryPlan{
+			SchemaVersion: "ao.forge.factory-plan.v0.1",
+			PlanID:        "forge-plan-efedbfb309b1",
+			Objective: factoryObjective{
+				Text:        "test live mode",
+				Workspace:   workspace,
+				ReleaseMode: releaseMode,
+			},
+			Constraints: factoryConstraints{
+				LocalFirst:           true,
+				AllowNetwork:         false,
+				AllowReleaseMutation: allowMutation,
+			},
+			PolicyGate: policyGate{
+				Required:    true,
+				Status:      "not_requested",
+				Explanation: "test",
+			},
+			Workcells: []planWorkcell{
+				{WorkcellID: "wc1", Kind: "prepare", Status: "planned", DependsOn: []string{}},
+			},
+			ExpectedEvidence: []string{"test"},
+			NextActions: []nextAction{
+				{ActionID: "test", Description: "test", Required: true},
+			},
+		}
+		data, _ := json.Marshal(plan)
+		planPath := filepath.Join(tmpDir, fmt.Sprintf("plan-%t-%t.json", releaseMode, allowMutation))
+		_ = os.WriteFile(planPath, data, 0644)
+		return planPath
+	}
+
+	// Helper to create an allowed gate result
+	makeGateResult := func(planID string, status string, decisionID string) string {
+		res := covenantGateResult{
+			SchemaVersion:    "ao.forge.covenant-gate-result.v0.1",
+			Status:           status,
+			PlanID:           planID,
+			ExecutionEnabled: true,
+			Decision: covenantDecisionFixture{
+				SchemaVersion: "ao.forge.covenant-decision-fixture.v0.1",
+				TargetPlanID:  planID,
+				Decision:      status,
+				DecisionID:    decisionID,
+				Explanation:   "Approved",
+				Source:        "live-covenant-adapter",
+			},
+		}
+		data, _ := json.Marshal(res)
+		gatePath := filepath.Join(tmpDir, fmt.Sprintf("gate-%s.json", status))
+		_ = os.WriteFile(gatePath, data, 0644)
+		return gatePath
+	}
+
+	cleanGitDir := filepath.Join(tmpDir, "cleangit")
+	_ = os.Mkdir(cleanGitDir, 0755)
+	runGit := func(dir string, args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v (output: %q)", args, err, string(out))
+		}
+	}
+	runGit(cleanGitDir, "init")
+	runGit(cleanGitDir, "config", "user.email", "test@example.com")
+	runGit(cleanGitDir, "config", "user.name", "Test")
+	runGit(cleanGitDir, "config", "commit.gpgSign", "false")
+	_ = os.WriteFile(filepath.Join(cleanGitDir, "clean.txt"), []byte("clean"), 0644)
+	runGit(cleanGitDir, "add", "clean.txt")
+	runGit(cleanGitDir, "commit", "-m", "init")
+
+	// 1. Safe Plan, --live mode (not release mode) -> succeeds
+	plan1 := makePlan(cleanGitDir, false, false)
+	gate1 := makeGateResult("forge-plan-efedbfb309b1", "allowed", "allow-local-plan")
+	outPath1 := filepath.Join(tmpDir, "packet1.json")
+	code1, stdout1, stderr1 := runCLI("run", "--plan", plan1, "--gate-result", gate1, "--out", outPath1, "--live")
+	if code1 != 0 {
+		t.Fatalf("expected code 0, got %d (stdout: %q, stderr: %q)", code1, stdout1, stderr1)
+	}
+	packetData, err := os.ReadFile(outPath1)
+	if err != nil {
+		t.Fatalf("failed to read packet: %v", err)
+	}
+	var pkt1 factoryPacket
+	if err := json.Unmarshal(packetData, &pkt1); err != nil {
+		t.Fatalf("failed to parse packet: %v", err)
+	}
+	if pkt1.Status != "passed" || pkt1.Workcells[0].AO2Run != "live" {
+		t.Fatalf("unexpected packet properties for safe live run: %+v", pkt1)
+	}
+
+	// 2. Release Mode Plan, --live mode, WITHOUT --confirm-release -> fails closed (blocked)
+	plan2 := makePlan(cleanGitDir, true, false)
+	gate2 := makeGateResult("forge-plan-efedbfb309b1", "allowed", "allow-local-plan")
+	outPath2 := filepath.Join(tmpDir, "packet2.json")
+	code2, _, _ := runCLI("run", "--plan", plan2, "--gate-result", gate2, "--out", outPath2, "--live")
+	if code2 != 1 {
+		t.Fatalf("expected code 1, got %d", code2)
+	}
+	packetData2, err := os.ReadFile(outPath2)
+	if err != nil {
+		t.Fatalf("failed to read packet: %v", err)
+	}
+	var pkt2 factoryPacket
+	if err := json.Unmarshal(packetData2, &pkt2); err != nil {
+		t.Fatalf("failed to parse packet: %v", err)
+	}
+	if pkt2.Status != "blocked" || pkt2.PolicyDecisions[0].DecisionID != "release-confirmation-required" {
+		t.Fatalf("unexpected packet properties for unconfirmed live release mode run: %+v", pkt2)
+	}
+
+	// 3. Release Mode Plan, --live mode, WITH --confirm-release -> succeeds
+	outPath3 := filepath.Join(tmpDir, "packet3.json")
+	code3, _, stderr3 := runCLI("run", "--plan", plan2, "--gate-result", gate2, "--out", outPath3, "--live", "--confirm-release")
+	if code3 != 0 {
+		t.Fatalf("expected code 0, got %d (stderr: %q)", code3, stderr3)
+	}
+	packetData3, err := os.ReadFile(outPath3)
+	if err != nil {
+		t.Fatalf("failed to read packet: %v", err)
+	}
+	var pkt3 factoryPacket
+	if err := json.Unmarshal(packetData3, &pkt3); err != nil {
+		t.Fatalf("failed to parse packet: %v", err)
+	}
+	if pkt3.Status != "passed" || pkt3.Workcells[0].AO2Run != "live" || !pkt3.TrustBoundary.MutatesReleases {
+		t.Fatalf("unexpected packet properties for confirmed live release mode run: %+v", pkt3)
+	}
+
+	// 4. Gate Result is indeterminate-release-mutation, WITH --confirm-release -> succeeds (operator override)
+	gate4 := makeGateResult("forge-plan-efedbfb309b1", "blocked", "indeterminate-release-mutation")
+	outPath4 := filepath.Join(tmpDir, "packet4.json")
+	code4, _, stderr4 := runCLI("run", "--plan", plan2, "--gate-result", gate4, "--out", outPath4, "--live", "--confirm-release")
+	if code4 != 0 {
+		t.Fatalf("expected code 0, got %d (stderr: %q)", code4, stderr4)
+	}
+	packetData4, err := os.ReadFile(outPath4)
+	if err != nil {
+		t.Fatalf("failed to read packet: %v", err)
+	}
+	var pkt4 factoryPacket
+	if err := json.Unmarshal(packetData4, &pkt4); err != nil {
+		t.Fatalf("failed to parse packet: %v", err)
+	}
+	if pkt4.Status != "passed" || pkt4.Workcells[0].AO2Run != "live" || !pkt4.TrustBoundary.MutatesReleases {
+		t.Fatalf("unexpected packet properties for overridden indeterminate run: %+v", pkt4)
+	}
+}

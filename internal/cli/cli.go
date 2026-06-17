@@ -1169,6 +1169,8 @@ func resolveAo2Binary() (string, error) {
 func runRun(args []string, stdout, stderr io.Writer) int {
 	var planPath, gateResultPath, outPath string
 	var controlPlaneURL string
+	var liveMode bool
+	var confirmRelease bool
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--plan":
@@ -1199,6 +1201,10 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 			}
 			controlPlaneURL = args[i+1]
 			i++
+		case "--live":
+			liveMode = true
+		case "--confirm-release":
+			confirmRelease = true
 		default:
 			fmt.Fprintf(stderr, "forge run: unexpected argument %s\n", args[i])
 			return 2
@@ -1277,7 +1283,11 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 				packet.Workcells[i].Status = schedulerStates[i].Status
 				packet.Workcells[i].Summary = schedulerStates[i].Summary
 				if schedulerStates[i].Status == "passed" {
-					packet.Workcells[i].AO2Run = "dry-run"
+					if liveMode {
+						packet.Workcells[i].AO2Run = "live"
+					} else {
+						packet.Workcells[i].AO2Run = "dry-run"
+					}
 				}
 			} else {
 				packet.Workcells[i].Status = workcellStatus
@@ -1315,7 +1325,7 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 		}
 
 		packet.TrustBoundary.LocalFirst = plan.Constraints.LocalFirst
-		packet.TrustBoundary.MutatesReleases = false
+		packet.TrustBoundary.MutatesReleases = liveMode && plan.Objective.ReleaseMode
 		packet.TrustBoundary.StoresCredentials = false
 		packet.TrustBoundary.ControlPlaneApprovesWork = false
 
@@ -1350,6 +1360,12 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	// Safety check: Release mode live execution requires confirmation
+	if liveMode && (plan.Objective.ReleaseMode || plan.Constraints.AllowReleaseMutation) && !confirmRelease {
+		explanation := "forge run: release mode live execution requires explicit operator confirmation (--confirm-release)"
+		return failClosedWithPacket("blocked", "blocked", explanation, "release-confirmation-required", "ao-forge", true, nil)
+	}
+
 	gateData, err := os.ReadFile(gateResultPath)
 	if err != nil {
 		explanation := fmt.Sprintf("Gate result is unavailable or missing: %v", err)
@@ -1370,15 +1386,19 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 
 	// Fail closed if gate result status is not allowed
 	if gate.Status != "allowed" {
-		packetStatus := "blocked"
-		workcellStatus := "blocked"
-		isIndet := true
-		if gate.Status == "denied" {
-			packetStatus = "denied"
-			workcellStatus = "denied"
-			isIndet = false
+		if gate.Decision.DecisionID == "indeterminate-release-mutation" && confirmRelease {
+			// Operator override accepted, proceed!
+		} else {
+			packetStatus := "blocked"
+			workcellStatus := "blocked"
+			isIndet := true
+			if gate.Status == "denied" {
+				packetStatus = "denied"
+				workcellStatus = "denied"
+				isIndet = false
+			}
+			return failClosedWithPacket(packetStatus, workcellStatus, gate.Decision.Explanation, gate.Decision.DecisionID, gate.Decision.Source, isIndet, nil)
 		}
-		return failClosedWithPacket(packetStatus, workcellStatus, gate.Decision.Explanation, gate.Decision.DecisionID, gate.Decision.Source, isIndet, nil)
 	}
 
 	// Gate is allowed. Find and verify ao2 binary
@@ -1439,14 +1459,20 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 
 	// 1. Run Workcells
 	var runErr error
-	schedulerStates, runErr = runWorkcellsConcurrent(context.Background(), plan, ao2Path, stdout, stderr)
+	schedulerStates, runErr = runWorkcellsConcurrent(context.Background(), plan, ao2Path, stdout, stderr, liveMode)
 
 	// Determine status
 	runSummaryStatus := "dry_run_accepted"
+	if liveMode {
+		runSummaryStatus = "accepted"
+	}
 	packetStatus := "passed"
 	workcellStatus := "passed"
 	if runErr != nil {
 		runSummaryStatus = "dry_run_failed"
+		if liveMode {
+			runSummaryStatus = "failed"
+		}
 		packetStatus = "failed"
 		workcellStatus = "failed"
 	}
@@ -1670,26 +1696,40 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 			packet.Workcells[i].Status = schedulerStates[i].Status
 			packet.Workcells[i].Summary = schedulerStates[i].Summary
 			if schedulerStates[i].Status == "passed" {
-				packet.Workcells[i].AO2Run = "dry-run"
+				if liveMode {
+					packet.Workcells[i].AO2Run = "live"
+				} else {
+					packet.Workcells[i].AO2Run = "dry-run"
+				}
 			}
 		} else {
 			packet.Workcells[i].Status = "passed"
-			packet.Workcells[i].AO2Run = "dry-run"
-			packet.Workcells[i].Summary = "Dry-run accepted by ao2"
+			if liveMode {
+				packet.Workcells[i].AO2Run = "live"
+				packet.Workcells[i].Summary = "Governed run started by ao2"
+			} else {
+				packet.Workcells[i].AO2Run = "dry-run"
+				packet.Workcells[i].Summary = "Dry-run accepted by ao2"
+			}
 		}
 	}
 
 	packet.Evidence = evidenceList
 
 	packet.TrustBoundary.LocalFirst = plan.Constraints.LocalFirst
-	packet.TrustBoundary.MutatesReleases = false
+	packet.TrustBoundary.MutatesReleases = liveMode && plan.Objective.ReleaseMode
 	packet.TrustBoundary.StoresCredentials = false
 	packet.TrustBoundary.ControlPlaneApprovesWork = false
 
 	packet.NextActions = []nextAction{
 		{
 			ActionID:    "close-factory-packet",
-			Description: "Review the factory packet and dry-run evidence.",
+			Description: func() string {
+				if liveMode {
+					return "Review the factory packet and live evidence."
+				}
+				return "Review the factory packet and dry-run evidence."
+			}(),
 			Required:    false,
 		},
 	}
@@ -1718,6 +1758,8 @@ func runOnce(args []string, stdout, stderr io.Writer) int {
 	var briefPath, covenantPath, outPath string
 	var controlPlaneURL string
 	var workspacePath string
+	var liveMode bool
+	var confirmRelease bool
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--brief":
@@ -1755,6 +1797,10 @@ func runOnce(args []string, stdout, stderr io.Writer) int {
 			}
 			workspacePath = args[i+1]
 			i++
+		case "--live":
+			liveMode = true
+		case "--confirm-release":
+			confirmRelease = true
 		default:
 			fmt.Fprintf(stderr, "forge once: unexpected argument %s\n", args[i])
 			return 2
@@ -1845,6 +1891,12 @@ func runOnce(args []string, stdout, stderr io.Writer) int {
 	}
 	if controlPlaneURL != "" {
 		runArgs = append(runArgs, "--control-plane", controlPlaneURL)
+	}
+	if liveMode {
+		runArgs = append(runArgs, "--live")
+	}
+	if confirmRelease {
+		runArgs = append(runArgs, "--confirm-release")
 	}
 
 	runCode := runRun(runArgs, stdout, stderr)
@@ -2320,7 +2372,7 @@ type workcellRunState struct {
 	SpecSHA256 string
 }
 
-func runWorkcellsConcurrent(ctx context.Context, plan factoryPlan, ao2Path string, stdout, stderr io.Writer) ([]workcellRunState, error) {
+func runWorkcellsConcurrent(ctx context.Context, plan factoryPlan, ao2Path string, stdout, stderr io.Writer, liveMode bool) ([]workcellRunState, error) {
 	// Initialize state
 	states := make(map[string]*workcellRunState)
 	for _, wc := range plan.Workcells {
@@ -2412,7 +2464,7 @@ func runWorkcellsConcurrent(ctx context.Context, plan factoryPlan, ao2Path strin
 				defer wg.Done()
 
 				// Run task
-				err := executeSingleWorkcell(ctx, plan, t, ao2Path)
+				err := executeSingleWorkcell(ctx, plan, t, ao2Path, liveMode)
 
 				mu.Lock()
 				defer mu.Unlock()
@@ -2427,7 +2479,11 @@ func runWorkcellsConcurrent(ctx context.Context, plan factoryPlan, ao2Path strin
 						t.Summary = "Cancelled during execution"
 					} else {
 						t.Status = "passed"
-						t.Summary = "Dry-run accepted by ao2"
+						if liveMode {
+							t.Summary = "Governed run started by ao2"
+						} else {
+							t.Summary = "Dry-run accepted by ao2"
+						}
 					}
 				}
 			}(task)
@@ -2445,7 +2501,7 @@ func runWorkcellsConcurrent(ctx context.Context, plan factoryPlan, ao2Path strin
 	return orderedStates, firstErr
 }
 
-func executeSingleWorkcell(ctx context.Context, plan factoryPlan, wcState *workcellRunState, ao2Path string) error {
+func executeSingleWorkcell(ctx context.Context, plan factoryPlan, wcState *workcellRunState, ao2Path string, liveMode bool) error {
 	// Construct Ao2RunSpec with only this workcell/task
 	specTask := runTask{
 		ID:        wcState.ID,
@@ -2500,7 +2556,12 @@ func executeSingleWorkcell(ctx context.Context, plan factoryPlan, wcState *workc
 	tempSpec.Close()
 
 	// Execute command with context cancellation support
-	cmd := exec.CommandContext(ctx, ao2Path, "run", "--dry-run", "--spec", tempSpec.Name())
+	var cmd *exec.Cmd
+	if liveMode {
+		cmd = exec.CommandContext(ctx, ao2Path, "run", "--spec", tempSpec.Name())
+	} else {
+		cmd = exec.CommandContext(ctx, ao2Path, "run", "--dry-run", "--spec", tempSpec.Name())
+	}
 	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
@@ -2513,8 +2574,17 @@ func executeSingleWorkcell(ctx context.Context, plan factoryPlan, wcState *workc
 		return fmt.Errorf("ao2 run failed for %s: %v (stderr: %q)", wcState.ID, runErr, wcState.Stderr)
 	}
 
-	if !strings.Contains(wcState.Stdout, "status=dry_run_accepted") {
-		return fmt.Errorf("ao2 run output for %s did not confirm acceptance: %q (stderr: %q)", wcState.ID, wcState.Stdout, wcState.Stderr)
+	if liveMode {
+		if !strings.Contains(wcState.Stdout, "status=governed_run_started") &&
+			!strings.Contains(wcState.Stdout, "status=governed_provider_run_started") &&
+			!strings.Contains(wcState.Stdout, "status=Accepted") &&
+			!strings.Contains(wcState.Stdout, "status=accepted") {
+			return fmt.Errorf("ao2 run output for %s did not confirm acceptance: %q (stderr: %q)", wcState.ID, wcState.Stdout, wcState.Stderr)
+		}
+	} else {
+		if !strings.Contains(wcState.Stdout, "status=dry_run_accepted") {
+			return fmt.Errorf("ao2 run output for %s did not confirm acceptance: %q (stderr: %q)", wcState.ID, wcState.Stdout, wcState.Stderr)
+		}
 	}
 
 	return nil

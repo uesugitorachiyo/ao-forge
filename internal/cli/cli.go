@@ -324,10 +324,26 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 			Source:        "live-covenant-adapter",
 		}
 
+		if plan.Objective.ReleaseMode {
+			if err := verifyReleaseWorkspace(plan.Objective.Workspace); err != nil {
+				decision.DecisionID = "deny-dirty-release-workspace"
+				decision.Decision = "deny"
+				decision.Explanation = fmt.Sprintf("Release workspace validation failed: %v", err)
+				result := blockedGateResult(plan.PlanID, decision, decision.Explanation)
+				return writeGateResult(result, flags.outPath, stdout, stderr, 1)
+			}
+		}
+
 		if plan.Constraints.AllowReleaseMutation {
-			decision.DecisionID = "deny-release-mutation"
-			decision.Decision = "deny"
-			decision.Explanation = "The plan requests release mutation, which is denied by policy."
+			if !plan.Objective.ReleaseMode {
+				decision.DecisionID = "deny-non-release-mutation"
+				decision.Decision = "deny"
+				decision.Explanation = "The plan requests release mutation, but Release Mode is disabled."
+			} else {
+				decision.DecisionID = "indeterminate-release-mutation"
+				decision.Decision = "indeterminate"
+				decision.Explanation = "The plan requests release mutation in Release Mode, which requires explicit operator override."
+			}
 		} else if plan.Constraints.AllowNetwork {
 			decision.DecisionID = "indeterminate-network-access"
 			decision.Decision = "indeterminate"
@@ -2499,6 +2515,34 @@ func executeSingleWorkcell(ctx context.Context, plan factoryPlan, wcState *workc
 
 	if !strings.Contains(wcState.Stdout, "status=dry_run_accepted") {
 		return fmt.Errorf("ao2 run output for %s did not confirm acceptance: %q (stderr: %q)", wcState.ID, wcState.Stdout, wcState.Stderr)
+	}
+
+	return nil
+}
+
+func verifyReleaseWorkspace(workspacePath string) error {
+	info, err := os.Stat(workspacePath)
+	if err != nil {
+		return fmt.Errorf("workspace directory does not exist: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("workspace path is not a directory")
+	}
+
+	cmd := exec.Command("git", "-C", workspacePath, "rev-parse", "--is-inside-work-tree")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("workspace is not a git repository: %w", err)
+	}
+
+	statusCmd := exec.Command("git", "-C", workspacePath, "status", "--porcelain")
+	var statusOut bytes.Buffer
+	statusCmd.Stdout = &statusOut
+	if err := statusCmd.Run(); err != nil {
+		return fmt.Errorf("failed to check git status of workspace: %w", err)
+	}
+
+	if statusOut.Len() > 0 {
+		return fmt.Errorf("workspace has uncommitted changes (dirty worktree)")
 	}
 
 	return nil

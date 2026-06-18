@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/uesugitorachiyo/ao-forge/docs/contracts/release-preview-inspect-v0.1.schema.json",
+  "title": "AO Forge Release Preview Inspect v0.1",
+  "type": "object",
+  "required": [
+    "inspect_schema_version",
+    "release_preview_audit",
+    "schema_version",
+    "status",
+    "workspace",
+    "github_repo",
+    "tag",
+    "head_commit",
+    "mutates_releases",
+    "network_required",
+    "checks",
+    "failed_checks",
+    "artifacts",
+    "artifact_details",
+    "next_actions"
+  ],
+  "properties": {
+    "inspect_schema_version": {
+      "const": "ao.forge.release-preview-inspect.v0.1"
+    },
+    "release_preview_audit": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schema_version": {
+      "const": "ao.forge.release-preview-audit.v0.1"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["passed", "blocked"]
+    },
+    "workspace": {
+      "type": "string",
+      "minLength": 1
+    },
+    "github_repo": {
+      "type": "string"
+    },
+    "tag": {
+      "type": "string"
+    },
+    "head_commit": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40,64}$"
+    },
+    "mutates_releases": {
+      "const": false
+    },
+    "network_required": {
+      "const": false
+    },
+    "checks": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "failed_checks": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "artifacts": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "artifact_details": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "size_bytes", "status", "provenance"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string",
+            "enum": ["present", "missing", "directory", "unreadable"]
+          },
+          "provenance": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "next_actions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["action_id", "description", "required"],
+        "properties": {
+          "action_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "required": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

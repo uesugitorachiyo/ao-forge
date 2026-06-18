@@ -38,6 +38,7 @@ const (
 	decisionFixtureSchemaVersion = "ao.forge.covenant-decision-fixture.v0.1"
 	gateResultSchemaVersion      = "ao.forge.covenant-gate-result.v0.1"
 	releasePreviewAuditVersion   = "ao.forge.release-preview-audit.v0.1"
+	releasePreviewInspectVersion = "ao.forge.release-preview-inspect.v0.1"
 )
 
 var planIDPattern = regexp.MustCompile(`^forge-plan-[a-f0-9]{12}$`)
@@ -4400,20 +4401,21 @@ type releasePreviewInspectFlags struct {
 }
 
 type releasePreviewInspectSummary struct {
-	ReleasePreviewAudit string                   `json:"release_preview_audit"`
-	SchemaVersion       string                   `json:"schema_version"`
-	Status              string                   `json:"status"`
-	Workspace           string                   `json:"workspace"`
-	GitHubRepo          string                   `json:"github_repo"`
-	Tag                 string                   `json:"tag"`
-	HeadCommit          string                   `json:"head_commit"`
-	MutatesReleases     bool                     `json:"mutates_releases"`
-	NetworkRequired     bool                     `json:"network_required"`
-	Checks              int                      `json:"checks"`
-	FailedChecks        int                      `json:"failed_checks"`
-	Artifacts           int                      `json:"artifacts"`
-	ArtifactDetails     []releasePreviewArtifact `json:"artifact_details"`
-	NextActions         []nextAction             `json:"next_actions"`
+	InspectSchemaVersion string                   `json:"inspect_schema_version"`
+	ReleasePreviewAudit  string                   `json:"release_preview_audit"`
+	SchemaVersion        string                   `json:"schema_version"`
+	Status               string                   `json:"status"`
+	Workspace            string                   `json:"workspace"`
+	GitHubRepo           string                   `json:"github_repo"`
+	Tag                  string                   `json:"tag"`
+	HeadCommit           string                   `json:"head_commit"`
+	MutatesReleases      bool                     `json:"mutates_releases"`
+	NetworkRequired      bool                     `json:"network_required"`
+	Checks               int                      `json:"checks"`
+	FailedChecks         int                      `json:"failed_checks"`
+	Artifacts            int                      `json:"artifacts"`
+	ArtifactDetails      []releasePreviewArtifact `json:"artifact_details"`
+	NextActions          []nextAction             `json:"next_actions"`
 }
 
 func parseReleasePreviewInspectFlags(args []string) (releasePreviewInspectFlags, error) {
@@ -4543,20 +4545,21 @@ func runReleasePreviewInspect(args []string, stdout, stderr io.Writer) int {
 
 	if flags.json {
 		summary := releasePreviewInspectSummary{
-			ReleasePreviewAudit: displayPath(flags.auditPath),
-			SchemaVersion:       audit.SchemaVersion,
-			Status:              audit.Status,
-			Workspace:           audit.Workspace,
-			GitHubRepo:          audit.GitHubRepo,
-			Tag:                 audit.Tag,
-			HeadCommit:          audit.HeadCommit,
-			MutatesReleases:     audit.MutatesReleases,
-			NetworkRequired:     audit.NetworkRequired,
-			Checks:              len(audit.Checks),
-			FailedChecks:        failedChecks,
-			Artifacts:           len(audit.Artifacts),
-			ArtifactDetails:     audit.Artifacts,
-			NextActions:         audit.NextActions,
+			InspectSchemaVersion: releasePreviewInspectVersion,
+			ReleasePreviewAudit:  displayPath(flags.auditPath),
+			SchemaVersion:        audit.SchemaVersion,
+			Status:               audit.Status,
+			Workspace:            audit.Workspace,
+			GitHubRepo:           audit.GitHubRepo,
+			Tag:                  audit.Tag,
+			HeadCommit:           audit.HeadCommit,
+			MutatesReleases:      audit.MutatesReleases,
+			NetworkRequired:      audit.NetworkRequired,
+			Checks:               len(audit.Checks),
+			FailedChecks:         failedChecks,
+			Artifacts:            len(audit.Artifacts),
+			ArtifactDetails:      audit.Artifacts,
+			NextActions:          audit.NextActions,
 		}
 		data, err := marshalIndented(summary)
 		if err != nil {

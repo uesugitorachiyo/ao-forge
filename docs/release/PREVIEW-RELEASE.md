@@ -71,6 +71,12 @@ and includes:
 Committed [release preview fixtures](../../examples/release-preview/) cover
 artifact checksum and inspect JSON behavior for maintainers changing this path.
 
+The JSON inspect summary uses schema version
+`ao.forge.release-preview-inspect.v0.1`. Its formal schema is published at
+`docs/contracts/release-preview-inspect-v0.1.schema.json` and includes the
+source audit schema version, pass/fail counts, artifact details, and next
+actions.
+
 ## Operator Rule
 
 Do not run a live confirmed release if the preview audit is `blocked`. Fix the

@@ -124,6 +124,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	briefSchema := readText("docs", "contracts", "factory-brief-v0.1.schema.json")
 	planSchema := readText("docs", "contracts", "factory-plan-v0.1.schema.json")
 	releasePreviewSchema := readText("docs", "contracts", "release-preview-audit-v0.1.schema.json")
+	releasePreviewInspectSchema := readText("docs", "contracts", "release-preview-inspect-v0.1.schema.json")
 
 	for _, check := range []struct {
 		name string
@@ -133,6 +134,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "README brief schema link", doc: readme, want: "[Factory Brief v0.1 Schema](docs/contracts/factory-brief-v0.1.schema.json)"},
 		{name: "README plan schema link", doc: readme, want: "[Factory Plan v0.1 Schema](docs/contracts/factory-plan-v0.1.schema.json)"},
 		{name: "README release preview schema link", doc: readme, want: "[Release Preview Audit v0.1 Schema](docs/contracts/release-preview-audit-v0.1.schema.json)"},
+		{name: "README release preview inspect schema link", doc: readme, want: "[Release Preview Inspect v0.1 Schema](docs/contracts/release-preview-inspect-v0.1.schema.json)"},
 		{name: "brief schema id", doc: briefSchema, want: `"ao.forge.factory-brief.v0.1"`},
 		{name: "brief strict root", doc: briefSchema, want: `"additionalProperties": false`},
 		{name: "brief objective", doc: briefSchema, want: `"objective"`},
@@ -151,6 +153,13 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "release preview check min items", doc: releasePreviewSchema, want: `"minItems": 1`},
 		{name: "release preview artifacts", doc: releasePreviewSchema, want: `"artifacts"`},
 		{name: "release preview checksum pattern", doc: releasePreviewSchema, want: `"^[a-f0-9]{64}$"`},
+		{name: "release preview inspect schema id", doc: releasePreviewInspectSchema, want: `"ao.forge.release-preview-inspect.v0.1"`},
+		{name: "release preview inspect strict root", doc: releasePreviewInspectSchema, want: `"additionalProperties": false`},
+		{name: "release preview inspect schema version field", doc: releasePreviewInspectSchema, want: `"inspect_schema_version"`},
+		{name: "release preview inspect audit schema field", doc: releasePreviewInspectSchema, want: `"schema_version"`},
+		{name: "release preview inspect failed checks", doc: releasePreviewInspectSchema, want: `"failed_checks"`},
+		{name: "release preview inspect artifact details", doc: releasePreviewInspectSchema, want: `"artifact_details"`},
+		{name: "release preview inspect next actions", doc: releasePreviewInspectSchema, want: `"next_actions"`},
 	} {
 		if !strings.Contains(check.doc, check.want) {
 			t.Fatalf("%s missing %q", check.name, check.want)
@@ -164,6 +173,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "brief schema", text: briefSchema},
 		{name: "plan schema", text: planSchema},
 		{name: "release preview schema", text: releasePreviewSchema},
+		{name: "release preview inspect schema", text: releasePreviewInspectSchema},
 	} {
 		var decoded any
 		if err := json.Unmarshal([]byte(doc.text), &decoded); err != nil {
@@ -7167,19 +7177,20 @@ func TestReleasePreviewInspectPrintsJSONSummary(t *testing.T) {
 	}
 
 	var summary struct {
-		ReleasePreviewAudit string `json:"release_preview_audit"`
-		SchemaVersion       string `json:"schema_version"`
-		Status              string `json:"status"`
-		Workspace           string `json:"workspace"`
-		GitHubRepo          string `json:"github_repo"`
-		Tag                 string `json:"tag"`
-		HeadCommit          string `json:"head_commit"`
-		MutatesReleases     bool   `json:"mutates_releases"`
-		NetworkRequired     bool   `json:"network_required"`
-		Checks              int    `json:"checks"`
-		FailedChecks        int    `json:"failed_checks"`
-		Artifacts           int    `json:"artifacts"`
-		ArtifactDetails     []struct {
+		InspectSchemaVersion string `json:"inspect_schema_version"`
+		ReleasePreviewAudit  string `json:"release_preview_audit"`
+		SchemaVersion        string `json:"schema_version"`
+		Status               string `json:"status"`
+		Workspace            string `json:"workspace"`
+		GitHubRepo           string `json:"github_repo"`
+		Tag                  string `json:"tag"`
+		HeadCommit           string `json:"head_commit"`
+		MutatesReleases      bool   `json:"mutates_releases"`
+		NetworkRequired      bool   `json:"network_required"`
+		Checks               int    `json:"checks"`
+		FailedChecks         int    `json:"failed_checks"`
+		Artifacts            int    `json:"artifacts"`
+		ArtifactDetails      []struct {
 			Path       string `json:"path"`
 			SHA256     string `json:"sha256"`
 			SizeBytes  int64  `json:"size_bytes"`
@@ -7190,6 +7201,9 @@ func TestReleasePreviewInspectPrintsJSONSummary(t *testing.T) {
 	}
 	if err := json.Unmarshal([]byte(stdout), &summary); err != nil {
 		t.Fatalf("inspect --json did not produce valid JSON: %v\n%s", err, stdout)
+	}
+	if summary.InspectSchemaVersion != "ao.forge.release-preview-inspect.v0.1" {
+		t.Fatalf("unexpected inspect schema version: %+v", summary)
 	}
 	if summary.ReleasePreviewAudit != displayPath(auditPath) || summary.SchemaVersion != releasePreviewAuditVersion || summary.Status != "passed" {
 		t.Fatalf("unexpected JSON summary identity: %+v", summary)
@@ -7283,15 +7297,19 @@ func TestReleasePreviewFixtureArtifactsDriveInspectJSON(t *testing.T) {
 	}
 
 	var summary struct {
-		Status          string                   `json:"status"`
-		Tag             string                   `json:"tag"`
-		MutatesReleases bool                     `json:"mutates_releases"`
-		NetworkRequired bool                     `json:"network_required"`
-		Artifacts       int                      `json:"artifacts"`
-		ArtifactDetails []releasePreviewArtifact `json:"artifact_details"`
+		InspectSchemaVersion string                   `json:"inspect_schema_version"`
+		Status               string                   `json:"status"`
+		Tag                  string                   `json:"tag"`
+		MutatesReleases      bool                     `json:"mutates_releases"`
+		NetworkRequired      bool                     `json:"network_required"`
+		Artifacts            int                      `json:"artifacts"`
+		ArtifactDetails      []releasePreviewArtifact `json:"artifact_details"`
 	}
 	if err := json.Unmarshal([]byte(stdout), &summary); err != nil {
 		t.Fatalf("unmarshal inspect fixture JSON: %v\n%s", err, stdout)
+	}
+	if summary.InspectSchemaVersion != "ao.forge.release-preview-inspect.v0.1" {
+		t.Fatalf("unexpected fixture inspect schema version: %+v", summary)
 	}
 	if summary.Status != "passed" || summary.Tag != "v1.2.11" || summary.MutatesReleases || summary.NetworkRequired {
 		t.Fatalf("unexpected release preview fixture summary: %+v", summary)

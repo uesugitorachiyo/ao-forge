@@ -61,6 +61,7 @@ func TestHelpExplainsFactoryTermsWithoutMarketingCopy(t *testing.T) {
 		"forge inspect --packet",
 		"dry-run execution",
 		"forge artifact checksums",
+		"forge release-preview inspect --audit <release-preview-audit.json> [--json]",
 		"Slice 2.7 status:",
 		"release mutation",
 		"GitHub publishing",
@@ -189,6 +190,7 @@ func TestReleasePreviewWorkflowPublishesDryRunAuditArtifacts(t *testing.T) {
 		"actions/upload-artifact@v7",
 		"release-preview-audit",
 		"release-preview-inspect",
+		"release-preview-inspect-json",
 	} {
 		if !strings.Contains(workflow, want) {
 			t.Fatalf("release preview workflow missing %q\n%s", want, workflow)
@@ -223,6 +225,8 @@ func TestReleasePreviewWorkflowPublishesDryRunAuditArtifacts(t *testing.T) {
 		"artifact checksums",
 		"release-preview-audit.json",
 		"release-preview-inspect.txt",
+		"release-preview-inspect.json",
+		"--json",
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("release preview script missing %q\n%s", want, script)
@@ -7030,6 +7034,92 @@ func TestReleasePreviewInspectPrintsOperatorSummary(t *testing.T) {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("release preview inspect output missing %q\n%s", want, stdout)
 		}
+	}
+}
+
+func TestReleasePreviewInspectPrintsJSONSummary(t *testing.T) {
+	tmpDir := t.TempDir()
+	workspaceDir := filepath.Join(tmpDir, "workspace")
+	if err := os.MkdirAll(workspaceDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = workspaceDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v (output: %q)", args, err, string(out))
+		}
+	}
+	runGit("init")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	runGit("config", "commit.gpgSign", "false")
+	runGit("remote", "add", "origin", "git@github.com:test-owner/test-repo.git")
+	versionPath := filepath.Join(workspaceDir, "VERSION")
+	artifactPath := filepath.Join(workspaceDir, "dist.txt")
+	if err := os.WriteFile(versionPath, []byte("1.2.10"), 0644); err != nil {
+		t.Fatalf("write VERSION: %v", err)
+	}
+	if err := os.WriteFile(artifactPath, []byte("release artifact"), 0644); err != nil {
+		t.Fatalf("write artifact: %v", err)
+	}
+	runGit("add", "VERSION", "dist.txt")
+	runGit("commit", "-m", "version 1.2.10")
+
+	auditPath := filepath.Join(tmpDir, "release-preview.json")
+	code, stdout, stderr := runCLI("release-preview", "--workspace", workspaceDir, "--artifact", artifactPath, "--out", auditPath)
+	if code != 0 {
+		t.Fatalf("release-preview failed with code %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+
+	code, stdout, stderr = runCLI("release-preview", "inspect", "--audit", auditPath, "--json")
+	if code != 0 {
+		t.Fatalf("release-preview inspect --json failed with code %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if stderr != "" {
+		t.Fatalf("release-preview inspect --json wrote stderr: %s", stderr)
+	}
+
+	var summary struct {
+		ReleasePreviewAudit string `json:"release_preview_audit"`
+		SchemaVersion       string `json:"schema_version"`
+		Status              string `json:"status"`
+		Workspace           string `json:"workspace"`
+		GitHubRepo          string `json:"github_repo"`
+		Tag                 string `json:"tag"`
+		HeadCommit          string `json:"head_commit"`
+		MutatesReleases     bool   `json:"mutates_releases"`
+		NetworkRequired     bool   `json:"network_required"`
+		Checks              int    `json:"checks"`
+		FailedChecks        int    `json:"failed_checks"`
+		Artifacts           int    `json:"artifacts"`
+		ArtifactDetails     []struct {
+			Path       string `json:"path"`
+			SHA256     string `json:"sha256"`
+			SizeBytes  int64  `json:"size_bytes"`
+			Status     string `json:"status"`
+			Provenance string `json:"provenance"`
+		} `json:"artifact_details"`
+		NextActions []nextAction `json:"next_actions"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &summary); err != nil {
+		t.Fatalf("inspect --json did not produce valid JSON: %v\n%s", err, stdout)
+	}
+	if summary.ReleasePreviewAudit != displayPath(auditPath) || summary.SchemaVersion != releasePreviewAuditVersion || summary.Status != "passed" {
+		t.Fatalf("unexpected JSON summary identity: %+v", summary)
+	}
+	if summary.Workspace != displayPath(workspaceDir) || summary.GitHubRepo != "test-owner/test-repo" || summary.Tag != "v1.2.10" {
+		t.Fatalf("unexpected JSON summary release fields: %+v", summary)
+	}
+	if summary.MutatesReleases || summary.NetworkRequired || summary.Checks < 5 || summary.FailedChecks != 0 {
+		t.Fatalf("unexpected JSON summary checks: %+v", summary)
+	}
+	if summary.Artifacts != 1 || len(summary.ArtifactDetails) != 1 || summary.ArtifactDetails[0].Path != displayPath(artifactPath) || summary.ArtifactDetails[0].Status != "present" || summary.ArtifactDetails[0].SHA256 == "" {
+		t.Fatalf("unexpected JSON artifact details: %+v", summary.ArtifactDetails)
+	}
+	if len(summary.NextActions) == 0 || summary.NextActions[0].ActionID != "review-release-preview-audit" {
+		t.Fatalf("unexpected JSON next actions: %+v", summary.NextActions)
 	}
 }
 

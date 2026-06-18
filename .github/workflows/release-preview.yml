@@ -35,6 +35,9 @@ jobs:
       - name: Inspect release preview audit
         run: go run ./cmd/forge release-preview inspect --audit "${RUNNER_TEMP}/ao-forge-release-preview/release-preview-audit.json"
 
+      - name: Inspect release preview audit as JSON
+        run: go run ./cmd/forge release-preview inspect --audit "${RUNNER_TEMP}/ao-forge-release-preview/release-preview-audit.json" --json
+
       - name: Upload release preview audit
         uses: actions/upload-artifact@v7
         with:
@@ -42,5 +45,13 @@ jobs:
           path: |
             ${{ runner.temp }}/ao-forge-release-preview/release-preview-audit.json
             ${{ runner.temp }}/ao-forge-release-preview/release-preview-inspect.txt
+            ${{ runner.temp }}/ao-forge-release-preview/release-preview-inspect.json
             ${{ runner.temp }}/ao-forge-release-preview/checksums.txt
+          if-no-files-found: error
+
+      - name: Upload release preview inspect JSON
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-preview-inspect-json
+          path: ${{ runner.temp }}/ao-forge-release-preview/release-preview-inspect.json
           if-no-files-found: error

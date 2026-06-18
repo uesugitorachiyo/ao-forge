@@ -248,7 +248,7 @@ Usage:
   forge doctor --foundation <foundation-baseline.json> [--json]
   forge artifact checksums --artifact <path> [--artifact <path> ...] [--out <checksums.txt>]
   forge release-preview --workspace <git-workspace> [--tag <vX.Y.Z>] [--artifact <path> ...] [--out <release-preview-audit.json>]
-  forge release-preview inspect --audit <release-preview-audit.json>
+  forge release-preview inspect --audit <release-preview-audit.json> [--json]
 
 Factory terms:
   factory brief   normalized operator objective and constraints
@@ -4394,6 +4394,55 @@ type releasePreviewAudit struct {
 	NextActions         []nextAction             `json:"next_actions"`
 }
 
+type releasePreviewInspectFlags struct {
+	auditPath string
+	json      bool
+}
+
+type releasePreviewInspectSummary struct {
+	ReleasePreviewAudit string                   `json:"release_preview_audit"`
+	SchemaVersion       string                   `json:"schema_version"`
+	Status              string                   `json:"status"`
+	Workspace           string                   `json:"workspace"`
+	GitHubRepo          string                   `json:"github_repo"`
+	Tag                 string                   `json:"tag"`
+	HeadCommit          string                   `json:"head_commit"`
+	MutatesReleases     bool                     `json:"mutates_releases"`
+	NetworkRequired     bool                     `json:"network_required"`
+	Checks              int                      `json:"checks"`
+	FailedChecks        int                      `json:"failed_checks"`
+	Artifacts           int                      `json:"artifacts"`
+	ArtifactDetails     []releasePreviewArtifact `json:"artifact_details"`
+	NextActions         []nextAction             `json:"next_actions"`
+}
+
+func parseReleasePreviewInspectFlags(args []string) (releasePreviewInspectFlags, error) {
+	var flags releasePreviewInspectFlags
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--audit":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return releasePreviewInspectFlags{}, fmt.Errorf("--audit requires a value")
+			}
+			flags.auditPath = args[i+1]
+			i++
+		case "--json":
+			flags.json = true
+		case "--help", "-h":
+			return releasePreviewInspectFlags{}, fmt.Errorf("help is available with `forge --help`")
+		default:
+			if strings.HasPrefix(args[i], "--") {
+				return releasePreviewInspectFlags{}, fmt.Errorf("unknown flag %s", args[i])
+			}
+			return releasePreviewInspectFlags{}, fmt.Errorf("unexpected argument %s", args[i])
+		}
+	}
+	if flags.auditPath == "" {
+		return releasePreviewInspectFlags{}, fmt.Errorf("missing required --audit")
+	}
+	return flags, nil
+}
+
 func parseReleasePreviewFlags(args []string) (releasePreviewFlags, error) {
 	var flags releasePreviewFlags
 	for i := 0; i < len(args); i++ {
@@ -4473,17 +4522,13 @@ func runReleasePreview(args []string, stdout, stderr io.Writer) int {
 }
 
 func runReleasePreviewInspect(args []string, stdout, stderr io.Writer) int {
-	auditPath, _, err := parsePathFlags(args, "--audit", "")
+	flags, err := parseReleasePreviewInspectFlags(args)
 	if err != nil {
 		fmt.Fprintf(stderr, "forge release-preview inspect: %v\n", err)
 		return 2
 	}
-	if auditPath == "" {
-		fmt.Fprintln(stderr, "forge release-preview inspect: missing required --audit")
-		return 2
-	}
 
-	audit, err := readReleasePreviewAudit(auditPath)
+	audit, err := readReleasePreviewAudit(flags.auditPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "forge release-preview inspect: %v\n", err)
 		return 1
@@ -4496,7 +4541,33 @@ func runReleasePreviewInspect(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	fmt.Fprintf(stdout, "release_preview_audit=%s\n", displayPath(auditPath))
+	if flags.json {
+		summary := releasePreviewInspectSummary{
+			ReleasePreviewAudit: displayPath(flags.auditPath),
+			SchemaVersion:       audit.SchemaVersion,
+			Status:              audit.Status,
+			Workspace:           audit.Workspace,
+			GitHubRepo:          audit.GitHubRepo,
+			Tag:                 audit.Tag,
+			HeadCommit:          audit.HeadCommit,
+			MutatesReleases:     audit.MutatesReleases,
+			NetworkRequired:     audit.NetworkRequired,
+			Checks:              len(audit.Checks),
+			FailedChecks:        failedChecks,
+			Artifacts:           len(audit.Artifacts),
+			ArtifactDetails:     audit.Artifacts,
+			NextActions:         audit.NextActions,
+		}
+		data, err := marshalIndented(summary)
+		if err != nil {
+			fmt.Fprintf(stderr, "forge release-preview inspect: marshal summary: %v\n", err)
+			return 1
+		}
+		_, _ = stdout.Write(data)
+		return 0
+	}
+
+	fmt.Fprintf(stdout, "release_preview_audit=%s\n", displayPath(flags.auditPath))
 	fmt.Fprintf(stdout, "schema_version=%s\n", audit.SchemaVersion)
 	fmt.Fprintf(stdout, "status=%s\n", audit.Status)
 	fmt.Fprintf(stdout, "workspace=%s\n", audit.Workspace)

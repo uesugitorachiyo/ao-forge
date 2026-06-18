@@ -49,6 +49,7 @@ over provider execution, release publishing, or control-plane approval.
 
 - [AO Forge v0.1 Design](docs/design/AO-FORGE-V0.1.md)
 - [Phase 0 Roadmap](docs/roadmap/PHASE-0.md)
+- [Branch Protection Runbook](docs/release/BRANCH-PROTECTION.md)
 - [Verified Foundation Baseline](docs/foundation/VERIFIED-BASELINE.md)
 - [Foundation Baseline JSON](docs/foundation/foundation-baseline.v0.1.json)
 - [Release Threat Model](docs/security/RELEASE-THREAT-MODEL.md)

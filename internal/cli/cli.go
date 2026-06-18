@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto"
@@ -1251,6 +1252,7 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 	var controlPlaneURL string
 	var liveMode bool
 	var confirmRelease bool
+	var nonInteractive bool
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--plan":
@@ -1285,6 +1287,8 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 			liveMode = true
 		case "--confirm-release":
 			confirmRelease = true
+		case "--non-interactive", "--yes", "-y":
+			nonInteractive = true
 		default:
 			fmt.Fprintf(stderr, "forge run: unexpected argument %s\n", args[i])
 			return 2
@@ -1306,7 +1310,7 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	return executePlanRun(plan, planPath, gateResultPath, outPath, controlPlaneURL, liveMode, confirmRelease, nil, stdout, stderr)
+	return executePlanRun(plan, planPath, gateResultPath, outPath, controlPlaneURL, liveMode, confirmRelease, nonInteractive, os.Stdin, nil, stdout, stderr)
 }
 
 func executePlanRun(
@@ -1317,10 +1321,19 @@ func executePlanRun(
 	controlPlaneURL string,
 	liveMode bool,
 	confirmRelease bool,
+	nonInteractive bool,
+	stdin io.Reader,
 	prevStates map[string]*workcellRunState,
 	stdout, stderr io.Writer,
 ) int {
 	var schedulerStates []workcellRunState
+	var extraEvidence []struct {
+		Label         string `json:"label"`
+		SchemaVersion string `json:"schema_version"`
+		Status        string `json:"status"`
+		Path          string `json:"path"`
+		SHA256        string `json:"sha256"`
+	}
 
 	// Helper function to write blocked packet when failing closed early
 	failClosedWithPacket := func(packetStatus string, workcellStatus string, explanation string, decisionID string, source string, isIndeterminate bool, evidence []struct {
@@ -1492,6 +1505,49 @@ func executePlanRun(
 	if gate.Status != "allowed" {
 		if gate.Decision.DecisionID == "indeterminate-release-mutation" && confirmRelease {
 			// Operator override accepted, proceed!
+		} else if gate.Status == "blocked" && !nonInteractive {
+			fmt.Fprintf(stderr, "\nCovenant Gate returned indeterminate/blocked decision.\nDecision ID: %s\nExplanation: %s\nApprove and override execution? [y/N]: ", gate.Decision.DecisionID, gate.Decision.Explanation)
+			response, scanErr := readStdinLine(stdin)
+			if scanErr == nil && (strings.ToLower(response) == "y" || strings.ToLower(response) == "yes") {
+				gate.Status = "allowed"
+				overrideEv := map[string]any{
+					"schema_version":   "ao2.operator-override-evidence.v1",
+					"timestamp":        time.Now().Format(time.RFC3339),
+					"gate_decision_id": gate.Decision.DecisionID,
+					"explanation":      gate.Decision.Explanation,
+					"approved":         true,
+				}
+				overrideData, err := marshalIndented(overrideEv)
+				if err != nil {
+					explanation := fmt.Sprintf("Failed to marshal operator override evidence: %v", err)
+					return failClosedWithPacket("failed", "failed", explanation, "override-evidence-marshal-failed", "ao-forge", false, nil)
+				}
+				summaryDir := "."
+				if outPath != "" {
+					summaryDir = filepath.Dir(outPath)
+				}
+				overridePath := filepath.Join(summaryDir, "operator-override.json")
+				if err := writeFile(overridePath, overrideData); err != nil {
+					explanation := fmt.Sprintf("Failed to write operator override evidence: %v", err)
+					return failClosedWithPacket("failed", "failed", explanation, "override-evidence-write-failed", "ao-forge", false, nil)
+				}
+				sum := sha256.Sum256(overrideData)
+				extraEvidence = append(extraEvidence, struct {
+					Label         string `json:"label"`
+					SchemaVersion string `json:"schema_version"`
+					Status        string `json:"status"`
+					Path          string `json:"path"`
+					SHA256        string `json:"sha256"`
+				}{
+					Label:         "operator override approval evidence",
+					SchemaVersion: "ao2.operator-override-evidence.v1",
+					Status:        "passed",
+					Path:          displayPath(overridePath),
+					SHA256:        hex.EncodeToString(sum[:]),
+				})
+			} else {
+				return failClosedWithPacket("blocked", "blocked", gate.Decision.Explanation, gate.Decision.DecisionID, gate.Decision.Source, true, nil)
+			}
 		} else {
 			packetStatus := "blocked"
 			workcellStatus := "blocked"
@@ -1563,7 +1619,7 @@ func executePlanRun(
 
 	// 1. Run Workcells
 	var runErr error
-	schedulerStates, runErr = runWorkcellsConcurrent(context.Background(), plan, ao2Path, stdout, stderr, liveMode, prevStates)
+	schedulerStates, runErr = runWorkcellsConcurrent(context.Background(), plan, ao2Path, stdout, stderr, liveMode, nonInteractive, stdin, prevStates)
 
 	// Determine status
 	runSummaryStatus := "dry_run_accepted"
@@ -1614,6 +1670,7 @@ func executePlanRun(
 		Path          string `json:"path"`
 		SHA256        string `json:"sha256"`
 	}
+	evidenceList = append(evidenceList, extraEvidence...)
 
 	// 1. Factory Plan
 	if pData, err := os.ReadFile(planPath); err == nil {
@@ -1881,6 +1938,7 @@ func runResume(args []string, stdout, stderr io.Writer) int {
 	var controlPlaneURL string
 	var liveMode bool
 	var confirmRelease bool
+	var nonInteractive bool
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--run":
@@ -1908,6 +1966,8 @@ func runResume(args []string, stdout, stderr io.Writer) int {
 			liveMode = true
 		case "--confirm-release":
 			confirmRelease = true
+		case "--non-interactive", "--yes", "-y":
+			nonInteractive = true
 		default:
 			fmt.Fprintf(stderr, "forge resume: unexpected argument %s\n", args[i])
 			return 2
@@ -1950,50 +2010,47 @@ func runResume(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	var prevPacket factoryPacket
-	hasPrevPacket := false
-	if data, err := os.ReadFile(packetPath); err == nil {
-		if err := json.Unmarshal(data, &prevPacket); err == nil {
-			hasPrevPacket = true
-		}
-	}
-
 	prevStates := make(map[string]*workcellRunState)
-	if hasPrevPacket {
-		for _, prevWc := range prevPacket.Workcells {
-			if prevWc.Status == "passed" {
-				wcEvPath := filepath.Join(runDir, fmt.Sprintf("ao2-wc-%s-evidence.json", prevWc.WorkcellID))
-				var stdoutText, stderrText, specSHA string
-				if evData, err := os.ReadFile(wcEvPath); err == nil {
-					var evObj map[string]any
-					if err := json.Unmarshal(evData, &evObj); err == nil {
-						if st, ok := evObj["stdout"].(string); ok {
-							stdoutText = st
+	if _, err := os.Stat(packetPath); err == nil {
+		if packetData, err := os.ReadFile(packetPath); err == nil {
+			var prevPacket factoryPacket
+			if err := json.Unmarshal(packetData, &prevPacket); err == nil {
+				for _, prevWc := range prevPacket.Workcells {
+					if prevWc.Status == "passed" {
+						wcEvPath := filepath.Join(runDir, fmt.Sprintf("ao2-wc-%s-evidence.json", prevWc.WorkcellID))
+						var stdoutText, stderrText, specSHA string
+						if evData, err := os.ReadFile(wcEvPath); err == nil {
+							var evObj map[string]any
+							if err := json.Unmarshal(evData, &evObj); err == nil {
+								if st, ok := evObj["stdout"].(string); ok {
+									stdoutText = st
+								}
+								if se, ok := evObj["stderr"].(string); ok {
+									stderrText = se
+								}
+								if sh, ok := evObj["spec_sha256"].(string); ok {
+									specSHA = sh
+								}
+							}
 						}
-						if se, ok := evObj["stderr"].(string); ok {
-							stderrText = se
-						}
-						if sh, ok := evObj["spec_sha256"].(string); ok {
-							specSHA = sh
+						prevStates[prevWc.WorkcellID] = &workcellRunState{
+							ID:         prevWc.WorkcellID,
+							Status:     "passed",
+							Summary:    prevWc.Summary,
+							Stdout:     stdoutText,
+							Stderr:     stderrText,
+							SpecSHA256: specSHA,
+							Workspace:  prevWc.Workspace,
+							Executor:   prevWc.Executor,
+							Task:       prevWc.Task,
 						}
 					}
-				}
-				prevStates[prevWc.WorkcellID] = &workcellRunState{
-					ID:         prevWc.WorkcellID,
-					Status:     "passed",
-					Summary:    prevWc.Summary,
-					Stdout:     stdoutText,
-					Stderr:     stderrText,
-					SpecSHA256: specSHA,
-					Workspace:  prevWc.Workspace,
-					Executor:   prevWc.Executor,
-					Task:       prevWc.Task,
 				}
 			}
 		}
 	}
 
-	return executePlanRun(plan, planPath, gateResultPath, outPath, controlPlaneURL, liveMode, confirmRelease, prevStates, stdout, stderr)
+	return executePlanRun(plan, planPath, gateResultPath, outPath, controlPlaneURL, liveMode, confirmRelease, nonInteractive, os.Stdin, prevStates, stdout, stderr)
 }
 
 func runOnce(args []string, stdout, stderr io.Writer) int {
@@ -2002,6 +2059,7 @@ func runOnce(args []string, stdout, stderr io.Writer) int {
 	var workspacePath string
 	var liveMode bool
 	var confirmRelease bool
+	var nonInteractive bool
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--brief":
@@ -2043,6 +2101,8 @@ func runOnce(args []string, stdout, stderr io.Writer) int {
 			liveMode = true
 		case "--confirm-release":
 			confirmRelease = true
+		case "--non-interactive", "--yes", "-y":
+			nonInteractive = true
 		default:
 			fmt.Fprintf(stderr, "forge once: unexpected argument %s\n", args[i])
 			return 2
@@ -2139,6 +2199,9 @@ func runOnce(args []string, stdout, stderr io.Writer) int {
 	}
 	if confirmRelease {
 		runArgs = append(runArgs, "--confirm-release")
+	}
+	if nonInteractive {
+		runArgs = append(runArgs, "--non-interactive")
 	}
 
 	runCode := runRun(runArgs, stdout, stderr)
@@ -2632,7 +2695,16 @@ type workcellRunState struct {
 	Rubric     *workcellRubric
 }
 
-func runWorkcellsConcurrent(ctx context.Context, plan factoryPlan, ao2Path string, stdout, stderr io.Writer, liveMode bool, prevStates map[string]*workcellRunState) ([]workcellRunState, error) {
+func runWorkcellsConcurrent(
+	ctx context.Context,
+	plan factoryPlan,
+	ao2Path string,
+	stdout, stderr io.Writer,
+	liveMode bool,
+	nonInteractive bool,
+	stdin io.Reader,
+	prevStates map[string]*workcellRunState,
+) ([]workcellRunState, error) {
 	// Initialize state
 	states := make(map[string]*workcellRunState)
 	for _, wc := range plan.Workcells {
@@ -2668,6 +2740,7 @@ func runWorkcellsConcurrent(ctx context.Context, plan factoryPlan, ao2Path strin
 	var mu sync.Mutex
 	// Use a WaitGroup to wait for all running goroutines to complete
 	var wg sync.WaitGroup
+	var promptMu sync.Mutex
 
 	// Create a cancellable context to abort pending runs if one fails
 	ctx, cancel := context.WithCancel(ctx)
@@ -2747,13 +2820,111 @@ func runWorkcellsConcurrent(ctx context.Context, plan factoryPlan, ao2Path strin
 				// Run task
 				err := executeSingleWorkcell(ctx, plan, t, ao2Path, liveMode)
 
-				mu.Lock()
-				defer mu.Unlock()
 				if err != nil {
+					if !nonInteractive {
+						promptMu.Lock()
+						
+						// Check if context has been cancelled by another goroutine's abort action
+						if ctx.Err() != nil {
+							mu.Lock()
+							t.Status = "skipped"
+							t.Summary = "Cancelled during execution"
+							mu.Unlock()
+							promptMu.Unlock()
+							return
+						}
+
+						fmt.Fprintf(stderr, "\nWorkcell [%s] failed.\nError: %v\n", t.ID, err)
+						if t.Stdout != "" {
+							fmt.Fprintf(stderr, "Stdout: %s\n", t.Stdout)
+						}
+						if t.Stderr != "" {
+							fmt.Fprintf(stderr, "Stderr: %s\n", t.Stderr)
+						}
+						fmt.Fprintf(stderr, "Choose action: (r)etry, (s)kip and continue, or (a)bort? [r/s/A]: ")
+						
+						response, scanErr := readStdinLine(stdin)
+						promptMu.Unlock()
+
+						if scanErr == nil {
+							respLower := strings.ToLower(strings.TrimSpace(response))
+							if respLower == "r" || respLower == "retry" {
+								// Loop to retry until success or abort/skip
+								retryCount := 0
+								for {
+									retryCount++
+									fmt.Fprintf(stderr, "\nRetrying workcell [%s] (attempt %d)...\n", t.ID, retryCount)
+									err = executeSingleWorkcell(ctx, plan, t, ao2Path, liveMode)
+									if err == nil {
+										mu.Lock()
+										t.Status = "passed"
+										if t.Summary == "" {
+											if liveMode {
+												t.Summary = "Governed run started by ao2"
+											} else {
+												t.Summary = "Dry-run accepted by ao2"
+											}
+										}
+										mu.Unlock()
+										return
+									}
+									
+									// If it fails again, lock promptMu to prompt again
+									promptMu.Lock()
+									if ctx.Err() != nil {
+										mu.Lock()
+										t.Status = "skipped"
+										t.Summary = "Cancelled during execution"
+										mu.Unlock()
+										promptMu.Unlock()
+										return
+									}
+									fmt.Fprintf(stderr, "\nWorkcell [%s] failed on retry %d.\nError: %v\n", t.ID, retryCount, err)
+									if t.Stdout != "" {
+										fmt.Fprintf(stderr, "Stdout: %s\n", t.Stdout)
+									}
+									if t.Stderr != "" {
+										fmt.Fprintf(stderr, "Stderr: %s\n", t.Stderr)
+									}
+									fmt.Fprintf(stderr, "Choose action: (r)etry, (s)kip and continue, or (a)bort? [r/s/A]: ")
+									response, scanErr = readStdinLine(stdin)
+									promptMu.Unlock()
+									
+									if scanErr != nil {
+										break
+									}
+									respLower = strings.ToLower(strings.TrimSpace(response))
+									if respLower != "r" && respLower != "retry" {
+										break
+									}
+								}
+								
+								// Process post-retry response (either skip or abort)
+								respLower = strings.ToLower(strings.TrimSpace(response))
+								if respLower == "s" || respLower == "skip" {
+									mu.Lock()
+									t.Status = "skipped"
+									t.Summary = "Skipped by operator after failure: " + err.Error()
+									mu.Unlock()
+									return
+								}
+							} else if respLower == "s" || respLower == "skip" {
+								mu.Lock()
+								t.Status = "skipped"
+								t.Summary = "Skipped by operator after failure: " + err.Error()
+								mu.Unlock()
+								return
+							}
+						}
+					}
+					
+					mu.Lock()
 					t.Status = "failed"
 					t.Summary = err.Error()
 					setFailure(err)
+					mu.Unlock()
 				} else {
+					mu.Lock()
 					// Check if context was cancelled while we were running
 					if ctx.Err() != nil {
 						t.Status = "skipped"
@@ -2768,6 +2939,7 @@ func runWorkcellsConcurrent(ctx context.Context, plan factoryPlan, ao2Path strin
 							}
 						}
 					}
+					mu.Unlock()
 				}
 			}(task)
 		}
@@ -3156,4 +3328,13 @@ func archiveRunState(runID string, planPath string, gateResultPath string, summa
 
 	_ = os.WriteFile(filepath.Join(runDir, "factory-packet.json"), packetData, 0644)
 	_ = writeMarkdownPacket(filepath.Join(runDir, "factory-packet.json"), packet)
+}
+
+func readStdinLine(r io.Reader) (string, error) {
+	reader := bufio.NewReader(r)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(line), nil
 }

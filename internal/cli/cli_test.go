@@ -60,11 +60,12 @@ func TestHelpExplainsFactoryTermsWithoutMarketingCopy(t *testing.T) {
 		"forge plan --brief",
 		"forge inspect --packet",
 		"dry-run execution",
-		"Slice 2.5 status:",
+		"Slice 2.6 status:",
 		"release mutation",
 		"GitHub publishing",
 		"release preview audits",
 		"release preview enforcement",
+		"release preview audit inspection",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("help missing %q\n%s", want, stdout)
@@ -119,6 +120,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	readme := readText("README.md")
 	briefSchema := readText("docs", "contracts", "factory-brief-v0.1.schema.json")
 	planSchema := readText("docs", "contracts", "factory-plan-v0.1.schema.json")
+	releasePreviewSchema := readText("docs", "contracts", "release-preview-audit-v0.1.schema.json")
 
 	for _, check := range []struct {
 		name string
@@ -127,6 +129,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	}{
 		{name: "README brief schema link", doc: readme, want: "[Factory Brief v0.1 Schema](docs/contracts/factory-brief-v0.1.schema.json)"},
 		{name: "README plan schema link", doc: readme, want: "[Factory Plan v0.1 Schema](docs/contracts/factory-plan-v0.1.schema.json)"},
+		{name: "README release preview schema link", doc: readme, want: "[Release Preview Audit v0.1 Schema](docs/contracts/release-preview-audit-v0.1.schema.json)"},
 		{name: "brief schema id", doc: briefSchema, want: `"ao.forge.factory-brief.v0.1"`},
 		{name: "brief strict root", doc: briefSchema, want: `"additionalProperties": false`},
 		{name: "brief objective", doc: briefSchema, want: `"objective"`},
@@ -139,6 +142,12 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "plan policy gate", doc: planSchema, want: `"policy_gate"`},
 		{name: "plan workcells", doc: planSchema, want: `"workcells"`},
 		{name: "plan next actions", doc: planSchema, want: `"next_actions"`},
+		{name: "release preview schema id", doc: releasePreviewSchema, want: `"ao.forge.release-preview-audit.v0.1"`},
+		{name: "release preview strict root", doc: releasePreviewSchema, want: `"additionalProperties": false`},
+		{name: "release preview checks", doc: releasePreviewSchema, want: `"checks"`},
+		{name: "release preview check min items", doc: releasePreviewSchema, want: `"minItems": 1`},
+		{name: "release preview artifacts", doc: releasePreviewSchema, want: `"artifacts"`},
+		{name: "release preview checksum pattern", doc: releasePreviewSchema, want: `"^[a-f0-9]{64}$"`},
 	} {
 		if !strings.Contains(check.doc, check.want) {
 			t.Fatalf("%s missing %q", check.name, check.want)
@@ -151,6 +160,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	}{
 		{name: "brief schema", text: briefSchema},
 		{name: "plan schema", text: planSchema},
+		{name: "release preview schema", text: releasePreviewSchema},
 	} {
 		var decoded any
 		if err := json.Unmarshal([]byte(doc.text), &decoded); err != nil {
@@ -6824,6 +6834,185 @@ func TestReleasePreviewAuditWritesMachineReadableBundle(t *testing.T) {
 	}
 	if len(audit.Checks) < 5 {
 		t.Fatalf("expected release preview checks, got: %+v", audit.Checks)
+	}
+}
+
+func TestReleasePreviewInspectPrintsOperatorSummary(t *testing.T) {
+	tmpDir := t.TempDir()
+	workspaceDir := filepath.Join(tmpDir, "workspace")
+	if err := os.MkdirAll(workspaceDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = workspaceDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v (output: %q)", args, err, string(out))
+		}
+	}
+	runGit("init")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	runGit("config", "commit.gpgSign", "false")
+	runGit("remote", "add", "origin", "git@github.com:test-owner/test-repo.git")
+	versionPath := filepath.Join(workspaceDir, "VERSION")
+	artifactPath := filepath.Join(workspaceDir, "dist.txt")
+	if err := os.WriteFile(versionPath, []byte("1.2.8"), 0644); err != nil {
+		t.Fatalf("write VERSION: %v", err)
+	}
+	if err := os.WriteFile(artifactPath, []byte("release artifact"), 0644); err != nil {
+		t.Fatalf("write artifact: %v", err)
+	}
+	runGit("add", "VERSION", "dist.txt")
+	runGit("commit", "-m", "version 1.2.8")
+
+	auditPath := filepath.Join(tmpDir, "release-preview.json")
+	code, stdout, stderr := runCLI("release-preview", "--workspace", workspaceDir, "--artifact", artifactPath, "--out", auditPath)
+	if code != 0 {
+		t.Fatalf("release-preview failed with code %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+
+	code, stdout, stderr = runCLI("release-preview", "inspect", "--audit", auditPath)
+	if code != 0 {
+		t.Fatalf("release-preview inspect failed with code %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	for _, want := range []string{
+		"release_preview_audit=" + displayPath(auditPath),
+		"schema_version=ao.forge.release-preview-audit.v0.1",
+		"status=passed",
+		"workspace=" + displayPath(workspaceDir),
+		"github_repo=test-owner/test-repo",
+		"tag=v1.2.8",
+		"mutates_releases=false",
+		"network_required=false",
+		"failed_checks=0",
+		"artifacts=1",
+		"artifact=" + displayPath(artifactPath) + " status=present",
+		"next_action=review-release-preview-audit required=true",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("release preview inspect output missing %q\n%s", want, stdout)
+		}
+	}
+}
+
+func TestReleasePreviewAuditValidationRejectsEmptyChecks(t *testing.T) {
+	tmpDir := t.TempDir()
+	workspaceDir := filepath.Join(tmpDir, "workspace")
+	if err := os.MkdirAll(workspaceDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = workspaceDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v (output: %q)", args, err, string(out))
+		}
+	}
+	runGit("init")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	runGit("config", "commit.gpgSign", "false")
+	runGit("remote", "add", "origin", "git@github.com:test-owner/test-repo.git")
+	if err := os.WriteFile(filepath.Join(workspaceDir, "VERSION"), []byte("1.2.9"), 0644); err != nil {
+		t.Fatalf("write VERSION: %v", err)
+	}
+	runGit("add", "VERSION")
+	runGit("commit", "-m", "version 1.2.9")
+
+	audit := buildReleasePreviewAudit(releasePreviewFlags{workspacePath: workspaceDir})
+	audit.Checks = nil
+	auditPath := filepath.Join(tmpDir, "release-preview-empty-checks.json")
+	data, err := marshalIndented(audit)
+	if err != nil {
+		t.Fatalf("marshal audit: %v", err)
+	}
+	if err := os.WriteFile(auditPath, data, 0644); err != nil {
+		t.Fatalf("write audit: %v", err)
+	}
+
+	plan := factoryPlan{
+		Objective: factoryObjective{
+			Text:        "Release v1.2.9",
+			Workspace:   workspaceDir,
+			ReleaseMode: true,
+		},
+	}
+	_, err = validateReleasePreviewAuditForPlan(auditPath, plan)
+	if err == nil || !strings.Contains(err.Error(), "audit must include at least one check") {
+		t.Fatalf("expected empty checks validation error, got %v", err)
+	}
+}
+
+func TestReleasePreviewAuditValidationRejectsMismatchedEvidence(t *testing.T) {
+	tmpDir := t.TempDir()
+	workspaceDir := filepath.Join(tmpDir, "workspace")
+	if err := os.MkdirAll(workspaceDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = workspaceDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v (output: %q)", args, err, string(out))
+		}
+	}
+	runGit("init")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	runGit("config", "commit.gpgSign", "false")
+	runGit("remote", "add", "origin", "git@github.com:test-owner/test-repo.git")
+	if err := os.WriteFile(filepath.Join(workspaceDir, "VERSION"), []byte("1.3.0"), 0644); err != nil {
+		t.Fatalf("write VERSION: %v", err)
+	}
+	runGit("add", "VERSION")
+	runGit("commit", "-m", "version 1.3.0")
+
+	plan := factoryPlan{
+		Objective: factoryObjective{
+			Text:        "Release v1.3.0",
+			Workspace:   workspaceDir,
+			ReleaseMode: true,
+		},
+	}
+	baseAudit := buildReleasePreviewAudit(releasePreviewFlags{workspacePath: workspaceDir})
+
+	cases := []struct {
+		name    string
+		mutate  func(*releasePreviewAudit)
+		wantErr string
+	}{
+		{name: "blocked status", mutate: func(a *releasePreviewAudit) { a.Status = "blocked" }, wantErr: "audit status must be passed"},
+		{name: "mutating preview", mutate: func(a *releasePreviewAudit) { a.MutatesReleases = true }, wantErr: "audit must be non-mutating"},
+		{name: "network preview", mutate: func(a *releasePreviewAudit) { a.NetworkRequired = true }, wantErr: "audit must not require network access"},
+		{name: "wrong workspace", mutate: func(a *releasePreviewAudit) { a.Workspace = "other-workspace" }, wantErr: "does not match plan workspace"},
+		{name: "wrong tag", mutate: func(a *releasePreviewAudit) { a.Tag = "v9.9.9" }, wantErr: "does not match expected tag"},
+		{name: "stale head", mutate: func(a *releasePreviewAudit) { a.HeadCommit = strings.Repeat("0", 40) }, wantErr: "does not match current HEAD"},
+		{name: "failed check", mutate: func(a *releasePreviewAudit) { a.Checks[0].Status = "failed" }, wantErr: "is \"failed\""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			audit := baseAudit
+			audit.Checks = append([]releasePreviewCheck(nil), baseAudit.Checks...)
+			audit.Artifacts = append([]releasePreviewArtifact(nil), baseAudit.Artifacts...)
+			audit.NextActions = append([]nextAction(nil), baseAudit.NextActions...)
+			tc.mutate(&audit)
+
+			auditPath := filepath.Join(tmpDir, strings.ReplaceAll(tc.name, " ", "-")+".json")
+			data, err := marshalIndented(audit)
+			if err != nil {
+				t.Fatalf("marshal audit: %v", err)
+			}
+			if err := os.WriteFile(auditPath, data, 0644); err != nil {
+				t.Fatalf("write audit: %v", err)
+			}
+			_, err = validateReleasePreviewAuditForPlan(auditPath, plan)
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("expected validation error containing %q, got %v", tc.wantErr, err)
+			}
+		})
 	}
 }
 

@@ -56,6 +56,7 @@ over provider execution, release publishing, or control-plane approval.
 - [Factory Packet v0.1 Schema](docs/contracts/factory-packet-v0.1.schema.json)
 - [Covenant Decision Fixture v0.1 Schema](docs/contracts/covenant-decision-fixture-v0.1.schema.json)
 - [Covenant Gate Result v0.1 Schema](docs/contracts/covenant-gate-result-v0.1.schema.json)
+- [Release Preview Audit v0.1 Schema](docs/contracts/release-preview-audit-v0.1.schema.json)
 - [Example Vertical Slice](examples/vertical-slices/risky-pr-factory.factory.json)
 - [Example Deterministic Plan](examples/plans/risky-pr-factory-plan.json)
 - [Example Covenant Gate Result](examples/gates/allow-local-plan.gate.json)
@@ -121,6 +122,12 @@ releases:
 The preview audit is machine-readable JSON with the resolved tag, HEAD commit,
 GitHub repository, release checks, artifact sizes, checksums, and next actions.
 See `docs/release/PREVIEW-RELEASE.md` for the operator runbook.
+
+Inspect a release preview audit without reading raw JSON:
+
+```sh
+./bin/forge release-preview inspect --audit release-preview-audit.json
+```
 
 Mutating commands fail closed unless the required gate result, clean workspace,
 explicit operator confirmation, and release preview evidence are present.

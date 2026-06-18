@@ -155,6 +155,11 @@ audit workflow. It uploads `release-preview-audit.json`,
 `release-preview-inspect.txt`, `release-preview-inspect.json`, and
 `checksums.txt` as CI artifacts.
 
+The `Release Rehearsal` workflow provides a tagged release rehearsal without
+publishing. Run it manually with the intended tag, or let it run on pushed `v*`
+tags, then review the uploaded `release-rehearsal-evidence` artifact before any
+public release mutation.
+
 ## Continuous Integration
 
 This repository is public. The GitHub Actions workflow runs automatically on every push to a branch and every pull request targeting `main`.

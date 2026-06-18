@@ -54,6 +54,21 @@ pushes to `main`. The workflow uploads the machine-readable audit, an inspect
 summary, a JSON inspect summary, and artifact checksums for review without using
 write permissions or live release flags.
 
+## Tagged Release Rehearsal
+
+The `Release Rehearsal` workflow rehearses tagged release evidence without
+publishing a GitHub release, pushing refs, or requiring write permissions. It can
+run manually with a tag input before the first public release, and it also runs
+on pushed `v*` tags as a final non-mutating evidence check.
+
+The workflow uses `scripts/release-preview-dry-run.sh` with
+`AO_FORGE_RELEASE_PREVIEW_TAG` set to the selected tag, validates the audit and
+inspect JSON schema versions, confirms the evidence is passed, local-only, and
+non-mutating, then uploads `release-rehearsal-evidence`.
+
+Before publishing a real release, review the uploaded evidence artifact and
+confirm it matches the intended tag and commit.
+
 ## Audit Contract
 
 The audit uses schema version `ao.forge.release-preview-audit.v0.1`. The formal

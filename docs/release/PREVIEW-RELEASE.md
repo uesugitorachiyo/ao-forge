@@ -68,6 +68,9 @@ and includes:
 - `release_notes_preview`;
 - `next_actions`.
 
+Committed [release preview fixtures](../../examples/release-preview/) cover
+artifact checksum and inspect JSON behavior for maintainers changing this path.
+
 ## Operator Rule
 
 Do not run a live confirmed release if the preview audit is `blocked`. Fix the

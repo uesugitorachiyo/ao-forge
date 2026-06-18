@@ -7166,6 +7166,109 @@ func TestReleasePreviewInspectPrintsJSONSummary(t *testing.T) {
 	}
 }
 
+func TestReleasePreviewFixtureArtifactsDriveInspectJSON(t *testing.T) {
+	root := repoRoot(t)
+	readText := func(path ...string) string {
+		t.Helper()
+		bytes, err := os.ReadFile(filepath.Join(append([]string{root}, path...)...))
+		if err != nil {
+			t.Fatalf("read %s: %v", filepath.Join(path...), err)
+		}
+		return string(bytes)
+	}
+	fixtureDir := filepath.Join(root, "examples", "release-preview")
+	artifactPath := filepath.Join(fixtureDir, "ao-forge-preview-artifact.txt")
+	checksumsPath := filepath.Join(fixtureDir, "checksums.txt")
+	expectedArtifactsPath := filepath.Join(fixtureDir, "inspect-artifacts.expected.json")
+
+	for _, check := range []struct {
+		name string
+		doc  string
+		want string
+	}{
+		{name: "README release preview fixture link", doc: readText("README.md"), want: "[Release Preview Fixtures](examples/release-preview/)"},
+		{name: "runbook release preview fixture link", doc: readText("docs", "release", "PREVIEW-RELEASE.md"), want: "../../examples/release-preview/"},
+	} {
+		if !strings.Contains(check.doc, check.want) {
+			t.Fatalf("%s missing %q", check.name, check.want)
+		}
+	}
+
+	expectedManifest, err := os.ReadFile(checksumsPath)
+	if err != nil {
+		t.Fatalf("read checksum fixture: %v", err)
+	}
+	code, stdout, stderr := runCLI("artifact", "checksums", "--artifact", artifactPath)
+	if code != 0 {
+		t.Fatalf("artifact checksums fixture failed with code %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if stdout != string(expectedManifest) {
+		t.Fatalf("checksum fixture drifted\nwant:\n%sgot:\n%s", string(expectedManifest), stdout)
+	}
+
+	tmpDir := t.TempDir()
+	workspaceDir := filepath.Join(tmpDir, "workspace")
+	if err := os.MkdirAll(workspaceDir, 0755); err != nil {
+		t.Fatalf("mkdir workspace: %v", err)
+	}
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = workspaceDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v (output: %q)", args, err, string(out))
+		}
+	}
+	runGit("init")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	runGit("config", "commit.gpgSign", "false")
+	runGit("remote", "add", "origin", "git@github.com:test-owner/test-repo.git")
+	if err := os.WriteFile(filepath.Join(workspaceDir, "VERSION"), []byte("1.2.11"), 0644); err != nil {
+		t.Fatalf("write VERSION: %v", err)
+	}
+	runGit("add", "VERSION")
+	runGit("commit", "-m", "version 1.2.11")
+
+	auditPath := filepath.Join(tmpDir, "release-preview.json")
+	code, stdout, stderr = runCLI("release-preview", "--workspace", workspaceDir, "--artifact", artifactPath, "--artifact", checksumsPath, "--out", auditPath)
+	if code != 0 {
+		t.Fatalf("release-preview fixture failed with code %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+
+	code, stdout, stderr = runCLI("release-preview", "inspect", "--audit", auditPath, "--json")
+	if code != 0 {
+		t.Fatalf("release-preview inspect fixture failed with code %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+
+	var summary struct {
+		Status          string                   `json:"status"`
+		Tag             string                   `json:"tag"`
+		MutatesReleases bool                     `json:"mutates_releases"`
+		NetworkRequired bool                     `json:"network_required"`
+		Artifacts       int                      `json:"artifacts"`
+		ArtifactDetails []releasePreviewArtifact `json:"artifact_details"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &summary); err != nil {
+		t.Fatalf("unmarshal inspect fixture JSON: %v\n%s", err, stdout)
+	}
+	if summary.Status != "passed" || summary.Tag != "v1.2.11" || summary.MutatesReleases || summary.NetworkRequired {
+		t.Fatalf("unexpected release preview fixture summary: %+v", summary)
+	}
+	if summary.Artifacts != 2 || len(summary.ArtifactDetails) != 2 {
+		t.Fatalf("expected two fixture artifact details, got: %+v", summary.ArtifactDetails)
+	}
+
+	expectedArtifacts, err := os.ReadFile(expectedArtifactsPath)
+	if err != nil {
+		t.Fatalf("read expected inspect artifact fixture: %v", err)
+	}
+	actualArtifacts, err := marshalIndented(summary.ArtifactDetails)
+	if err != nil {
+		t.Fatalf("marshal actual fixture artifacts: %v", err)
+	}
+	assertJSONOutputEqual(t, "release preview fixture artifact details", expectedArtifacts, string(actualArtifacts))
+}
+
 func TestReleasePreviewAuditValidationRejectsEmptyChecks(t *testing.T) {
 	tmpDir := t.TempDir()
 	workspaceDir := filepath.Join(tmpDir, "workspace")

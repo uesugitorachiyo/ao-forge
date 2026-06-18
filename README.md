@@ -58,6 +58,7 @@ over provider execution, release publishing, or control-plane approval.
 - [Covenant Decision Fixture v0.1 Schema](docs/contracts/covenant-decision-fixture-v0.1.schema.json)
 - [Covenant Gate Result v0.1 Schema](docs/contracts/covenant-gate-result-v0.1.schema.json)
 - [Release Preview Audit v0.1 Schema](docs/contracts/release-preview-audit-v0.1.schema.json)
+- [Release Preview Fixtures](examples/release-preview/)
 - [Example Vertical Slice](examples/vertical-slices/risky-pr-factory.factory.json)
 - [Example Deterministic Plan](examples/plans/risky-pr-factory-plan.json)
 - [Example Covenant Gate Result](examples/gates/allow-local-plan.gate.json)

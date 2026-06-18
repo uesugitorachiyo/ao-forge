@@ -1,0 +1,3 @@
+AO Forge fixture release artifact
+purpose=release-preview-behavioral-test
+version=fixture-v0.1

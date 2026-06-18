@@ -64,6 +64,7 @@ type workcellRubric struct {
 type briefWorkcell struct {
 	WorkcellID string          `json:"workcell_id"`
 	Kind       string          `json:"kind"`
+	Workspace  string          `json:"workspace,omitempty"`
 	DependsOn  []string        `json:"depends_on"`
 	Rubric     *workcellRubric `json:"rubric,omitempty"`
 }
@@ -102,6 +103,7 @@ type policyGate struct {
 type planWorkcell struct {
 	WorkcellID string          `json:"workcell_id"`
 	Kind       string          `json:"kind"`
+	Workspace  string          `json:"workspace,omitempty"`
 	Status     string          `json:"status"`
 	DependsOn  []string        `json:"depends_on"`
 	Rubric     *workcellRubric `json:"rubric,omitempty"`
@@ -154,6 +156,7 @@ type factoryPacket struct {
 	Workcells []struct {
 		WorkcellID string   `json:"workcell_id"`
 		Kind       string   `json:"kind"`
+		Workspace  string   `json:"workspace,omitempty"`
 		Status     string   `json:"status"`
 		DependsOn  []string `json:"depends_on"`
 		AO2Run     string   `json:"ao2_run"`
@@ -343,12 +346,22 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 		}
 
 		if plan.Objective.ReleaseMode {
-			if err := verifyReleaseWorkspace(plan.Objective.Workspace); err != nil {
-				decision.DecisionID = "deny-dirty-release-workspace"
-				decision.Decision = "deny"
-				decision.Explanation = fmt.Sprintf("Release workspace validation failed: %v", err)
-				result := blockedGateResult(plan.PlanID, decision, decision.Explanation)
-				return writeGateResult(result, flags.outPath, stdout, stderr, 1)
+			workspaces := []string{plan.Objective.Workspace}
+			seen := map[string]bool{plan.Objective.Workspace: true}
+			for _, wc := range plan.Workcells {
+				if wc.Workspace != "" && !seen[wc.Workspace] {
+					workspaces = append(workspaces, wc.Workspace)
+					seen[wc.Workspace] = true
+				}
+			}
+			for _, ws := range workspaces {
+				if err := verifyReleaseWorkspace(ws); err != nil {
+					decision.DecisionID = "deny-dirty-release-workspace"
+					decision.Decision = "deny"
+					decision.Explanation = fmt.Sprintf("Release workspace validation failed for %q: %v", ws, err)
+					result := blockedGateResult(plan.PlanID, decision, decision.Explanation)
+					return writeGateResult(result, flags.outPath, stdout, stderr, 1)
+				}
 			}
 		}
 
@@ -875,6 +888,7 @@ func buildPlan(brief factoryBrief, canonicalBrief []byte) factoryPlan {
 		workcells = append(workcells, planWorkcell{
 			WorkcellID: cell.WorkcellID,
 			Kind:       cell.Kind,
+			Workspace:  cell.Workspace,
 			Status:     "planned",
 			DependsOn:  cloneStrings(cell.DependsOn),
 			Rubric:     cell.Rubric,
@@ -1302,6 +1316,7 @@ func executePlanRun(
 		packet.Workcells = make([]struct {
 			WorkcellID string   `json:"workcell_id"`
 			Kind       string   `json:"kind"`
+			Workspace  string   `json:"workspace,omitempty"`
 			Status     string   `json:"status"`
 			DependsOn  []string `json:"depends_on"`
 			AO2Run     string   `json:"ao2_run"`
@@ -1311,6 +1326,7 @@ func executePlanRun(
 		for i, wc := range plan.Workcells {
 			packet.Workcells[i].WorkcellID = wc.WorkcellID
 			packet.Workcells[i].Kind = wc.Kind
+			packet.Workcells[i].Workspace = wc.Workspace
 			packet.Workcells[i].DependsOn = cloneStrings(wc.DependsOn)
 			if schedulerStates != nil && i < len(schedulerStates) {
 				packet.Workcells[i].Status = schedulerStates[i].Status
@@ -1728,6 +1744,7 @@ func executePlanRun(
 	packet.Workcells = make([]struct {
 		WorkcellID string   `json:"workcell_id"`
 		Kind       string   `json:"kind"`
+		Workspace  string   `json:"workspace,omitempty"`
 		Status     string   `json:"status"`
 		DependsOn  []string `json:"depends_on"`
 		AO2Run     string   `json:"ao2_run"`
@@ -1737,6 +1754,7 @@ func executePlanRun(
 	for i, wc := range plan.Workcells {
 		packet.Workcells[i].WorkcellID = wc.WorkcellID
 		packet.Workcells[i].Kind = wc.Kind
+		packet.Workcells[i].Workspace = wc.Workspace
 		packet.Workcells[i].DependsOn = cloneStrings(wc.DependsOn)
 		packet.Workcells[i].AO2Run = "none"
 		if schedulerStates != nil && i < len(schedulerStates) {
@@ -1912,6 +1930,7 @@ func runResume(args []string, stdout, stderr io.Writer) int {
 					Stdout:     stdoutText,
 					Stderr:     stderrText,
 					SpecSHA256: specSHA,
+					Workspace:  prevWc.Workspace,
 				}
 			}
 		}
@@ -2370,7 +2389,7 @@ func parseMarkdownBrief(data []byte) (factoryBrief, error) {
 	lines := strings.Split(string(data), "\n")
 	currentSection := ""
 
-	workcellRegex := regexp.MustCompile(`^\s*[-\*]\s*([a-zA-Z0-9_-]+)\s*\((prepare|execute|verify|close)\)(?:\s+(?:depends\s+on|depends_on):\s*([a-zA-Z0-9_,\s-]+))?\s*$`)
+	workcellRegex := regexp.MustCompile(`^\s*[-\*]\s*([a-zA-Z0-9_-]+)\s*\((prepare|execute|verify|close)\)(?:\s+workspace:\s*([^\s\(\)]+))?(?:\s+(?:depends\s+on|depends_on):\s*([a-zA-Z0-9_,\s-]+))?\s*$`)
 
 	for _, line := range lines {
 		trimmedLine := strings.TrimSpace(line)
@@ -2434,9 +2453,10 @@ func parseMarkdownBrief(data []byte) (factoryBrief, error) {
 				if len(matches) >= 3 {
 					wcID := matches[1]
 					wcKind := matches[2]
+					wcWorkspace := matches[3]
 					deps := []string{}
-					if len(matches) > 3 && matches[3] != "" {
-						depList := strings.Split(matches[3], ",")
+					if len(matches) > 4 && matches[4] != "" {
+						depList := strings.Split(matches[4], ",")
 						for _, d := range depList {
 							trimmedDep := strings.TrimSpace(d)
 							if trimmedDep != "" {
@@ -2447,6 +2467,7 @@ func parseMarkdownBrief(data []byte) (factoryBrief, error) {
 					brief.ExpectedWorkcells = append(brief.ExpectedWorkcells, briefWorkcell{
 						WorkcellID: wcID,
 						Kind:       wcKind,
+						Workspace:  wcWorkspace,
 						DependsOn:  deps,
 					})
 				}
@@ -2491,14 +2512,18 @@ func writeMarkdownPacket(outPath string, packet factoryPacket) error {
 	buf.WriteString("\n")
 
 	buf.WriteString("## Workcells\n\n")
-	buf.WriteString("| Workcell ID | Kind | Status | Run Mode | Summary |\n")
-	buf.WriteString("| --- | --- | --- | --- | --- |\n")
+	buf.WriteString("| Workcell ID | Kind | Status | Workspace | Run Mode | Summary |\n")
+	buf.WriteString("| --- | --- | --- | --- | --- | --- |\n")
 	for _, wc := range packet.Workcells {
 		runMode := wc.AO2Run
 		if runMode == "" {
 			runMode = "none"
 		}
-		fmt.Fprintf(&buf, "| %s | %s | %s | %s | %s |\n", wc.WorkcellID, wc.Kind, wc.Status, runMode, wc.Summary)
+		wsDisplay := wc.Workspace
+		if wsDisplay == "" {
+			wsDisplay = packet.Objective.Workspace
+		}
+		fmt.Fprintf(&buf, "| %s | %s | %s | %s | %s | %s |\n", wc.WorkcellID, wc.Kind, wc.Status, wsDisplay, runMode, wc.Summary)
 	}
 	buf.WriteString("\n")
 
@@ -2530,6 +2555,7 @@ func writeMarkdownPacket(outPath string, packet factoryPacket) error {
 type workcellRunState struct {
 	ID         string
 	Kind       string
+	Workspace  string
 	DependsOn  []string
 	Status     string // "pending", "running", "passed", "failed", "skipped"
 	Summary    string
@@ -2559,6 +2585,7 @@ func runWorkcellsConcurrent(ctx context.Context, plan factoryPlan, ao2Path strin
 		states[wc.WorkcellID] = &workcellRunState{
 			ID:         wc.WorkcellID,
 			Kind:       wc.Kind,
+			Workspace:  wc.Workspace,
 			DependsOn:  wc.DependsOn,
 			Status:     status,
 			Summary:    existingSummary,
@@ -2695,6 +2722,11 @@ func executeSingleWorkcell(ctx context.Context, plan factoryPlan, wcState *workc
 		Rationale: "ao-forge workcell " + wcState.ID,
 	}
 
+	repoPath := plan.Objective.Workspace
+	if wcState.Workspace != "" {
+		repoPath = wcState.Workspace
+	}
+
 	runSpec := ao2RunSpec{
 		APIVersion: "ao2.run/v1",
 		Kind:       "Run",
@@ -2710,7 +2742,7 @@ func executeSingleWorkcell(ctx context.Context, plan factoryPlan, wcState *workc
 			PlanKind: "build",
 			Goal:     plan.Objective.Text,
 			Target: runTarget{
-				RepoPath: plan.Objective.Workspace,
+				RepoPath: repoPath,
 			},
 			TrustBoundary: trustBoundary{
 				ControlPlaneRole:   "read_only_observer",

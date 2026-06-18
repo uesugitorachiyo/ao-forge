@@ -1859,8 +1859,8 @@ func main() {
 		"test md",
 		"- **Workspace**: test-ws",
 		"## Workcells",
-		"| Workcell ID | Kind | Status | Run Mode | Summary |",
-		"| cell1 | prepare | passed | dry-run | Dry-run accepted by ao2 |",
+		"| Workcell ID | Kind | Status | Workspace | Run Mode | Summary |",
+		"| cell1 | prepare | passed | test-ws | dry-run | Dry-run accepted by ao2 |",
 		"## Evidence",
 		"## Next Actions",
 	} {
@@ -3569,7 +3569,12 @@ import (
 	"os"
 )
 
+type runTarget struct {
+	RepoPath string "json:\"repo_path\""
+}
+
 type runSpecDetails struct {
+	Target runTarget "json:\"target\""
 	Tasks []struct {
 		ID string "json:\"id\""
 	} "json:\"tasks\""
@@ -3593,9 +3598,10 @@ func main() {
 				var spec ao2RunSpec
 				if err := json.Unmarshal(data, &spec); err == nil && len(spec.Spec.Tasks) > 0 {
 					taskID := spec.Spec.Tasks[0].ID
+					repoPath := spec.Spec.Target.RepoPath
 					f, err := os.OpenFile(%q, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 					if err == nil {
-						fmt.Fprintln(f, taskID)
+						fmt.Fprintf(f, "%%s:%%s\n", taskID, repoPath)
 						f.Close()
 					}
 				}
@@ -3795,7 +3801,7 @@ func TestForgeResumeSuccess(t *testing.T) {
 	if len(executedTasks) != 1 {
 		t.Fatalf("expected exactly 1 task to execute, executed: %v", executedTasks)
 	}
-	if executedTasks[0] != "wc2" {
+	if !strings.HasPrefix(executedTasks[0], "wc2:") {
 		t.Fatalf("expected wc2 to execute, got: %s", executedTasks[0])
 	}
 
@@ -4007,4 +4013,322 @@ func TestForgeResumeFailure(t *testing.T) {
 		}
 	})
 }
+
+func TestParseMarkdownBriefWithWorkcellWorkspaces(t *testing.T) {
+	mdBrief := `# Objective
+test parsing multi-workspace brief
+
+# Workspace
+default-ws
+
+# Constraints
+- Local First: true
+- Allow Network: false
+- Allow Release Mutation: false
+- Require Control Plane Readback: false
+- Release Mode: false
+
+# Expected Workcells
+- wc1 (prepare) workspace: custom-ws-1
+- wc2 (execute) workspace: custom-ws-2 depends on: wc1
+- wc3 (verify) depends on: wc2
+
+# Expected Evidence
+- test-evidence
+`
+	brief, err := parseMarkdownBrief([]byte(mdBrief))
+	if err != nil {
+		t.Fatalf("parseMarkdownBrief: %v", err)
+	}
+
+	if brief.Objective.Workspace != "default-ws" {
+		t.Fatalf("expected default workspace 'default-ws', got %q", brief.Objective.Workspace)
+	}
+
+	if len(brief.ExpectedWorkcells) != 3 {
+		t.Fatalf("expected 3 workcells, got %d", len(brief.ExpectedWorkcells))
+	}
+
+	wc1 := brief.ExpectedWorkcells[0]
+	if wc1.WorkcellID != "wc1" || wc1.Kind != "prepare" || wc1.Workspace != "custom-ws-1" {
+		t.Fatalf("unexpected wc1: %+v", wc1)
+	}
+
+	wc2 := brief.ExpectedWorkcells[1]
+	if wc2.WorkcellID != "wc2" || wc2.Kind != "execute" || wc2.Workspace != "custom-ws-2" || len(wc2.DependsOn) != 1 || wc2.DependsOn[0] != "wc1" {
+		t.Fatalf("unexpected wc2: %+v", wc2)
+	}
+
+	wc3 := brief.ExpectedWorkcells[2]
+	if wc3.WorkcellID != "wc3" || wc3.Kind != "verify" || wc3.Workspace != "" || len(wc3.DependsOn) != 1 || wc3.DependsOn[0] != "wc2" {
+		t.Fatalf("unexpected wc3: %+v", wc3)
+	}
+}
+
+func TestGateReleaseModeMultiWorkspaceValidation(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create ws1 (clean git repo)
+	ws1Path := filepath.Join(tmpDir, "ws1")
+	if err := os.Mkdir(ws1Path, 0755); err != nil {
+		t.Fatalf("mkdir ws1: %v", err)
+	}
+	runGitCmd := func(dir string, args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v (output: %q)", args, err, string(out))
+		}
+	}
+	runGitCmd(ws1Path, "init")
+	runGitCmd(ws1Path, "config", "user.email", "test@example.com")
+	runGitCmd(ws1Path, "config", "user.name", "Test")
+	runGitCmd(ws1Path, "config", "commit.gpgSign", "false")
+	if err := os.WriteFile(filepath.Join(ws1Path, "clean.txt"), []byte("clean"), 0644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	runGitCmd(ws1Path, "add", "clean.txt")
+	runGitCmd(ws1Path, "commit", "-m", "initial commit")
+
+	// Create ws2 (dirty git repo)
+	ws2Path := filepath.Join(tmpDir, "ws2")
+	if err := os.Mkdir(ws2Path, 0755); err != nil {
+		t.Fatalf("mkdir ws2: %v", err)
+	}
+	runGitCmd(ws2Path, "init")
+	runGitCmd(ws2Path, "config", "user.email", "test@example.com")
+	runGitCmd(ws2Path, "config", "user.name", "Test")
+	runGitCmd(ws2Path, "config", "commit.gpgSign", "false")
+	if err := os.WriteFile(filepath.Join(ws2Path, "clean.txt"), []byte("clean"), 0644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	runGitCmd(ws2Path, "add", "clean.txt")
+	runGitCmd(ws2Path, "commit", "-m", "initial commit")
+	// Make it dirty
+	if err := os.WriteFile(filepath.Join(ws2Path, "clean.txt"), []byte("dirty"), 0644); err != nil {
+		t.Fatalf("make dirty: %v", err)
+	}
+
+	// Compile a covenant binary
+	covSrc := filepath.Join(tmpDir, "dummy_cov.go")
+	covBin := filepath.Join(tmpDir, "dummy_cov")
+	if os.PathSeparator == '\\' {
+		covBin += ".exe"
+	}
+	covContent := `package main
+import (
+	"fmt"
+	"os"
+)
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "version" {
+		fmt.Println("{\"schema_version\": \"covenant.version-result.v1\", \"version\": \"v0.1.0\"}")
+		os.Exit(0)
+	}
+	os.Exit(0)
+}`
+	if err := os.WriteFile(covSrc, []byte(covContent), 0644); err != nil {
+		t.Fatalf("write dummy cov: %v", err)
+	}
+	cmdCov := exec.Command("go", "build", "-o", covBin, covSrc)
+	if out, err := cmdCov.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy cov: %v (output: %q)", err, string(out))
+	}
+
+	// Construct plan with ws1 as default workspace and ws2 as workcell workspace
+	planPath := filepath.Join(tmpDir, "plan.json")
+	planContent := fmt.Sprintf(`{
+		"schema_version": "ao.forge.factory-plan.v0.1",
+		"plan_id": "forge-plan-efedbfb309b1",
+		"objective": {
+			"text": "test release safety",
+			"workspace": %q,
+			"release_mode": true
+		},
+		"constraints": {
+			"local_first": true,
+			"allow_network": false,
+			"allow_release_mutation": false,
+			"require_control_plane_readback": false
+		},
+		"execution_enabled": false,
+		"policy_gate": {
+			"required": true,
+			"status": "not_requested",
+			"explanation": "test"
+		},
+		"workcells": [
+			{
+				"workcell_id": "wc1",
+				"kind": "prepare",
+				"workspace": %q,
+				"status": "planned",
+				"depends_on": []
+			}
+		],
+		"expected_evidence": ["test"],
+		"next_actions": [
+			{"action_id": "test", "description": "test", "required": true}
+		]
+	}`, ws1Path, ws2Path)
+	if err := os.WriteFile(planPath, []byte(planContent), 0644); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+
+	// Evaluated policy should deny because ws2 is dirty
+	code, stdout, stderr := runCLI("gate", "--plan", planPath, "--covenant", covBin)
+	if code != 1 {
+		t.Fatalf("expected code 1, got %d (stdout: %q, stderr: %q)", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "deny-dirty-release-workspace") {
+		t.Fatalf("expected deny-dirty-release-workspace in output, got: %s", stdout)
+	}
+}
+
+func TestMultiWorkspaceExecution(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Compile dummy ao2 with trace logging
+	traceFile := filepath.Join(tmpDir, "trace.log")
+	dummyBin := compileTestAo2(t, tmpDir, traceFile)
+	t.Setenv("AO2_PATH", dummyBin)
+
+	// Set up directories for default workspace and custom workcell workspace
+	defaultWS := filepath.Join(tmpDir, "default-ws")
+	customWS := filepath.Join(tmpDir, "custom-ws")
+	if err := os.MkdirAll(defaultWS, 0755); err != nil {
+		t.Fatalf("mkdir default-ws: %v", err)
+	}
+	if err := os.MkdirAll(customWS, 0755); err != nil {
+		t.Fatalf("mkdir custom-ws: %v", err)
+	}
+
+	// Change wd to tmpDir to support .forge init and run commands locally
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer func() {
+		_ = os.Chdir(oldWd)
+	}()
+
+	// Init forge
+	if code, _, stderr := runCLI("init"); code != 0 {
+		t.Fatalf("init failed: %s", stderr)
+	}
+
+	// Write plan with wc1 using default workspace, and wc2 using custom workspace
+	planContent := fmt.Sprintf(`{
+		"schema_version": "ao.forge.factory-plan.v0.1",
+		"plan_id": "forge-plan-efedbfb309b1",
+		"objective": {
+			"text": "test multi-workspace execution",
+			"workspace": %q,
+			"release_mode": false
+		},
+		"constraints": {
+			"local_first": true,
+			"allow_network": false,
+			"allow_release_mutation": false,
+			"require_control_plane_readback": false
+		},
+		"execution_enabled": false,
+		"policy_gate": {
+			"required": true,
+			"status": "allowed",
+			"explanation": "gate is allowed"
+		},
+		"workcells": [
+			{
+				"workcell_id": "wc1",
+				"kind": "prepare",
+				"status": "planned",
+				"depends_on": []
+			},
+			{
+				"workcell_id": "wc2",
+				"kind": "execute",
+				"workspace": %q,
+				"status": "planned",
+				"depends_on": ["wc1"]
+			}
+		],
+		"expected_evidence": ["test"],
+		"next_actions": [
+			{"action_id": "test", "description": "test", "required": true}
+		]
+	}`, defaultWS, customWS)
+
+	planPath := filepath.Join(tmpDir, "plan.json")
+	if err := os.WriteFile(planPath, []byte(planContent), 0644); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+
+	// Write allowed gate result
+	gateContent := `{
+		"schema_version": "covenant.version-result.v1",
+		"status": "allowed",
+		"plan_id": "forge-plan-efedbfb309b1",
+		"execution_enabled": true,
+		"decision": {
+			"schema_version": "covenant.decision.v1",
+			"decision_id": "test-decision",
+			"target_plan_id": "forge-plan-efedbfb309b1",
+			"decision": "allow",
+			"explanation": "test allowed",
+			"source": "test-covenant"
+		}
+	}`
+	gatePath := filepath.Join(tmpDir, "gate_result.json")
+	if err := os.WriteFile(gatePath, []byte(gateContent), 0644); err != nil {
+		t.Fatalf("write gate: %v", err)
+	}
+
+	outPacket := filepath.Join(tmpDir, "packet.json")
+	code, stdout, stderr := runCLI("run", "--plan", planPath, "--gate-result", gatePath, "--out", outPacket)
+	if code != 0 {
+		t.Fatalf("expected run to succeed, got %d (stdout: %q, stderr: %q)", code, stdout, stderr)
+	}
+
+	// Verify trace file has correct RepoPath for both workcells
+	traceData, err := os.ReadFile(traceFile)
+	if err != nil {
+		t.Fatalf("read trace file: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(traceData)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 workcell executions in trace log, got %d: %q", len(lines), lines)
+	}
+
+	// wc1 should use defaultWS
+	if lines[0] != fmt.Sprintf("wc1:%s", defaultWS) {
+		t.Fatalf("expected wc1 to execute in defaultWS %q, got: %s", defaultWS, lines[0])
+	}
+
+	// wc2 should use customWS
+	if lines[1] != fmt.Sprintf("wc2:%s", customWS) {
+		t.Fatalf("expected wc2 to execute in customWS %q, got: %s", customWS, lines[1])
+	}
+
+	// Verify final packet workcells have workspaces correctly recorded
+	finalData, err := os.ReadFile(outPacket)
+	if err != nil {
+		t.Fatalf("read final packet: %v", err)
+	}
+	var packet factoryPacket
+	if err := json.Unmarshal(finalData, &packet); err != nil {
+		t.Fatalf("unmarshal final packet: %v", err)
+	}
+
+	if packet.Workcells[0].Workspace != "" {
+		t.Fatalf("expected wc1 workspace to be empty/omitted in packet, got %q", packet.Workcells[0].Workspace)
+	}
+	if packet.Workcells[1].Workspace != customWS {
+		t.Fatalf("expected wc2 workspace to be %q, got %q", customWS, packet.Workcells[1].Workspace)
+	}
+}
+
 

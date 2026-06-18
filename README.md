@@ -160,6 +160,12 @@ Write a stable SHA-256 checksum manifest for release artifacts:
   --out ./dist/checksums.txt
 ```
 
+Verify that every artifact still matches a checksum manifest:
+
+```sh
+./bin/forge artifact verify-checksums --manifest ./dist/checksums.txt
+```
+
 Rehearse a release without creating tags, pushing refs, or publishing GitHub
 releases:
 

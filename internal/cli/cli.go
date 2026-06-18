@@ -251,6 +251,7 @@ Usage:
   forge inspect --packet <factory-packet.json>
   forge doctor --foundation <foundation-baseline.json> [--json]
   forge artifact checksums --artifact <path> [--artifact <path> ...] [--out <checksums.txt>]
+  forge artifact verify-checksums --manifest <checksums.txt>
   forge release-preview --workspace <git-workspace> [--tag <vX.Y.Z>] [--artifact <path> ...] [--out <release-preview-audit.json>]
   forge release-preview inspect --audit <release-preview-audit.json> [--json]
   forge contract validate --schema <schema.json> --document <document.json> [--json]
@@ -261,7 +262,7 @@ Factory terms:
   factory packet  operator-ready JSON summary of plan, gates, evidence, and next actions
 
 Slice 2.8 status:
-  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, release preview audits, release preview enforcement, release preview audit inspection, artifact checksums, and contract schema validation are enabled.
+  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, release preview audits, release preview enforcement, release preview audit inspection, artifact checksums, artifact checksum verification, and contract schema validation are enabled.
 `)
 }
 
@@ -1572,7 +1573,7 @@ func executePlanRun(
 		packet.Objective.ReleaseMode = plan.Objective.ReleaseMode
 		packet.FactoryPlan.PlanID = plan.PlanID
 		packet.FactoryPlan.WorkcellCount = len(plan.Workcells)
-		
+
 		decisionEnum := "deny"
 		if isIndeterminate {
 			decisionEnum = "requires_operator_approval"
@@ -4435,14 +4436,20 @@ type artifactChecksumFlags struct {
 	outPath       string
 }
 
+type artifactVerifyChecksumFlags struct {
+	manifestPath string
+}
+
 func runArtifact(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "forge artifact: missing subcommand checksums")
+		fmt.Fprintln(stderr, "forge artifact: missing subcommand checksums or verify-checksums")
 		return 2
 	}
 	switch args[0] {
 	case "checksums":
 		return runArtifactChecksums(args[1:], stdout, stderr)
+	case "verify-checksums":
+		return runArtifactVerifyChecksums(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "forge artifact: unknown subcommand %q\n", args[0])
 		return 2
@@ -4480,6 +4487,31 @@ func parseArtifactChecksumFlags(args []string) (artifactChecksumFlags, error) {
 	return flags, nil
 }
 
+func parseArtifactVerifyChecksumFlags(args []string) (artifactVerifyChecksumFlags, error) {
+	var flags artifactVerifyChecksumFlags
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--manifest":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return artifactVerifyChecksumFlags{}, fmt.Errorf("--manifest requires a value")
+			}
+			flags.manifestPath = args[i+1]
+			i++
+		case "--help", "-h":
+			return artifactVerifyChecksumFlags{}, fmt.Errorf("help is available with `forge --help`")
+		default:
+			if strings.HasPrefix(args[i], "--") {
+				return artifactVerifyChecksumFlags{}, fmt.Errorf("unknown flag %s", args[i])
+			}
+			return artifactVerifyChecksumFlags{}, fmt.Errorf("unexpected argument %s", args[i])
+		}
+	}
+	if flags.manifestPath == "" {
+		return artifactVerifyChecksumFlags{}, fmt.Errorf("missing required --manifest")
+	}
+	return flags, nil
+}
+
 func runArtifactChecksums(args []string, stdout, stderr io.Writer) int {
 	flags, err := parseArtifactChecksumFlags(args)
 	if err != nil {
@@ -4506,6 +4538,24 @@ func runArtifactChecksums(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func runArtifactVerifyChecksums(args []string, stdout, stderr io.Writer) int {
+	flags, err := parseArtifactVerifyChecksumFlags(args)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge artifact verify-checksums: %v\n", err)
+		return 2
+	}
+
+	verified, err := verifyArtifactChecksumManifest(flags.manifestPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge artifact verify-checksums: %v\n", err)
+		return 1
+	}
+
+	fmt.Fprintf(stdout, "artifact_checksums_verified=%d\n", verified)
+	fmt.Fprintf(stdout, "manifest=%s\n", displayPath(flags.manifestPath))
+	return 0
+}
+
 func buildArtifactChecksumManifest(paths []string) (string, error) {
 	var manifest strings.Builder
 	for _, path := range paths {
@@ -4516,6 +4566,82 @@ func buildArtifactChecksumManifest(paths []string) (string, error) {
 		fmt.Fprintf(&manifest, "%s  %s\n", artifact.SHA256, artifact.Path)
 	}
 	return manifest.String(), nil
+}
+
+func verifyArtifactChecksumManifest(manifestPath string) (int, error) {
+	file, err := os.Open(manifestPath)
+	if err != nil {
+		return 0, fmt.Errorf("read manifest: %w", err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	lineNumber := 0
+	verified := 0
+	for scanner.Scan() {
+		lineNumber++
+		line := strings.TrimRight(scanner.Text(), "\r")
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+
+		expected, artifactPath, err := parseChecksumManifestLine(line)
+		if err != nil {
+			return 0, fmt.Errorf("manifest line %d: %w", lineNumber, err)
+		}
+
+		resolvedPath := resolveManifestArtifactPath(manifestPath, artifactPath)
+		artifact := auditReleasePreviewArtifact(resolvedPath)
+		if artifact.Status != "present" {
+			return 0, fmt.Errorf("artifact path is %s: %s", artifact.Status, artifact.Path)
+		}
+		if artifact.SHA256 != expected {
+			return 0, fmt.Errorf("checksum mismatch for %s: expected %s, got %s", artifact.Path, expected, artifact.SHA256)
+		}
+		verified++
+	}
+	if err := scanner.Err(); err != nil {
+		return 0, fmt.Errorf("read manifest: %w", err)
+	}
+	if verified == 0 {
+		return 0, fmt.Errorf("manifest has no checksum entries: %s", displayPath(manifestPath))
+	}
+	return verified, nil
+}
+
+func parseChecksumManifestLine(line string) (string, string, error) {
+	parts := strings.SplitN(line, "  ", 2)
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("expected '<sha256>  <artifact-path>'")
+	}
+
+	expected := strings.ToLower(strings.TrimSpace(parts[0]))
+	artifactPath := strings.TrimSpace(parts[1])
+	if !isSHA256Hex(expected) {
+		return "", "", fmt.Errorf("invalid SHA-256 digest %q", parts[0])
+	}
+	if artifactPath == "" {
+		return "", "", fmt.Errorf("missing artifact path")
+	}
+	return expected, artifactPath, nil
+}
+
+func isSHA256Hex(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	decoded, err := hex.DecodeString(value)
+	return err == nil && len(decoded) == sha256.Size
+}
+
+func resolveManifestArtifactPath(manifestPath, artifactPath string) string {
+	if filepath.IsAbs(artifactPath) {
+		return artifactPath
+	}
+	if _, err := os.Stat(artifactPath); err == nil {
+		return artifactPath
+	}
+	return filepath.Join(filepath.Dir(manifestPath), artifactPath)
 }
 
 type releasePreviewFlags struct {

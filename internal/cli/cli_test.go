@@ -70,6 +70,7 @@ func TestHelpExplainsFactoryTermsWithoutMarketingCopy(t *testing.T) {
 		"release preview enforcement",
 		"release preview audit inspection",
 		"artifact checksums",
+		"artifact checksum verification",
 		"contract schema validation",
 	} {
 		if !strings.Contains(stdout, want) {
@@ -555,6 +556,7 @@ func TestFirstPublicReleaseChecklistDocumentsSafeOperatorFlow(t *testing.T) {
 		{name: "release preview command", doc: checklist, want: "scripts/release-preview-dry-run.sh"},
 		{name: "contract validate inventory", doc: checklist, want: "contract validate --schema docs/contracts/release-artifact-inventory-v0.1.schema.json"},
 		{name: "contract validate attestation", doc: checklist, want: "contract validate --schema docs/contracts/release-attestation-plan-v0.1.schema.json"},
+		{name: "checksum verification", doc: checklist, want: "artifact verify-checksums --manifest"},
 		{name: "gitleaks", doc: checklist, want: "gitleaks detect --source . --redact --verbose"},
 		{name: "post release verification", doc: checklist, want: "## Post-Release Verification"},
 	} {
@@ -599,6 +601,7 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		{name: "linear history", doc: runbook, want: "Require linear history"},
 		{name: "admin guidance", doc: runbook, want: "Do not bypass the required checks for public releases"},
 		{name: "local fallback", doc: runbook, want: "go test ./... -count=1"},
+		{name: "checksum verification", doc: runbook, want: "artifact verify-checksums --manifest"},
 		{name: "secret scan", doc: runbook, want: "gitleaks detect --source . --redact --verbose"},
 	} {
 		if !strings.Contains(check.doc, check.want) {
@@ -662,6 +665,7 @@ func TestReleasePreviewWorkflowPublishesDryRunAuditArtifacts(t *testing.T) {
 		"--tag",
 		"--artifact",
 		"artifact checksums",
+		"artifact verify-checksums",
 		"release-preview-audit.json",
 		"release-preview-inspect.txt",
 		"release-preview-inspect.json",
@@ -808,6 +812,52 @@ func TestArtifactChecksumsFailsClosedOnMissingArtifact(t *testing.T) {
 		"forge artifact checksums:",
 		"missing",
 		displayPath(missingPath),
+	} {
+		if !strings.Contains(stderr, want) {
+			t.Fatalf("stderr missing %q: %s", want, stderr)
+		}
+	}
+}
+
+func TestArtifactVerifyChecksumsFailsClosedOnTamperedArtifact(t *testing.T) {
+	tmpDir := t.TempDir()
+	artifactPath := filepath.Join(tmpDir, "ao-forge_Linux_x86_64.tar.gz")
+	manifestPath := filepath.Join(tmpDir, "checksums.txt")
+	if err := os.WriteFile(artifactPath, []byte("original release artifact\n"), 0o644); err != nil {
+		t.Fatalf("write artifact: %v", err)
+	}
+
+	code, stdout, stderr := runCLI("artifact", "checksums", "--artifact", artifactPath, "--out", manifestPath)
+	if code != 0 {
+		t.Fatalf("artifact checksums failed with code %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+
+	code, stdout, stderr = runCLI("artifact", "verify-checksums", "--manifest", manifestPath)
+	if code != 0 {
+		t.Fatalf("artifact verify-checksums failed with code %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "artifact_checksums_verified=1") {
+		t.Fatalf("stdout missing verified count: %s", stdout)
+	}
+	if stderr != "" {
+		t.Fatalf("verify-checksums wrote stderr: %s", stderr)
+	}
+
+	if err := os.WriteFile(artifactPath, []byte("tampered release artifact\n"), 0o644); err != nil {
+		t.Fatalf("tamper artifact: %v", err)
+	}
+
+	code, stdout, stderr = runCLI("artifact", "verify-checksums", "--manifest", manifestPath)
+	if code != 1 {
+		t.Fatalf("expected tampered artifact to fail with code 1, got %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if stdout != "" {
+		t.Fatalf("tampered artifact should not write stdout: %s", stdout)
+	}
+	for _, want := range []string{
+		"forge artifact verify-checksums:",
+		"checksum mismatch",
+		displayPath(artifactPath),
 	} {
 		if !strings.Contains(stderr, want) {
 			t.Fatalf("stderr missing %q: %s", want, stderr)

@@ -32,6 +32,7 @@ inspect_json="$out_dir/release-preview-inspect.json"
 } > "$preview_artifact"
 
 "$forge_bin" artifact checksums --artifact "$preview_artifact" --out "$checksums"
+"$forge_bin" artifact verify-checksums --manifest "$checksums"
 
 "$forge_bin" release-preview \
   --workspace "$root" \

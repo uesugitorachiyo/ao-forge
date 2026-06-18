@@ -60,6 +60,7 @@ go build -o /tmp/ao-forge-smoke ./cmd/forge
 /tmp/ao-forge-smoke contract validate --schema docs/contracts/release-preview-inspect-v0.1.schema.json --document examples/release-preview/dirty-workspace-blocked.inspect.expected.json
 /tmp/ao-forge-smoke contract validate --schema docs/contracts/release-artifact-inventory-v0.1.schema.json --document examples/release-preview/release-artifact-inventory.v0.1.example.json
 /tmp/ao-forge-smoke contract validate --schema docs/contracts/release-attestation-plan-v0.1.schema.json --document examples/release-preview/release-attestation-plan.v0.1.example.json
+/tmp/ao-forge-smoke artifact verify-checksums --manifest examples/release-preview/checksums.txt
 gitleaks detect --source . --redact --verbose
 gitleaks dir . --redact --verbose
 AO_FORGE_RELEASE_PREVIEW_OUT=/tmp/ao-forge-release-preview scripts/release-preview-dry-run.sh

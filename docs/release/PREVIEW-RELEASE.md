@@ -135,6 +135,29 @@ forge contract validate \
   --document examples/release-preview/release-attestation-plan.v0.1.example.json
 ```
 
+## Release Evidence Bundle
+
+The signed release evidence bundle uses schema version
+`ao.forge.release-evidence-bundle.v0.1`. The formal schema is published at
+`docs/contracts/release-evidence-bundle-v0.1.schema.json`, and the public-safe
+example lives at
+`../../examples/release-preview/release-evidence-bundle.v0.1.example.json`.
+
+Use this bundle to bind the release tag, commit, Release Publish workflow run,
+Release Rehearsal run, checksum manifest, release preview evidence, artifact
+inventory, attestation plan, and artifact attestation readbacks into one
+machine-readable subject. The Release Publish workflow must create
+`release-evidence-bundle.json`, validate it, produce a GitHub Artifact
+Attestation for it, verify that attestation against the expected release
+identity, and upload both `release-evidence-bundle.json` and
+`release-evidence-bundle.attestation.json` with the draft release.
+
+```sh
+forge contract validate \
+  --schema docs/contracts/release-evidence-bundle-v0.1.schema.json \
+  --document examples/release-preview/release-evidence-bundle.v0.1.example.json
+```
+
 ## Release Attestation
 
 The `Release Attestation` workflow builds the expected preview release
@@ -160,9 +183,11 @@ the job can mutate GitHub release state.
 In the publish job, AO Forge rebuilds the release archives, regenerates and
 verifies `dist/checksums.txt`, reruns release preview for the requested tag,
 validates release contracts, produces and verifies GitHub Artifact Attestations,
-checks release notes for public-unsafe text, and then creates a draft GitHub
-release with the archives, checksum manifest, release-preview evidence, release
-inventory, attestation plan, and `dist/*.attestation.json`.
+generates and verifies an attested release evidence bundle, checks release notes
+for public-unsafe text, and then creates a draft GitHub release with the
+archives, checksum manifest, release-preview evidence, release inventory,
+attestation plan, `release-evidence-bundle.json`,
+`release-evidence-bundle.attestation.json`, and `dist/*.attestation.json`.
 
 Do not mark the draft release public until the maintainer has reviewed the
 uploaded `release-publish-evidence` artifact and confirmed that the release

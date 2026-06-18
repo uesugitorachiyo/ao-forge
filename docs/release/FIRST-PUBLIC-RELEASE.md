@@ -20,6 +20,7 @@ is intentionally public.
   - `docs/contracts/release-preview-inspect-v0.1.schema.json`
   - `docs/contracts/release-artifact-inventory-v0.1.schema.json`
   - `docs/contracts/release-attestation-plan-v0.1.schema.json`
+  - `docs/contracts/release-evidence-bundle-v0.1.schema.json`
 
 ## Tag Decision
 
@@ -44,6 +45,7 @@ go build -o /tmp/ao-forge-release-smoke ./cmd/forge
 /tmp/ao-forge-release-smoke contract validate --schema docs/contracts/release-preview-inspect-v0.1.schema.json --document examples/release-preview/dirty-workspace-blocked.inspect.expected.json
 /tmp/ao-forge-release-smoke contract validate --schema docs/contracts/release-artifact-inventory-v0.1.schema.json --document examples/release-preview/release-artifact-inventory.v0.1.example.json
 /tmp/ao-forge-release-smoke contract validate --schema docs/contracts/release-attestation-plan-v0.1.schema.json --document examples/release-preview/release-attestation-plan.v0.1.example.json
+/tmp/ao-forge-release-smoke contract validate --schema docs/contracts/release-evidence-bundle-v0.1.schema.json --document examples/release-preview/release-evidence-bundle.v0.1.example.json
 /tmp/ao-forge-release-smoke artifact verify-checksums --manifest examples/release-preview/checksums.txt
 gitleaks detect --source . --redact --verbose
 gitleaks dir . --redact --verbose
@@ -66,6 +68,9 @@ Required release evidence:
 - release preview audit and inspect JSON for `<tag>`;
 - release attestation plan from
   `examples/release-preview/release-attestation-plan.v0.1.example.json`;
+- release evidence bundle and its GitHub Artifact Attestation from
+  `release-evidence-bundle.json` and
+  `release-evidence-bundle.attestation.json`;
 - no ad hoc local paths or private machine state in public release notes.
 
 Every artifact in the inventory must have a SHA-256 checksum and must be bound
@@ -121,12 +126,14 @@ After publishing:
 3. Confirm `checksums.txt` matches every attached artifact.
 4. Confirm attestation evidence is attached or linked according to the
    attestation plan.
-5. Confirm public release notes mention the supported platforms and preview
+5. Confirm `release-evidence-bundle.json` validates and its GitHub Artifact
+   Attestation verifies against the release commit.
+6. Confirm public release notes mention the supported platforms and preview
    status.
-6. Run a fresh install or binary smoke test from the published artifact.
-7. Record the GitHub Actions run URLs for CI, Release Preview, and Release
+7. Run a fresh install or binary smoke test from the published artifact.
+8. Record the GitHub Actions run URLs for CI, Release Preview, and Release
    Rehearsal in maintainer notes.
-8. Record the `Release Publish` run URL and confirm it produced a draft release
+9. Record the `Release Publish` run URL and confirm it produced a draft release
    before any public release publication.
 
 ## Rollback Plan

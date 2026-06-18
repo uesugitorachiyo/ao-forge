@@ -287,6 +287,153 @@ jobs:
           print(f"artifact_attestations_verified={len(manifest)}")
           PY
 
+      - name: Generate release evidence bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+
+          publish_out = pathlib.Path(os.environ["AO_FORGE_RELEASE_PUBLISH_OUT"])
+          bundle_path = publish_out / "release-evidence-bundle.json"
+
+          def sha256(path):
+              digest = hashlib.sha256()
+              with path.open("rb") as f:
+                  for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              return digest.hexdigest()
+
+          artifacts = []
+          for line in pathlib.Path("dist/checksums.txt").read_text().splitlines():
+              if not line.strip():
+                  continue
+              digest, name = line.split(maxsplit=1)
+              artifacts.append({"name": name, "sha256": digest})
+
+          evidence_paths = [
+              ("checksums.txt", pathlib.Path("dist/checksums.txt")),
+              ("release-preview-audit.json", publish_out / "release-preview-audit.json"),
+              ("release-preview-inspect.txt", publish_out / "release-preview-inspect.txt"),
+              ("release-preview-inspect.json", publish_out / "release-preview-inspect.json"),
+              (
+                  "release-artifact-inventory.v0.1.example.json",
+                  pathlib.Path("examples/release-preview/release-artifact-inventory.v0.1.example.json"),
+              ),
+              (
+                  "release-attestation-plan.v0.1.example.json",
+                  pathlib.Path("examples/release-preview/release-attestation-plan.v0.1.example.json"),
+              ),
+          ]
+          evidence_paths.extend((path.name, path) for path in sorted(pathlib.Path("dist").glob("*.attestation.json")))
+
+          bundle = {
+              "schema_version": "ao.forge.release-evidence-bundle.v0.1",
+              "bundle_id": f"release-evidence-{os.environ['AO_FORGE_RELEASE_PUBLISH_TAG'].lstrip('v')}",
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "tag": os.environ["AO_FORGE_RELEASE_PUBLISH_TAG"],
+              "head_commit": os.environ["GITHUB_SHA"],
+              "workflow": {
+                  "name": "Release Publish",
+                  "path": ".github/workflows/release-publish.yml",
+                  "ref": os.environ["GITHUB_REF"],
+                  "run_id": os.environ["GITHUB_RUN_ID"],
+                  "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              },
+              "release_rehearsal_run_id": os.environ["RELEASE_REHEARSAL_RUN_ID"],
+              "signature_policy": {
+                  "provider": "github-artifact-attestation",
+                  "subject": "release-evidence-bundle.json",
+                  "verification": "block-release-on-missing-or-mismatched-attestation",
+              },
+              "artifacts": artifacts,
+              "evidence_files": [
+                  {"path": public_path, "sha256": sha256(path)}
+                  for public_path, path in evidence_paths
+              ],
+              "verification_steps": [
+                  {
+                      "step_id": "verify-bundle-attestation",
+                      "description": "Verify release-evidence-bundle.json has a GitHub Artifact Attestation from the Release Publish workflow for the release commit.",
+                      "required": True,
+                  }
+              ],
+          }
+
+          bundle_path.write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n")
+          print(f"release_evidence_bundle={bundle_path}")
+          PY
+          "${RUNNER_TEMP}/forge" contract validate --schema docs/contracts/release-evidence-bundle-v0.1.schema.json --document "${AO_FORGE_RELEASE_PUBLISH_OUT}/release-evidence-bundle.json"
+
+      - name: Attest release evidence bundle
+        uses: actions/attest@v4
+        with:
+          subject-path: ${{ runner.temp }}/ao-forge-release-publish/release-evidence-bundle.json
+
+      - name: Verify release evidence bundle attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh attestation verify "${AO_FORGE_RELEASE_PUBLISH_OUT}/release-evidence-bundle.json" \
+            --owner "${GITHUB_REPOSITORY_OWNER}" \
+            --format json > "${AO_FORGE_RELEASE_PUBLISH_OUT}/release-evidence-bundle.attestation.json"
+
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import sys
+
+          bundle_path = pathlib.Path(os.environ["AO_FORGE_RELEASE_PUBLISH_OUT"]) / "release-evidence-bundle.json"
+          expected_digest = hashlib.sha256(bundle_path.read_bytes()).hexdigest()
+          expected_repo = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}"
+          expected_ref = os.environ["GITHUB_REF"]
+          expected_sha = os.environ["GITHUB_SHA"]
+          expected_workflow = ".github/workflows/release-publish.yml"
+
+          records = json.loads((bundle_path.parent / "release-evidence-bundle.attestation.json").read_text())
+          matched = False
+          for record in records:
+              result = record.get("verificationResult", {})
+              statement = result.get("statement", {})
+              certificate = result.get("signature", {}).get("certificate", {})
+              workflow = (
+                  statement.get("predicate", {})
+                  .get("buildDefinition", {})
+                  .get("externalParameters", {})
+                  .get("workflow", {})
+              )
+              subjects = statement.get("subject", [])
+              subject_matches = any(
+                  subject.get("digest", {}).get("sha256") == expected_digest
+                  for subject in subjects
+              )
+
+              if (
+                  subject_matches
+                  and workflow.get("repository") == expected_repo
+                  and workflow.get("ref") == expected_ref
+                  and workflow.get("path") == expected_workflow
+                  and certificate.get("sourceRepositoryURI") == expected_repo
+                  and certificate.get("sourceRepositoryRef") == expected_ref
+                  and certificate.get("sourceRepositoryDigest") == expected_sha
+              ):
+                  matched = True
+                  break
+
+          if not matched:
+              print("release-evidence-bundle.json: no verified attestation matched expected release publish identity", file=sys.stderr)
+              sys.exit(1)
+
+          print("release_evidence_bundle_attestation_verified=true")
+          PY
+
       - name: Validate release notes
         shell: bash
         run: |
@@ -322,7 +469,7 @@ jobs:
             printf -- '- Commit: `%s`\n' "${GITHUB_SHA}"
             printf -- '- Release Publish run: `https://github.com/%s/actions/runs/%s`\n' "${GITHUB_REPOSITORY}" "${GITHUB_RUN_ID}"
             printf -- '- Release Rehearsal run: `https://github.com/%s/actions/runs/%s`\n' "${GITHUB_REPOSITORY}" "${RELEASE_REHEARSAL_RUN_ID}"
-            printf -- '- Release evidence assets: `release-preview-audit.json`, `release-preview-inspect.json`, `checksums.txt`, and `*.attestation.json`.\n'
+            printf -- '- Release evidence assets: `release-preview-audit.json`, `release-preview-inspect.json`, `checksums.txt`, `release-evidence-bundle.json`, `release-evidence-bundle.attestation.json`, and `*.attestation.json`.\n'
           } > "${AO_FORGE_RELEASE_PUBLISH_NOTES}"
 
           python3 - <<'PY'
@@ -356,6 +503,8 @@ jobs:
             "${AO_FORGE_RELEASE_PUBLISH_OUT}/release-preview-audit.json" \
             "${AO_FORGE_RELEASE_PUBLISH_OUT}/release-preview-inspect.txt" \
             "${AO_FORGE_RELEASE_PUBLISH_OUT}/release-preview-inspect.json" \
+            "${AO_FORGE_RELEASE_PUBLISH_OUT}/release-evidence-bundle.json" \
+            "${AO_FORGE_RELEASE_PUBLISH_OUT}/release-evidence-bundle.attestation.json" \
             examples/release-preview/release-artifact-inventory.v0.1.example.json \
             examples/release-preview/release-attestation-plan.v0.1.example.json \
             --repo "${GITHUB_REPOSITORY}" \
@@ -378,6 +527,8 @@ jobs:
             ${{ runner.temp }}/ao-forge-release-publish/release-preview-audit.json
             ${{ runner.temp }}/ao-forge-release-publish/release-preview-inspect.txt
             ${{ runner.temp }}/ao-forge-release-publish/release-preview-inspect.json
+            ${{ runner.temp }}/ao-forge-release-publish/release-evidence-bundle.json
+            ${{ runner.temp }}/ao-forge-release-publish/release-evidence-bundle.attestation.json
             examples/release-preview/release-artifact-inventory.v0.1.example.json
             examples/release-preview/release-attestation-plan.v0.1.example.json
           if-no-files-found: error

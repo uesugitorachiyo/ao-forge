@@ -1,0 +1,43 @@
+{
+  "schema_version": "ao.forge.release-evidence-bundle.v0.1",
+  "bundle_id": "release-evidence-v0.1.0",
+  "repository": "uesugitorachiyo/ao-forge",
+  "tag": "v0.1.0",
+  "head_commit": "4291e2adf4169dc6adbe9b17317715e572dc912b",
+  "workflow": {
+    "name": "Release Publish",
+    "path": ".github/workflows/release-publish.yml",
+    "ref": "refs/heads/main",
+    "run_id": "27795815735",
+    "run_attempt": "1"
+  },
+  "release_rehearsal_run_id": "27795765119",
+  "signature_policy": {
+    "provider": "github-artifact-attestation",
+    "subject": "release-evidence-bundle.json",
+    "verification": "block-release-on-missing-or-mismatched-attestation"
+  },
+  "artifacts": [
+    {
+      "name": "ao-forge_Linux_x86_64.tar.gz",
+      "sha256": "45210f1480e4c7415708e8806b3d281b356b38b1ec1963876f65472f73cea63b"
+    }
+  ],
+  "evidence_files": [
+    {
+      "path": "checksums.txt",
+      "sha256": "c8b70ba5c60c5de9cf70d8c5072084f6d09ad5d8f7f9dddfc45e434d5988415c"
+    },
+    {
+      "path": "release-preview-inspect.json",
+      "sha256": "6bb2f7b5b8109a53aa893a424cf851b0ff8dd99e3d30b47e5f96505dc6f394a3"
+    }
+  ],
+  "verification_steps": [
+    {
+      "step_id": "verify-bundle-attestation",
+      "description": "Verify release-evidence-bundle.json has a GitHub Artifact Attestation from the Release Publish workflow for the release commit.",
+      "required": true
+    }
+  ]
+}

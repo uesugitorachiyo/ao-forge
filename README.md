@@ -64,6 +64,7 @@ over provider execution, release publishing, or control-plane approval.
 - [Release Preview Inspect v0.1 Schema](docs/contracts/release-preview-inspect-v0.1.schema.json)
 - [Release Artifact Inventory v0.1 Schema](docs/contracts/release-artifact-inventory-v0.1.schema.json)
 - [Release Attestation Plan v0.1 Schema](docs/contracts/release-attestation-plan-v0.1.schema.json)
+- [Release Evidence Bundle v0.1 Schema](docs/contracts/release-evidence-bundle-v0.1.schema.json)
 - [Release Preview Fixtures](examples/release-preview/)
 - [Example Vertical Slice](examples/vertical-slices/risky-pr-factory.factory.json)
 - [Example Deterministic Plan](examples/plans/risky-pr-factory-plan.json)
@@ -216,7 +217,10 @@ The `Release Publish` workflow is manual-only and draft-only. It requires a
 successful `Release Rehearsal` run ID, explicit `confirm_publish=true`, fresh
 checksums, release preview, contract validation, GitHub Artifact Attestation
 verification, and public-safe release notes before it creates a draft GitHub
-release.
+release. It also generates `release-evidence-bundle.json`, validates it against
+the release evidence bundle contract, signs it with a GitHub Artifact
+Attestation, verifies that attestation, and uploads both bundle files with the
+release assets.
 
 ## Continuous Integration
 

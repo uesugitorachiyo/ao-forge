@@ -130,6 +130,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	releasePreviewInspectSchema := readText("docs", "contracts", "release-preview-inspect-v0.1.schema.json")
 	releaseArtifactInventorySchema := readText("docs", "contracts", "release-artifact-inventory-v0.1.schema.json")
 	releaseAttestationPlanSchema := readText("docs", "contracts", "release-attestation-plan-v0.1.schema.json")
+	releaseEvidenceBundleSchema := readText("docs", "contracts", "release-evidence-bundle-v0.1.schema.json")
 
 	for _, check := range []struct {
 		name string
@@ -142,6 +143,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "README release preview inspect schema link", doc: readme, want: "[Release Preview Inspect v0.1 Schema](docs/contracts/release-preview-inspect-v0.1.schema.json)"},
 		{name: "README release artifact inventory schema link", doc: readme, want: "[Release Artifact Inventory v0.1 Schema](docs/contracts/release-artifact-inventory-v0.1.schema.json)"},
 		{name: "README release attestation plan schema link", doc: readme, want: "[Release Attestation Plan v0.1 Schema](docs/contracts/release-attestation-plan-v0.1.schema.json)"},
+		{name: "README release evidence bundle schema link", doc: readme, want: "[Release Evidence Bundle v0.1 Schema](docs/contracts/release-evidence-bundle-v0.1.schema.json)"},
 		{name: "brief schema id", doc: briefSchema, want: `"ao.forge.factory-brief.v0.1"`},
 		{name: "brief strict root", doc: briefSchema, want: `"additionalProperties": false`},
 		{name: "brief objective", doc: briefSchema, want: `"objective"`},
@@ -179,6 +181,12 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "release attestation plan signer identity", doc: releaseAttestationPlanSchema, want: `"signer_identity"`},
 		{name: "release attestation plan verification", doc: releaseAttestationPlanSchema, want: `"verification_steps"`},
 		{name: "release attestation plan failure policy", doc: releaseAttestationPlanSchema, want: `"failure_policy"`},
+		{name: "release evidence bundle schema id", doc: releaseEvidenceBundleSchema, want: `"ao.forge.release-evidence-bundle.v0.1"`},
+		{name: "release evidence bundle strict root", doc: releaseEvidenceBundleSchema, want: `"additionalProperties": false`},
+		{name: "release evidence bundle workflow", doc: releaseEvidenceBundleSchema, want: `"workflow"`},
+		{name: "release evidence bundle rehearsal", doc: releaseEvidenceBundleSchema, want: `"release_rehearsal_run_id"`},
+		{name: "release evidence bundle files", doc: releaseEvidenceBundleSchema, want: `"evidence_files"`},
+		{name: "release evidence bundle signature policy", doc: releaseEvidenceBundleSchema, want: `"signature_policy"`},
 	} {
 		if !strings.Contains(check.doc, check.want) {
 			t.Fatalf("%s missing %q", check.name, check.want)
@@ -195,11 +203,61 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "release preview inspect schema", text: releasePreviewInspectSchema},
 		{name: "release artifact inventory schema", text: releaseArtifactInventorySchema},
 		{name: "release attestation plan schema", text: releaseAttestationPlanSchema},
+		{name: "release evidence bundle schema", text: releaseEvidenceBundleSchema},
 	} {
 		var decoded any
 		if err := json.Unmarshal([]byte(doc.text), &decoded); err != nil {
 			t.Fatalf("%s is not valid JSON: %v", doc.name, err)
 		}
+	}
+}
+
+func TestReleaseEvidenceBundleContractDocumentsSignedBundle(t *testing.T) {
+	root := repoRoot(t)
+	readText := func(path ...string) string {
+		t.Helper()
+		bytes, err := os.ReadFile(filepath.Join(append([]string{root}, path...)...))
+		if err != nil {
+			t.Fatalf("read %s: %v", filepath.Join(path...), err)
+		}
+		return string(bytes)
+	}
+
+	schemaPath := filepath.Join(root, "docs", "contracts", "release-evidence-bundle-v0.1.schema.json")
+	examplePath := filepath.Join(root, "examples", "release-preview", "release-evidence-bundle.v0.1.example.json")
+
+	for _, check := range []struct {
+		name string
+		doc  string
+		want string
+	}{
+		{name: "README schema link", doc: readText("README.md"), want: "[Release Evidence Bundle v0.1 Schema](docs/contracts/release-evidence-bundle-v0.1.schema.json)"},
+		{name: "preview runbook section", doc: readText("docs", "release", "PREVIEW-RELEASE.md"), want: "## Release Evidence Bundle"},
+		{name: "preview runbook example link", doc: readText("docs", "release", "PREVIEW-RELEASE.md"), want: "../../examples/release-preview/release-evidence-bundle.v0.1.example.json"},
+		{name: "first release checklist validation", doc: readText("docs", "release", "FIRST-PUBLIC-RELEASE.md"), want: "release-evidence-bundle-v0.1.schema.json"},
+		{name: "threat model bundle control", doc: readText("docs", "security", "RELEASE-THREAT-MODEL.md"), want: "`release-evidence-bundle.json` binds the release tag, commit, workflow run, rehearsal run, checksums, preview evidence, inventory, attestation plan, and attestation readbacks"},
+		{name: "threat model gap closed", doc: readText("docs", "security", "RELEASE-THREAT-MODEL.md"), want: "GitHub Artifact Attestation for `release-evidence-bundle.json`"},
+	} {
+		if !strings.Contains(check.doc, check.want) {
+			t.Fatalf("%s missing %q", check.name, check.want)
+		}
+	}
+
+	code, stdout, stderr := runCLI("contract", "validate", "--schema", schemaPath, "--document", examplePath)
+	if code != 0 {
+		t.Fatalf("release evidence bundle example failed validation with code %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	for _, want := range []string{
+		"contract_validation=passed",
+		"schema=" + displayPath(schemaPath),
+		"document=" + displayPath(examplePath),
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("contract validate stdout missing %q\n%s", want, stdout)
+		}
+	}
+	if stderr != "" {
+		t.Fatalf("contract validate wrote stderr: %s", stderr)
 	}
 }
 
@@ -963,23 +1021,35 @@ func TestReleasePublishWorkflowCreatesDraftReleaseOnlyAfterEvidenceGates(t *test
 		{name: "inspect contract", doc: workflow, want: "release-preview-inspect-v0.1.schema.json"},
 		{name: "inventory contract", doc: workflow, want: "release-artifact-inventory-v0.1.schema.json"},
 		{name: "attestation contract", doc: workflow, want: "release-attestation-plan-v0.1.schema.json"},
+		{name: "evidence bundle contract", doc: workflow, want: "release-evidence-bundle-v0.1.schema.json"},
 		{name: "attest action", doc: workflow, want: "actions/attest@v4"},
 		{name: "attest checksums", doc: workflow, want: "subject-checksums: dist/checksums.txt"},
 		{name: "verify attestations", doc: workflow, want: "gh attestation verify"},
 		{name: "attestation verified count", doc: workflow, want: "artifact_attestations_verified"},
 		{name: "verify artifact path from portable manifest", doc: workflow, want: "artifact_path = pathlib.Path(\"dist\") / artifact_name"},
 		{name: "verify portable subject name", doc: workflow, want: "subject.get(\"name\") == artifact_name"},
+		{name: "generate evidence bundle", doc: workflow, want: "Generate release evidence bundle"},
+		{name: "evidence bundle schema version", doc: workflow, want: "ao.forge.release-evidence-bundle.v0.1"},
+		{name: "evidence bundle file", doc: workflow, want: "release-evidence-bundle.json"},
+		{name: "attest evidence bundle", doc: workflow, want: "Attest release evidence bundle"},
+		{name: "attest evidence bundle subject", doc: workflow, want: "subject-path: ${{ runner.temp }}/ao-forge-release-publish/release-evidence-bundle.json"},
+		{name: "verify evidence bundle attestation", doc: workflow, want: "Verify release evidence bundle attestation"},
+		{name: "evidence bundle attestation output", doc: workflow, want: "release-evidence-bundle.attestation.json"},
+		{name: "evidence bundle verified count", doc: workflow, want: "release_evidence_bundle_attestation_verified=true"},
 		{name: "release notes validation", doc: workflow, want: "Validate release notes"},
 		{name: "generated release notes", doc: workflow, want: "Generate publication release notes"},
 		{name: "generated release notes output", doc: workflow, want: "AO_FORGE_RELEASE_PUBLISH_NOTES"},
 		{name: "generated release commit", doc: workflow, want: "printf -- '- Commit: `%s`\\n' \"${GITHUB_SHA}\""},
 		{name: "generated publish run URL", doc: workflow, want: "actions/runs/%s`\\n' \"${GITHUB_REPOSITORY}\" \"${GITHUB_RUN_ID}\""},
 		{name: "generated rehearsal run URL", doc: workflow, want: "actions/runs/%s`\\n' \"${GITHUB_REPOSITORY}\" \"${RELEASE_REHEARSAL_RUN_ID}\""},
+		{name: "generated notes evidence bundle", doc: workflow, want: "`release-evidence-bundle.json`, `release-evidence-bundle.attestation.json`"},
 		{name: "private path guard", doc: workflow, want: "/Users/"},
 		{name: "draft release create", doc: workflow, want: "gh release create"},
 		{name: "draft flag", doc: workflow, want: "--draft"},
 		{name: "target sha", doc: workflow, want: "--target \"${GITHUB_SHA}\""},
 		{name: "generated notes file used", doc: workflow, want: "--notes-file \"${AO_FORGE_RELEASE_PUBLISH_NOTES}\""},
+		{name: "release uploads evidence bundle", doc: workflow, want: "\"${AO_FORGE_RELEASE_PUBLISH_OUT}/release-evidence-bundle.json\""},
+		{name: "release uploads evidence bundle attestation", doc: workflow, want: "\"${AO_FORGE_RELEASE_PUBLISH_OUT}/release-evidence-bundle.attestation.json\""},
 		{name: "upload publish evidence", doc: workflow, want: "release-publish-evidence"},
 		{name: "readme publish workflow", doc: readme, want: "`Release Publish`"},
 		{name: "preview runbook publish workflow", doc: previewRunbook, want: "## Draft Release Publish"},

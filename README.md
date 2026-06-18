@@ -132,6 +132,10 @@ Inspect a release preview audit without reading raw JSON:
 Mutating commands fail closed unless the required gate result, clean workspace,
 explicit operator confirmation, and release preview evidence are present.
 
+Pull requests and pushes to `main` also run the non-mutating release preview
+audit workflow. It uploads `release-preview-audit.json`,
+`release-preview-inspect.txt`, and `checksums.txt` as CI artifacts.
+
 ## Continuous Integration
 
 This repository is public. The GitHub Actions workflow runs automatically on every push to a branch and every pull request targeting `main`.

@@ -169,6 +169,62 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	}
 }
 
+func TestReleasePreviewWorkflowPublishesDryRunAuditArtifacts(t *testing.T) {
+	root := repoRoot(t)
+	workflowPath := filepath.Join(root, ".github", "workflows", "release-preview.yml")
+	data, err := os.ReadFile(workflowPath)
+	if err != nil {
+		t.Fatalf("read release preview workflow: %v", err)
+	}
+	workflow := string(data)
+	for _, want := range []string{
+		"name: Release Preview",
+		"workflow_dispatch:",
+		"pull_request:",
+		"push:",
+		"scripts/release-preview-dry-run.sh",
+		"release-preview inspect --audit",
+		"actions/upload-artifact",
+		"release-preview-audit",
+		"release-preview-inspect",
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Fatalf("release preview workflow missing %q\n%s", want, workflow)
+		}
+	}
+	for _, forbidden := range []string{
+		"--confirm-release",
+		"--live",
+		"GITHUB_TOKEN:",
+		"contents: write",
+	} {
+		if strings.Contains(workflow, forbidden) {
+			t.Fatalf("release preview workflow must not contain %q\n%s", forbidden, workflow)
+		}
+	}
+
+	scriptPath := filepath.Join(root, "scripts", "release-preview-dry-run.sh")
+	scriptData, err := os.ReadFile(scriptPath)
+	if err != nil {
+		t.Fatalf("read release preview script: %v", err)
+	}
+	script := string(scriptData)
+	for _, want := range []string{
+		"set -euo pipefail",
+		"git status --porcelain",
+		"go build",
+		"release-preview",
+		"--tag",
+		"--artifact",
+		"release-preview-audit.json",
+		"release-preview-inspect.txt",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("release preview script missing %q\n%s", want, script)
+		}
+	}
+}
+
 func TestVerifiedFoundationBaselineIsLinkedAndMachineReadable(t *testing.T) {
 	root := repoRoot(t)
 	readFile := func(path ...string) []byte {

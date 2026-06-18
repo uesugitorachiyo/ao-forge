@@ -1,0 +1,46 @@
+name: Release Preview
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dry-run-audit:
+    name: Release preview dry-run audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run release preview dry-run
+        run: scripts/release-preview-dry-run.sh
+
+      - name: Inspect release preview audit
+        run: go run ./cmd/forge release-preview inspect --audit "${RUNNER_TEMP}/ao-forge-release-preview/release-preview-audit.json"
+
+      - name: Upload release preview audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-preview-audit
+          path: |
+            ${{ runner.temp }}/ao-forge-release-preview/release-preview-audit.json
+            ${{ runner.temp }}/ao-forge-release-preview/release-preview-inspect.txt
+            ${{ runner.temp }}/ao-forge-release-preview/checksums.txt
+          if-no-files-found: error

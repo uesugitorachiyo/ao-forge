@@ -59,6 +59,11 @@ jobs:
       - name: Run tagged release rehearsal
         run: scripts/release-preview-dry-run.sh
 
+      - name: Validate rehearsal release contracts
+        run: |
+          go run ./cmd/forge contract validate --schema docs/contracts/release-artifact-inventory-v0.1.schema.json --document examples/release-preview/release-artifact-inventory.v0.1.example.json
+          go run ./cmd/forge contract validate --schema docs/contracts/release-attestation-plan-v0.1.schema.json --document examples/release-preview/release-attestation-plan.v0.1.example.json
+
       - name: Validate rehearsal evidence
         shell: bash
         run: |
@@ -72,15 +77,23 @@ jobs:
           expected_tag = os.environ["AO_FORGE_RELEASE_PREVIEW_TAG"]
           audit_path = out_dir / "release-preview-audit.json"
           inspect_path = out_dir / "release-preview-inspect.json"
+          inventory_path = pathlib.Path("examples/release-preview/release-artifact-inventory.v0.1.example.json")
+          attestation_path = pathlib.Path("examples/release-preview/release-attestation-plan.v0.1.example.json")
 
           audit = json.loads(audit_path.read_text())
           inspect = json.loads(inspect_path.read_text())
+          inventory = json.loads(inventory_path.read_text())
+          attestation = json.loads(attestation_path.read_text())
 
           errors = []
           if audit.get("schema_version") != "ao.forge.release-preview-audit.v0.1":
             errors.append("unexpected audit schema version")
           if inspect.get("inspect_schema_version") != "ao.forge.release-preview-inspect.v0.1":
             errors.append("unexpected inspect schema version")
+          if inventory.get("schema_version") != "ao.forge.release-artifact-inventory.v0.1":
+            errors.append("unexpected artifact inventory schema version")
+          if attestation.get("schema_version") != "ao.forge.release-attestation-plan.v0.1":
+            errors.append("unexpected attestation plan schema version")
           if audit.get("status") != "passed" or inspect.get("status") != "passed":
             errors.append("rehearsal evidence did not pass")
           if audit.get("tag") != expected_tag or inspect.get("tag") != expected_tag:
@@ -94,6 +107,27 @@ jobs:
           if inspect.get("artifacts") != len(audit.get("artifacts", [])):
             errors.append("inspect JSON artifact count mismatch")
 
+          inventory_attestations = set(inventory.get("required_attestations", []))
+          if "signed-checksum" not in inventory_attestations:
+            errors.append("artifact inventory must require signed checksums")
+          for artifact in inventory.get("expected_artifacts", []):
+            if artifact.get("checksum_required") is not True:
+              errors.append(f"inventory artifact {artifact.get('artifact_id')} must require checksums")
+            artifact_attestations = set(artifact.get("attestations", []))
+            missing = inventory_attestations - artifact_attestations
+            if missing:
+              errors.append(f"inventory artifact {artifact.get('artifact_id')} missing attestations: {sorted(missing)}")
+
+          subject_types = {subject.get("subject_type") for subject in attestation.get("subjects", [])}
+          for required_subject in ("checksum-manifest", "release-preview-audit", "artifact-inventory"):
+            if required_subject not in subject_types:
+              errors.append(f"attestation plan missing required subject {required_subject}")
+
+          audit_artifact_names = {pathlib.Path(artifact.get("path", "")).name for artifact in audit.get("artifacts", [])}
+          checksum_name = pathlib.Path(inventory.get("checksum_manifest", {}).get("path", "")).name
+          if checksum_name not in audit_artifact_names:
+            errors.append("rehearsal audit missing checksum manifest from artifact inventory")
+
           if errors:
             for error in errors:
               print(f"::error::{error}")
@@ -102,6 +136,8 @@ jobs:
           print(f"release_rehearsal_tag={expected_tag}")
           print(f"release_rehearsal_audit={audit_path}")
           print(f"release_rehearsal_inspect={inspect_path}")
+          print(f"release_rehearsal_inventory={inventory_path}")
+          print(f"release_rehearsal_attestation_plan={attestation_path}")
           PY
 
       - name: Upload release rehearsal evidence

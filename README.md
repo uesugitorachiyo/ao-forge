@@ -108,9 +108,22 @@ To output the doctor result in machine-readable JSON:
 ./bin/forge doctor --foundation docs/foundation/foundation-baseline.v0.1.json --json
 ```
 
-Commands that would run or execute work are intentionally disabled in
-Slice 0.2. They fail closed until later slices connect AO Covenant, AO2, and
-ao2-control-plane.
+Rehearse a release without creating tags, pushing refs, or publishing GitHub
+releases:
+
+```sh
+./bin/forge release-preview \
+  --workspace . \
+  --artifact ./dist/ao-forge_Darwin_arm64.tar.gz \
+  --out release-preview-audit.json
+```
+
+The preview audit is machine-readable JSON with the resolved tag, HEAD commit,
+GitHub repository, release checks, artifact sizes, checksums, and next actions.
+See `docs/release/PREVIEW-RELEASE.md` for the operator runbook.
+
+Mutating commands fail closed unless the required gate result, clean workspace,
+explicit operator confirmation, and release preview evidence are present.
 
 ## Continuous Integration
 

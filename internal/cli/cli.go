@@ -212,6 +212,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runInspect(args[1:], stdout, stderr)
 	case "doctor":
 		return runDoctor(args[1:], stdout, stderr)
+	case "release-preview":
+		return runReleasePreview(args[1:], stdout, stderr)
 	case "run":
 		return runRun(args[1:], stdout, stderr)
 	case "once":
@@ -241,14 +243,15 @@ Usage:
   forge resume --run <run-id> [--out <factory-packet.json>] [--live] [--confirm-release]
   forge inspect --packet <factory-packet.json>
   forge doctor --foundation <foundation-baseline.json> [--json]
+  forge release-preview --workspace <git-workspace> [--tag <vX.Y.Z>] [--artifact <path> ...] [--out <release-preview-audit.json>]
 
 Factory terms:
   factory brief   normalized operator objective and constraints
   workcell        bounded unit of factory work with dependencies and evidence
   factory packet  operator-ready JSON summary of plan, gates, evidence, and next actions
 
-Slice 2.3 status:
-  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, and GitHub publishing are enabled.
+Slice 2.4 status:
+  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, and release preview audits are enabled.
 `)
 }
 
@@ -4217,6 +4220,285 @@ func resolveGitPath() string {
 		return gitBin
 	}
 	return "git"
+}
+
+type releasePreviewFlags struct {
+	workspacePath string
+	tagName       string
+	artifactPaths []string
+	outPath       string
+}
+
+type releasePreviewCheck struct {
+	CheckID string `json:"check_id"`
+	Status  string `json:"status"`
+	Summary string `json:"summary"`
+}
+
+type releasePreviewArtifact struct {
+	Path       string `json:"path"`
+	SHA256     string `json:"sha256,omitempty"`
+	SizeBytes  int64  `json:"size_bytes"`
+	Status     string `json:"status"`
+	Provenance string `json:"provenance"`
+}
+
+type releasePreviewAudit struct {
+	SchemaVersion       string                   `json:"schema_version"`
+	Status              string                   `json:"status"`
+	GeneratedAtUTC      string                   `json:"generated_at_utc"`
+	Workspace           string                   `json:"workspace"`
+	GitHubRepo          string                   `json:"github_repo,omitempty"`
+	Tag                 string                   `json:"tag,omitempty"`
+	HeadCommit          string                   `json:"head_commit,omitempty"`
+	MutatesReleases     bool                     `json:"mutates_releases"`
+	NetworkRequired     bool                     `json:"network_required"`
+	Checks              []releasePreviewCheck    `json:"checks"`
+	Artifacts           []releasePreviewArtifact `json:"artifacts"`
+	ReleaseNotesPreview string                   `json:"release_notes_preview"`
+	NextActions         []nextAction             `json:"next_actions"`
+}
+
+func parseReleasePreviewFlags(args []string) (releasePreviewFlags, error) {
+	var flags releasePreviewFlags
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--workspace":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return releasePreviewFlags{}, fmt.Errorf("--workspace requires a value")
+			}
+			flags.workspacePath = args[i+1]
+			i++
+		case "--tag":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return releasePreviewFlags{}, fmt.Errorf("--tag requires a value")
+			}
+			flags.tagName = args[i+1]
+			i++
+		case "--artifact":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return releasePreviewFlags{}, fmt.Errorf("--artifact requires a value")
+			}
+			flags.artifactPaths = append(flags.artifactPaths, args[i+1])
+			i++
+		case "--out":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return releasePreviewFlags{}, fmt.Errorf("--out requires a value")
+			}
+			flags.outPath = args[i+1]
+			i++
+		case "--help", "-h":
+			return releasePreviewFlags{}, fmt.Errorf("help is available with `forge --help`")
+		default:
+			if strings.HasPrefix(args[i], "--") {
+				return releasePreviewFlags{}, fmt.Errorf("unknown flag %s", args[i])
+			}
+			return releasePreviewFlags{}, fmt.Errorf("unexpected argument %s", args[i])
+		}
+	}
+	if flags.workspacePath == "" {
+		return releasePreviewFlags{}, fmt.Errorf("missing required --workspace")
+	}
+	return flags, nil
+}
+
+func runReleasePreview(args []string, stdout, stderr io.Writer) int {
+	flags, err := parseReleasePreviewFlags(args)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge release-preview: %v\n", err)
+		return 2
+	}
+
+	audit := buildReleasePreviewAudit(flags)
+	data, err := marshalIndented(audit)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge release-preview: marshal audit: %v\n", err)
+		return 1
+	}
+
+	if flags.outPath != "" {
+		if err := writeFile(flags.outPath, data); err != nil {
+			fmt.Fprintf(stderr, "forge release-preview: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "release_preview_audit=%s\n", displayPath(flags.outPath))
+	} else {
+		_, _ = stdout.Write(data)
+	}
+
+	if audit.Status != "passed" {
+		fmt.Fprintf(stderr, "forge release-preview: %s\n", releasePreviewFailureSummary(audit))
+		return 1
+	}
+	return 0
+}
+
+func buildReleasePreviewAudit(flags releasePreviewFlags) releasePreviewAudit {
+	audit := releasePreviewAudit{
+		SchemaVersion:   "ao.forge.release-preview-audit.v0.1",
+		Status:          "passed",
+		GeneratedAtUTC:  time.Now().UTC().Format(time.RFC3339),
+		Workspace:       displayPath(flags.workspacePath),
+		MutatesReleases: false,
+		NetworkRequired: false,
+		Checks:          []releasePreviewCheck{},
+		Artifacts:       []releasePreviewArtifact{},
+	}
+	addCheck := func(id, status, summary string) {
+		audit.Checks = append(audit.Checks, releasePreviewCheck{CheckID: id, Status: status, Summary: summary})
+		if status != "passed" {
+			audit.Status = "blocked"
+		}
+	}
+
+	if info, err := os.Stat(flags.workspacePath); err != nil {
+		addCheck("workspace-exists", "failed", fmt.Sprintf("workspace directory is unavailable: %v", err))
+		audit.NextActions = releasePreviewNextActions(audit.Status)
+		return audit
+	} else if !info.IsDir() {
+		addCheck("workspace-exists", "failed", "workspace path is not a directory")
+		audit.NextActions = releasePreviewNextActions(audit.Status)
+		return audit
+	}
+	addCheck("workspace-exists", "passed", "workspace directory exists")
+
+	gitBin := resolveGitPath()
+	if out, err := exec.Command(gitBin, "-C", flags.workspacePath, "rev-parse", "--is-inside-work-tree").CombinedOutput(); err != nil {
+		addCheck("git-repository", "failed", fmt.Sprintf("workspace is not a git repository: %v (output: %q)", err, string(out)))
+		audit.NextActions = releasePreviewNextActions(audit.Status)
+		return audit
+	}
+	addCheck("git-repository", "passed", "workspace is a git repository")
+
+	statusOut, err := exec.Command(gitBin, "-C", flags.workspacePath, "status", "--porcelain").Output()
+	if err != nil {
+		addCheck("clean-worktree", "failed", fmt.Sprintf("failed to inspect workspace status: %v", err))
+	} else if strings.TrimSpace(string(statusOut)) != "" {
+		addCheck("clean-worktree", "failed", "dirty release workspace: uncommitted changes are present")
+	} else {
+		addCheck("clean-worktree", "passed", "release workspace is clean")
+	}
+
+	if headOut, err := exec.Command(gitBin, "-C", flags.workspacePath, "rev-parse", "HEAD").Output(); err != nil {
+		addCheck("head-commit", "failed", fmt.Sprintf("failed to resolve HEAD commit: %v", err))
+	} else {
+		audit.HeadCommit = strings.TrimSpace(string(headOut))
+		addCheck("head-commit", "passed", "HEAD commit resolved")
+	}
+
+	if repo, err := getGitHubRepo(flags.workspacePath); err != nil {
+		addCheck("github-remote", "failed", fmt.Sprintf("failed to resolve GitHub repository: %v", err))
+	} else {
+		audit.GitHubRepo = repo
+		addCheck("github-remote", "passed", "origin remote resolves to GitHub repository "+repo)
+	}
+
+	tagName := strings.TrimSpace(flags.tagName)
+	if tagName == "" {
+		var err error
+		tagName, err = extractReleaseTag("", flags.workspacePath)
+		if err != nil {
+			addCheck("release-tag", "failed", fmt.Sprintf("failed to resolve release tag: %v", err))
+		}
+	}
+	audit.Tag = tagName
+	if tagName != "" {
+		tagOut, err := exec.Command(gitBin, "-C", flags.workspacePath, "rev-parse", tagName+"^{commit}").Output()
+		if err != nil {
+			addCheck("release-tag", "passed", "release tag "+tagName+" is available for creation")
+		} else if strings.TrimSpace(string(tagOut)) == audit.HeadCommit {
+			addCheck("release-tag", "passed", "release tag "+tagName+" already points to HEAD")
+		} else {
+			addCheck("release-tag", "failed", "release tag "+tagName+" already points to a different commit")
+		}
+	}
+
+	if len(flags.artifactPaths) == 0 {
+		addCheck("artifact-audit", "passed", "no release artifacts declared for checksum audit")
+	}
+	for _, artifactPath := range flags.artifactPaths {
+		artifact := auditReleasePreviewArtifact(artifactPath)
+		audit.Artifacts = append(audit.Artifacts, artifact)
+		status := "passed"
+		if artifact.Status != "present" {
+			status = "failed"
+		}
+		addCheck("artifact:"+displayPath(artifactPath), status, artifact.Status+" release artifact "+displayPath(artifactPath))
+	}
+
+	addCheck("non-mutating-preview", "passed", "preview did not create tags, push refs, publish releases, or require network access")
+	audit.ReleaseNotesPreview = buildReleaseNotesPreview(audit)
+	audit.NextActions = releasePreviewNextActions(audit.Status)
+	return audit
+}
+
+func auditReleasePreviewArtifact(path string) releasePreviewArtifact {
+	artifact := releasePreviewArtifact{
+		Path:       displayPath(path),
+		Status:     "missing",
+		Provenance: "local-release-preview",
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return artifact
+	}
+	if info.IsDir() {
+		artifact.Status = "directory"
+		return artifact
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		artifact.Status = "unreadable"
+		return artifact
+	}
+	sum := sha256.Sum256(data)
+	artifact.SHA256 = hex.EncodeToString(sum[:])
+	artifact.SizeBytes = info.Size()
+	artifact.Status = "present"
+	return artifact
+}
+
+func buildReleaseNotesPreview(audit releasePreviewAudit) string {
+	var notes strings.Builder
+	notes.WriteString("## Release Preview\n\n")
+	if audit.Tag != "" {
+		notes.WriteString("Tag: " + audit.Tag + "\n\n")
+	}
+	if audit.HeadCommit != "" {
+		notes.WriteString("Commit: " + audit.HeadCommit + "\n\n")
+	}
+	notes.WriteString("## Artifact Checksums\n")
+	if len(audit.Artifacts) == 0 {
+		notes.WriteString("No artifacts declared.\n")
+	} else {
+		notes.WriteString("| Artifact | Size | SHA-256 |\n")
+		notes.WriteString("| --- | ---: | --- |\n")
+		for _, artifact := range audit.Artifacts {
+			notes.WriteString(fmt.Sprintf("| `%s` | %d | `%s` |\n", artifact.Path, artifact.SizeBytes, artifact.SHA256))
+		}
+	}
+	return notes.String()
+}
+
+func releasePreviewNextActions(status string) []nextAction {
+	if status == "passed" {
+		return []nextAction{
+			{ActionID: "review-release-preview-audit", Description: "Review the release preview audit, artifact checksums, and release notes preview before live release mutation.", Required: true},
+			{ActionID: "run-confirmed-release", Description: "Run the live release path only after operator approval and final artifact verification.", Required: true},
+		}
+	}
+	return []nextAction{
+		{ActionID: "fix-release-preview-blockers", Description: "Resolve failed release preview checks before creating tags, pushing refs, or publishing a GitHub release.", Required: true},
+	}
+}
+
+func releasePreviewFailureSummary(audit releasePreviewAudit) string {
+	for _, check := range audit.Checks {
+		if check.Status != "passed" {
+			return check.Summary
+		}
+	}
+	return "release preview audit blocked"
 }
 
 func extractReleaseTag(objectiveText string, workspacePath string) (string, error) {

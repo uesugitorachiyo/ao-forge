@@ -363,6 +363,7 @@ func TestReleaseRehearsalWorkflowValidatesTaggedEvidenceWithoutPublishing(t *tes
 		{name: "read only permissions", doc: workflow, want: "contents: read"},
 		{name: "dispatch input via event context", doc: workflow, want: "REQUESTED_REHEARSAL_TAG: ${{ github.event.inputs.tag }}"},
 		{name: "tag env", doc: workflow, want: "AO_FORGE_RELEASE_PREVIEW_TAG"},
+		{name: "runner temp via shell env", doc: workflow, want: "AO_FORGE_RELEASE_PREVIEW_OUT=${RUNNER_TEMP}/ao-forge-release-rehearsal"},
 		{name: "dry run script", doc: workflow, want: "scripts/release-preview-dry-run.sh"},
 		{name: "validate evidence step", doc: workflow, want: "Validate rehearsal evidence"},
 		{name: "audit schema validation", doc: workflow, want: "ao.forge.release-preview-audit.v0.1"},
@@ -386,6 +387,7 @@ func TestReleaseRehearsalWorkflowValidatesTaggedEvidenceWithoutPublishing(t *tes
 		"gh release create",
 		"softprops/action-gh-release",
 		"${{ inputs.",
+		"AO_FORGE_RELEASE_PREVIEW_OUT: ${{ runner.temp }}",
 	} {
 		if strings.Contains(workflow, forbidden) {
 			t.Fatalf("release rehearsal workflow must not contain %q\n%s", forbidden, workflow)

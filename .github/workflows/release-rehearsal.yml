@@ -23,7 +23,6 @@ jobs:
     name: Tagged release rehearsal
     runs-on: ubuntu-latest
     env:
-      AO_FORGE_RELEASE_PREVIEW_OUT: ${{ runner.temp }}/ao-forge-release-rehearsal
       REQUESTED_REHEARSAL_TAG: ${{ github.event.inputs.tag }}
 
     steps:
@@ -54,6 +53,7 @@ jobs:
           fi
 
           echo "AO_FORGE_RELEASE_PREVIEW_TAG=$tag" >> "$GITHUB_ENV"
+          echo "AO_FORGE_RELEASE_PREVIEW_OUT=${RUNNER_TEMP}/ao-forge-release-rehearsal" >> "$GITHUB_ENV"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - name: Run tagged release rehearsal

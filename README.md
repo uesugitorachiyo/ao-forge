@@ -51,6 +51,7 @@ over provider execution, release publishing, or control-plane approval.
 - [Phase 0 Roadmap](docs/roadmap/PHASE-0.md)
 - [Verified Foundation Baseline](docs/foundation/VERIFIED-BASELINE.md)
 - [Foundation Baseline JSON](docs/foundation/foundation-baseline.v0.1.json)
+- [Release Threat Model](docs/security/RELEASE-THREAT-MODEL.md)
 - [Factory Brief v0.1 Schema](docs/contracts/factory-brief-v0.1.schema.json)
 - [Factory Plan v0.1 Schema](docs/contracts/factory-plan-v0.1.schema.json)
 - [Factory Packet v0.1 Schema](docs/contracts/factory-packet-v0.1.schema.json)

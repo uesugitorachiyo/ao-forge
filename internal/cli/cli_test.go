@@ -172,6 +172,49 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	}
 }
 
+func TestReleaseThreatModelIsPublicAndMapsAttacksToControls(t *testing.T) {
+	root := repoRoot(t)
+	readText := func(path ...string) string {
+		t.Helper()
+		bytes, err := os.ReadFile(filepath.Join(append([]string{root}, path...)...))
+		if err != nil {
+			t.Fatalf("read %s: %v", filepath.Join(path...), err)
+		}
+		return string(bytes)
+	}
+
+	readme := readText("README.md")
+	previewRunbook := readText("docs", "release", "PREVIEW-RELEASE.md")
+	threatModel := readText("docs", "security", "RELEASE-THREAT-MODEL.md")
+
+	for _, check := range []struct {
+		name string
+		doc  string
+		want string
+	}{
+		{name: "README threat model link", doc: readme, want: "[Release Threat Model](docs/security/RELEASE-THREAT-MODEL.md)"},
+		{name: "preview runbook threat model link", doc: previewRunbook, want: "../security/RELEASE-THREAT-MODEL.md"},
+		{name: "threat model title", doc: threatModel, want: "# AO Forge Release Threat Model"},
+		{name: "threat model scope", doc: threatModel, want: "## Scope"},
+		{name: "threat model attack table", doc: threatModel, want: "## Release Attack Map"},
+		{name: "tag spoofing attack", doc: threatModel, want: "Tag spoofing"},
+		{name: "artifact tampering attack", doc: threatModel, want: "Artifact tampering"},
+		{name: "credential exposure attack", doc: threatModel, want: "Credential exposure"},
+		{name: "workflow permission escalation attack", doc: threatModel, want: "Workflow permission escalation"},
+		{name: "stale evidence attack", doc: threatModel, want: "Stale release evidence"},
+		{name: "dirty workspace attack", doc: threatModel, want: "Dirty workspace release"},
+		{name: "control release preview", doc: threatModel, want: "`forge release-preview`"},
+		{name: "control checksum command", doc: threatModel, want: "`forge artifact checksums`"},
+		{name: "control inspect json", doc: threatModel, want: "`forge release-preview inspect --json`"},
+		{name: "control read permissions", doc: threatModel, want: "`contents: read`"},
+		{name: "public privacy guidance", doc: threatModel, want: "Do not commit ad hoc local release audits"},
+	} {
+		if !strings.Contains(check.doc, check.want) {
+			t.Fatalf("%s missing %q", check.name, check.want)
+		}
+	}
+}
+
 func TestReleasePreviewWorkflowPublishesDryRunAuditArtifacts(t *testing.T) {
 	root := repoRoot(t)
 	workflowPath := filepath.Join(root, ".github", "workflows", "release-preview.yml")

@@ -1,0 +1,16 @@
+[
+  {
+    "path": "examples/release-preview/ao-forge-preview-artifact.txt",
+    "sha256": "befb66407d8eabf5446060ab1faa5e61830160192475409dd589988efc5b419f",
+    "size_bytes": 95,
+    "status": "present",
+    "provenance": "local-release-preview"
+  },
+  {
+    "path": "examples/release-preview/checksums.txt",
+    "sha256": "4d4995f2493e47bd7dcc0db6171bf23e593624dc451af59d3dbc5d326b67a749",
+    "size_bytes": 121,
+    "status": "present",
+    "provenance": "local-release-preview"
+  }
+]

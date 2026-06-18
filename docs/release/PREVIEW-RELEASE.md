@@ -95,6 +95,25 @@ The JSON inspect summary uses schema version
 source audit schema version, pass/fail counts, artifact details, and next
 actions.
 
+## Release Artifact Inventory
+
+The expected public artifact inventory uses schema version
+`ao.forge.release-artifact-inventory.v0.1`. The formal schema is published at
+`docs/contracts/release-artifact-inventory-v0.1.schema.json`, and the public-safe
+example inventory lives at
+`../../examples/release-preview/release-artifact-inventory.v0.1.example.json`.
+
+Use this inventory as the release checklist for expected archives, platform
+coverage, checksum manifest requirements, provenance source, build workflow, and
+required attestations. Keep it free of ad hoc local paths, private operator
+state, credentials, or unreleased customer data.
+
+```sh
+forge contract validate \
+  --schema docs/contracts/release-artifact-inventory-v0.1.schema.json \
+  --document examples/release-preview/release-artifact-inventory.v0.1.example.json
+```
+
 ## Operator Rule
 
 Do not run a live confirmed release if the preview audit is `blocked`. Fix the

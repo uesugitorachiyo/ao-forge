@@ -127,6 +127,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	planSchema := readText("docs", "contracts", "factory-plan-v0.1.schema.json")
 	releasePreviewSchema := readText("docs", "contracts", "release-preview-audit-v0.1.schema.json")
 	releasePreviewInspectSchema := readText("docs", "contracts", "release-preview-inspect-v0.1.schema.json")
+	releaseArtifactInventorySchema := readText("docs", "contracts", "release-artifact-inventory-v0.1.schema.json")
 
 	for _, check := range []struct {
 		name string
@@ -137,6 +138,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "README plan schema link", doc: readme, want: "[Factory Plan v0.1 Schema](docs/contracts/factory-plan-v0.1.schema.json)"},
 		{name: "README release preview schema link", doc: readme, want: "[Release Preview Audit v0.1 Schema](docs/contracts/release-preview-audit-v0.1.schema.json)"},
 		{name: "README release preview inspect schema link", doc: readme, want: "[Release Preview Inspect v0.1 Schema](docs/contracts/release-preview-inspect-v0.1.schema.json)"},
+		{name: "README release artifact inventory schema link", doc: readme, want: "[Release Artifact Inventory v0.1 Schema](docs/contracts/release-artifact-inventory-v0.1.schema.json)"},
 		{name: "brief schema id", doc: briefSchema, want: `"ao.forge.factory-brief.v0.1"`},
 		{name: "brief strict root", doc: briefSchema, want: `"additionalProperties": false`},
 		{name: "brief objective", doc: briefSchema, want: `"objective"`},
@@ -162,6 +164,12 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "release preview inspect failed checks", doc: releasePreviewInspectSchema, want: `"failed_checks"`},
 		{name: "release preview inspect artifact details", doc: releasePreviewInspectSchema, want: `"artifact_details"`},
 		{name: "release preview inspect next actions", doc: releasePreviewInspectSchema, want: `"next_actions"`},
+		{name: "release artifact inventory schema id", doc: releaseArtifactInventorySchema, want: `"ao.forge.release-artifact-inventory.v0.1"`},
+		{name: "release artifact inventory strict root", doc: releaseArtifactInventorySchema, want: `"additionalProperties": false`},
+		{name: "release artifact inventory expected artifacts", doc: releaseArtifactInventorySchema, want: `"expected_artifacts"`},
+		{name: "release artifact inventory checksum manifest", doc: releaseArtifactInventorySchema, want: `"checksum_manifest"`},
+		{name: "release artifact inventory provenance", doc: releaseArtifactInventorySchema, want: `"provenance"`},
+		{name: "release artifact inventory attestations", doc: releaseArtifactInventorySchema, want: `"attestations"`},
 	} {
 		if !strings.Contains(check.doc, check.want) {
 			t.Fatalf("%s missing %q", check.name, check.want)
@@ -176,11 +184,60 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "plan schema", text: planSchema},
 		{name: "release preview schema", text: releasePreviewSchema},
 		{name: "release preview inspect schema", text: releasePreviewInspectSchema},
+		{name: "release artifact inventory schema", text: releaseArtifactInventorySchema},
 	} {
 		var decoded any
 		if err := json.Unmarshal([]byte(doc.text), &decoded); err != nil {
 			t.Fatalf("%s is not valid JSON: %v", doc.name, err)
 		}
+	}
+}
+
+func TestReleaseArtifactInventoryContractDocumentsExpectedPublicArtifacts(t *testing.T) {
+	root := repoRoot(t)
+	readText := func(path ...string) string {
+		t.Helper()
+		bytes, err := os.ReadFile(filepath.Join(append([]string{root}, path...)...))
+		if err != nil {
+			t.Fatalf("read %s: %v", filepath.Join(path...), err)
+		}
+		return string(bytes)
+	}
+
+	schemaPath := filepath.Join(root, "docs", "contracts", "release-artifact-inventory-v0.1.schema.json")
+	examplePath := filepath.Join(root, "examples", "release-preview", "release-artifact-inventory.v0.1.example.json")
+
+	for _, check := range []struct {
+		name string
+		doc  string
+		want string
+	}{
+		{name: "README schema link", doc: readText("README.md"), want: "[Release Artifact Inventory v0.1 Schema](docs/contracts/release-artifact-inventory-v0.1.schema.json)"},
+		{name: "preview runbook contract section", doc: readText("docs", "release", "PREVIEW-RELEASE.md"), want: "## Release Artifact Inventory"},
+		{name: "preview runbook example link", doc: readText("docs", "release", "PREVIEW-RELEASE.md"), want: "../../examples/release-preview/release-artifact-inventory.v0.1.example.json"},
+		{name: "branch protection local validation", doc: readText("docs", "release", "BRANCH-PROTECTION.md"), want: "release-artifact-inventory-v0.1.schema.json"},
+		{name: "threat model inventory control", doc: readText("docs", "security", "RELEASE-THREAT-MODEL.md"), want: "`release-artifact-inventory.v0.1.example.json`"},
+	} {
+		if !strings.Contains(check.doc, check.want) {
+			t.Fatalf("%s missing %q", check.name, check.want)
+		}
+	}
+
+	code, stdout, stderr := runCLI("contract", "validate", "--schema", schemaPath, "--document", examplePath)
+	if code != 0 {
+		t.Fatalf("release artifact inventory example failed validation with code %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	for _, want := range []string{
+		"contract_validation=passed",
+		"schema=" + displayPath(schemaPath),
+		"document=" + displayPath(examplePath),
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("contract validate stdout missing %q\n%s", want, stdout)
+		}
+	}
+	if stderr != "" {
+		t.Fatalf("contract validate wrote stderr: %s", stderr)
 	}
 }
 

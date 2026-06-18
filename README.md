@@ -60,6 +60,7 @@ over provider execution, release publishing, or control-plane approval.
 - [Covenant Gate Result v0.1 Schema](docs/contracts/covenant-gate-result-v0.1.schema.json)
 - [Release Preview Audit v0.1 Schema](docs/contracts/release-preview-audit-v0.1.schema.json)
 - [Release Preview Inspect v0.1 Schema](docs/contracts/release-preview-inspect-v0.1.schema.json)
+- [Release Artifact Inventory v0.1 Schema](docs/contracts/release-artifact-inventory-v0.1.schema.json)
 - [Release Preview Fixtures](examples/release-preview/)
 - [Example Vertical Slice](examples/vertical-slices/risky-pr-factory.factory.json)
 - [Example Deterministic Plan](examples/plans/risky-pr-factory-plan.json)
@@ -117,6 +118,15 @@ For automation, emit the validation result as JSON:
   --schema docs/contracts/release-preview-inspect-v0.1.schema.json \
   --document examples/release-preview/dirty-workspace-blocked.inspect.expected.json \
   --json
+```
+
+Validate the expected public release artifact inventory before the first public
+tag:
+
+```sh
+./bin/forge contract validate \
+  --schema docs/contracts/release-artifact-inventory-v0.1.schema.json \
+  --document examples/release-preview/release-artifact-inventory.v0.1.example.json
 ```
 
 Verify that the local workspace matches the verified baseline:

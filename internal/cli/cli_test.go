@@ -449,6 +449,56 @@ func TestReleaseThreatModelIsPublicAndMapsAttacksToControls(t *testing.T) {
 	}
 }
 
+func TestFirstPublicReleaseChecklistDocumentsSafeOperatorFlow(t *testing.T) {
+	root := repoRoot(t)
+	readText := func(path ...string) string {
+		t.Helper()
+		bytes, err := os.ReadFile(filepath.Join(append([]string{root}, path...)...))
+		if err != nil {
+			t.Fatalf("read %s: %v", filepath.Join(path...), err)
+		}
+		return string(bytes)
+	}
+
+	readme := readText("README.md")
+	previewRunbook := readText("docs", "release", "PREVIEW-RELEASE.md")
+	branchRunbook := readText("docs", "release", "BRANCH-PROTECTION.md")
+	threatModel := readText("docs", "security", "RELEASE-THREAT-MODEL.md")
+	checklist := readText("docs", "release", "FIRST-PUBLIC-RELEASE.md")
+
+	for _, check := range []struct {
+		name string
+		doc  string
+		want string
+	}{
+		{name: "README checklist link", doc: readme, want: "[First Public Release Checklist](docs/release/FIRST-PUBLIC-RELEASE.md)"},
+		{name: "preview runbook checklist link", doc: previewRunbook, want: "FIRST-PUBLIC-RELEASE.md"},
+		{name: "branch runbook checklist link", doc: branchRunbook, want: "FIRST-PUBLIC-RELEASE.md"},
+		{name: "threat model checklist link", doc: threatModel, want: "../release/FIRST-PUBLIC-RELEASE.md"},
+		{name: "checklist title", doc: checklist, want: "# AO Forge First Public Release Checklist"},
+		{name: "operator preconditions", doc: checklist, want: "## Preconditions"},
+		{name: "tag decision", doc: checklist, want: "## Tag Decision"},
+		{name: "local gate", doc: checklist, want: "## Local Release-Readiness Gate"},
+		{name: "rehearsal", doc: checklist, want: "## Release Rehearsal"},
+		{name: "artifact inventory", doc: checklist, want: "release-artifact-inventory.v0.1.example.json"},
+		{name: "attestation plan", doc: checklist, want: "release-attestation-plan.v0.1.example.json"},
+		{name: "checksums", doc: checklist, want: "checksums.txt"},
+		{name: "publish decision", doc: checklist, want: "## Publish Decision"},
+		{name: "rollback", doc: checklist, want: "## Rollback Plan"},
+		{name: "privacy", doc: checklist, want: "Do not paste local absolute paths, private tokens, or excluded handoff notes"},
+		{name: "release rehearsal workflow", doc: checklist, want: "`Release Rehearsal`"},
+		{name: "release preview command", doc: checklist, want: "scripts/release-preview-dry-run.sh"},
+		{name: "contract validate inventory", doc: checklist, want: "contract validate --schema docs/contracts/release-artifact-inventory-v0.1.schema.json"},
+		{name: "contract validate attestation", doc: checklist, want: "contract validate --schema docs/contracts/release-attestation-plan-v0.1.schema.json"},
+		{name: "gitleaks", doc: checklist, want: "gitleaks detect --source . --redact --verbose"},
+		{name: "post release verification", doc: checklist, want: "## Post-Release Verification"},
+	} {
+		if !strings.Contains(check.doc, check.want) {
+			t.Fatalf("%s missing %q", check.name, check.want)
+		}
+	}
+}
+
 func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 	root := repoRoot(t)
 	readText := func(path ...string) string {

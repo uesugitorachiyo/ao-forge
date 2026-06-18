@@ -1,0 +1,52 @@
+{
+  "schema_version": "ao.forge.release-preview-audit.v0.1",
+  "status": "blocked",
+  "generated_at_utc": "2026-01-01T00:00:00Z",
+  "workspace": "examples/release-preview/dirty-workspace",
+  "github_repo": "test-owner/test-repo",
+  "tag": "v1.2.12",
+  "head_commit": "1111111111111111111111111111111111111111",
+  "mutates_releases": false,
+  "network_required": false,
+  "checks": [
+    {
+      "check_id": "workspace-git",
+      "status": "passed",
+      "summary": "workspace is a git repository"
+    },
+    {
+      "check_id": "clean-worktree",
+      "status": "failed",
+      "summary": "dirty release workspace has uncommitted changes"
+    },
+    {
+      "check_id": "head-commit",
+      "status": "passed",
+      "summary": "HEAD resolves to 1111111111111111111111111111111111111111"
+    },
+    {
+      "check_id": "github-remote",
+      "status": "passed",
+      "summary": "origin resolves to test-owner/test-repo"
+    },
+    {
+      "check_id": "release-tag",
+      "status": "passed",
+      "summary": "release tag v1.2.12 is available or already points to HEAD"
+    },
+    {
+      "check_id": "non-mutating-preview",
+      "status": "passed",
+      "summary": "preview did not create tags, push refs, publish releases, or require network access"
+    }
+  ],
+  "artifacts": [],
+  "release_notes_preview": "## Release Preview\n\nTag: v1.2.12\n\nCommit: 1111111111111111111111111111111111111111\n\n## Artifact Checksums\nNo artifacts declared.\n",
+  "next_actions": [
+    {
+      "action_id": "fix-release-preview-blockers",
+      "description": "Resolve failed release preview checks before creating tags, pushing refs, or publishing a GitHub release.",
+      "required": true
+    }
+  ]
+}

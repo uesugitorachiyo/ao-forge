@@ -85,6 +85,9 @@ and includes:
 
 Committed [release preview fixtures](../../examples/release-preview/) cover
 artifact checksum and inspect JSON behavior for maintainers changing this path.
+They include `dirty-workspace-blocked.audit.json`, a fail-closed dirty-workspace preview,
+plus its expected inspect JSON so blocked release
+evidence remains reviewable and regression-tested.
 
 The JSON inspect summary uses schema version
 `ao.forge.release-preview-inspect.v0.1`. Its formal schema is published at

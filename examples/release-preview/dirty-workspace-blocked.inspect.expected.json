@@ -1,0 +1,23 @@
+{
+  "inspect_schema_version": "ao.forge.release-preview-inspect.v0.1",
+  "release_preview_audit": "examples/release-preview/dirty-workspace-blocked.audit.json",
+  "schema_version": "ao.forge.release-preview-audit.v0.1",
+  "status": "blocked",
+  "workspace": "examples/release-preview/dirty-workspace",
+  "github_repo": "test-owner/test-repo",
+  "tag": "v1.2.12",
+  "head_commit": "1111111111111111111111111111111111111111",
+  "mutates_releases": false,
+  "network_required": false,
+  "checks": 6,
+  "failed_checks": 1,
+  "artifacts": 0,
+  "artifact_details": [],
+  "next_actions": [
+    {
+      "action_id": "fix-release-preview-blockers",
+      "description": "Resolve failed release preview checks before creating tags, pushing refs, or publishing a GitHub release.",
+      "required": true
+    }
+  ]
+}

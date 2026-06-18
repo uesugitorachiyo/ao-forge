@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/uesugitorachiyo/ao-forge/docs/contracts/release-attestation-plan-v0.1.schema.json",
+  "title": "AO Forge Release Attestation Plan v0.1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "plan_id",
+    "release_name",
+    "signer_identity",
+    "subjects",
+    "verification_steps",
+    "failure_policy",
+    "privacy_rules"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "ao.forge.release-attestation-plan.v0.1"
+    },
+    "plan_id": {
+      "type": "string",
+      "pattern": "^release-attestation-[a-z0-9][a-z0-9._-]*$"
+    },
+    "release_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "signer_identity": {
+      "type": "object",
+      "required": ["provider", "identity", "scope", "key_material_policy"],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": ["github-actions-oidc", "operator-key"]
+        },
+        "identity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "type": "string",
+          "enum": ["release-workflow", "maintainer-approved-release"]
+        },
+        "key_material_policy": {
+          "type": "string",
+          "enum": ["keyless-oidc", "hardware-backed", "offline-private-key"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "subjects": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["subject_id", "subject_type", "path_template", "digest_algorithm", "required"],
+        "properties": {
+          "subject_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "subject_type": {
+            "type": "string",
+            "enum": [
+              "release-archive",
+              "checksum-manifest",
+              "release-preview-audit",
+              "release-preview-inspect",
+              "artifact-inventory"
+            ]
+          },
+          "path_template": {
+            "type": "string",
+            "minLength": 1
+          },
+          "digest_algorithm": {
+            "const": "sha256"
+          },
+          "required": {
+            "const": true
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "verification_steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["step_id", "description", "required"],
+        "properties": {
+          "step_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "required": {
+            "const": true
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "failure_policy": {
+      "type": "object",
+      "required": ["on_missing_signature", "on_identity_mismatch", "on_digest_mismatch"],
+      "properties": {
+        "on_missing_signature": {
+          "const": "block-release"
+        },
+        "on_identity_mismatch": {
+          "const": "block-release"
+        },
+        "on_digest_mismatch": {
+          "const": "block-release"
+        }
+      },
+      "additionalProperties": false
+    },
+    "privacy_rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "enum": [
+          "no-private-keys-in-repo",
+          "no-local-absolute-paths",
+          "no-operator-secrets",
+          "public-identities-only"
+        ]
+      }
+    }
+  },
+  "additionalProperties": false
+}

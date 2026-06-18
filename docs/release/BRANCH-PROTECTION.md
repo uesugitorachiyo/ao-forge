@@ -32,6 +32,8 @@ comes from `.github/workflows/release-preview.yml` and verifies the non-mutating
 release rehearsal, human inspect output, JSON inspect output, and uploaded
 release evidence artifacts.
 
+Release Preview also validates generated audit and inspect JSON against their published schemas before uploading artifacts.
+
 ## Maintainer Flow
 
 1. Work on a feature branch.

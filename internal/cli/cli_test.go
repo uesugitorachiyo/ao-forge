@@ -215,6 +215,48 @@ func TestReleaseThreatModelIsPublicAndMapsAttacksToControls(t *testing.T) {
 	}
 }
 
+func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
+	root := repoRoot(t)
+	readText := func(path ...string) string {
+		t.Helper()
+		bytes, err := os.ReadFile(filepath.Join(append([]string{root}, path...)...))
+		if err != nil {
+			t.Fatalf("read %s: %v", filepath.Join(path...), err)
+		}
+		return string(bytes)
+	}
+
+	readme := readText("README.md")
+	threatModel := readText("docs", "security", "RELEASE-THREAT-MODEL.md")
+	runbook := readText("docs", "release", "BRANCH-PROTECTION.md")
+
+	for _, check := range []struct {
+		name string
+		doc  string
+		want string
+	}{
+		{name: "README branch protection link", doc: readme, want: "[Branch Protection Runbook](docs/release/BRANCH-PROTECTION.md)"},
+		{name: "threat model branch protection link", doc: threatModel, want: "../release/BRANCH-PROTECTION.md"},
+		{name: "runbook title", doc: runbook, want: "# AO Forge Branch Protection Runbook"},
+		{name: "main branch", doc: runbook, want: "`main`"},
+		{name: "require PR", doc: runbook, want: "Require a pull request before merging"},
+		{name: "stale reviews", doc: runbook, want: "Dismiss stale pull request approvals"},
+		{name: "required status checks", doc: runbook, want: "Require status checks to pass before merging"},
+		{name: "ubuntu check", doc: runbook, want: "`Go ubuntu-latest`"},
+		{name: "macos check", doc: runbook, want: "`Go macos-latest`"},
+		{name: "windows check", doc: runbook, want: "`Go windows-latest`"},
+		{name: "release preview check", doc: runbook, want: "`Release preview dry-run audit`"},
+		{name: "linear history", doc: runbook, want: "Require linear history"},
+		{name: "admin guidance", doc: runbook, want: "Do not bypass the required checks for public releases"},
+		{name: "local fallback", doc: runbook, want: "go test ./... -count=1"},
+		{name: "secret scan", doc: runbook, want: "gitleaks detect --source . --redact --verbose"},
+	} {
+		if !strings.Contains(check.doc, check.want) {
+			t.Fatalf("%s missing %q", check.name, check.want)
+		}
+	}
+}
+
 func TestReleasePreviewWorkflowPublishesDryRunAuditArtifacts(t *testing.T) {
 	root := repoRoot(t)
 	workflowPath := filepath.Join(root, ".github", "workflows", "release-preview.yml")

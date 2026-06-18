@@ -243,8 +243,8 @@ Factory terms:
   workcell        bounded unit of factory work with dependencies and evidence
   factory packet  operator-ready JSON summary of plan, gates, evidence, and next actions
 
-Slice 1.8 status:
-  durable state persistence, live/dry-run execution orchestration, verification, and run resumption are enabled.
+Slice 1.13 status:
+  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, and parallel swarms peer review are enabled.
 `)
 }
 

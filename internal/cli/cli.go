@@ -69,6 +69,7 @@ type briefWorkcell struct {
 	Kind       string          `json:"kind"`
 	Workspace  string          `json:"workspace,omitempty"`
 	Executor   string          `json:"executor,omitempty"`
+	Peers      int             `json:"peers,omitempty"`
 	Task       string          `json:"task,omitempty"`
 	DependsOn  []string        `json:"depends_on"`
 	Rubric     *workcellRubric `json:"rubric,omitempty"`
@@ -110,6 +111,7 @@ type planWorkcell struct {
 	Kind       string          `json:"kind"`
 	Workspace  string          `json:"workspace,omitempty"`
 	Executor   string          `json:"executor,omitempty"`
+	Peers      int             `json:"peers,omitempty"`
 	Task       string          `json:"task,omitempty"`
 	Status     string          `json:"status"`
 	DependsOn  []string        `json:"depends_on"`
@@ -165,6 +167,7 @@ type factoryPacket struct {
 		Kind       string   `json:"kind"`
 		Workspace  string   `json:"workspace,omitempty"`
 		Executor   string   `json:"executor,omitempty"`
+		Peers      int      `json:"peers,omitempty"`
 		Task       string   `json:"task,omitempty"`
 		Status     string   `json:"status"`
 		DependsOn  []string `json:"depends_on"`
@@ -899,6 +902,7 @@ func buildPlan(brief factoryBrief, canonicalBrief []byte) factoryPlan {
 			Kind:       cell.Kind,
 			Workspace:  cell.Workspace,
 			Executor:   cell.Executor,
+			Peers:      cell.Peers,
 			Task:       cell.Task,
 			Status:     "planned",
 			DependsOn:  cloneStrings(cell.DependsOn),
@@ -1384,6 +1388,7 @@ func executePlanRun(
 			Kind       string   `json:"kind"`
 			Workspace  string   `json:"workspace,omitempty"`
 			Executor   string   `json:"executor,omitempty"`
+			Peers      int      `json:"peers,omitempty"`
 			Task       string   `json:"task,omitempty"`
 			Status     string   `json:"status"`
 			DependsOn  []string `json:"depends_on"`
@@ -1396,6 +1401,7 @@ func executePlanRun(
 			packet.Workcells[i].Kind = wc.Kind
 			packet.Workcells[i].Workspace = wc.Workspace
 			packet.Workcells[i].Executor = wc.Executor
+			packet.Workcells[i].Peers = wc.Peers
 			packet.Workcells[i].Task = wc.Task
 			packet.Workcells[i].DependsOn = cloneStrings(wc.DependsOn)
 			if schedulerStates != nil && i < len(schedulerStates) {
@@ -1767,6 +1773,43 @@ func executePlanRun(
 				Path:          displayPath(wcEvPath),
 				SHA256:        hex.EncodeToString(sum[:]),
 			})
+
+			if state.Peers > 1 && len(state.PeerStates) > 0 {
+				for _, peerState := range state.PeerStates {
+					peerEv := map[string]any{
+						"schema_version": "ao2.workcell-evidence.v1",
+						"workcell_id":    state.ID,
+						"status":         peerState.Status,
+						"stdout":         peerState.Stdout,
+						"stderr":         peerState.Stderr,
+						"spec_sha256":    state.SpecSHA256,
+					}
+					peerEvData, err := marshalIndented(peerEv)
+					if err != nil {
+						explanation := fmt.Sprintf("Failed to marshal workcell %s peer %d evidence: %v", state.ID, peerState.Index, err)
+						return failClosedWithPacket("failed", "failed", explanation, "wc-peer-evidence-marshal-failed", "ao-forge", false, evidenceList)
+					}
+					peerEvPath := filepath.Join(summaryDir, fmt.Sprintf("ao2-wc-%s-peer-%d-evidence.json", state.ID, peerState.Index))
+					if err := writeFile(peerEvPath, peerEvData); err != nil {
+						explanation := fmt.Sprintf("Failed to write workcell %s peer %d evidence: %v", state.ID, peerState.Index, err)
+						return failClosedWithPacket("failed", "failed", explanation, "wc-peer-evidence-write-failed", "ao-forge", false, evidenceList)
+					}
+					peerSum := sha256.Sum256(peerEvData)
+					evidenceList = append(evidenceList, struct {
+						Label         string `json:"label"`
+						SchemaVersion string `json:"schema_version"`
+						Status        string `json:"status"`
+						Path          string `json:"path"`
+						SHA256        string `json:"sha256"`
+					}{
+						Label:         fmt.Sprintf("workcell %s peer %d evidence", state.ID, peerState.Index),
+						SchemaVersion: "ao2.workcell-evidence.v1",
+						Status:        peerState.Status,
+						Path:          displayPath(peerEvPath),
+						SHA256:        hex.EncodeToString(peerSum[:]),
+					})
+				}
+			}
 		}
 	}
 
@@ -1860,6 +1903,7 @@ func executePlanRun(
 		Kind       string   `json:"kind"`
 		Workspace  string   `json:"workspace,omitempty"`
 		Executor   string   `json:"executor,omitempty"`
+		Peers      int      `json:"peers,omitempty"`
 		Task       string   `json:"task,omitempty"`
 		Status     string   `json:"status"`
 		DependsOn  []string `json:"depends_on"`
@@ -1872,6 +1916,7 @@ func executePlanRun(
 		packet.Workcells[i].Kind = wc.Kind
 		packet.Workcells[i].Workspace = wc.Workspace
 		packet.Workcells[i].Executor = wc.Executor
+		packet.Workcells[i].Peers = wc.Peers
 		packet.Workcells[i].Task = wc.Task
 		packet.Workcells[i].DependsOn = cloneStrings(wc.DependsOn)
 		packet.Workcells[i].AO2Run = "none"
@@ -2042,6 +2087,35 @@ func runResume(args []string, stdout, stderr io.Writer) int {
 								}
 							}
 						}
+						var peerStates []*peerRunState
+						if prevWc.Peers > 1 {
+							for idx := 0; idx < prevWc.Peers; idx++ {
+								peerEvPath := filepath.Join(runDir, fmt.Sprintf("ao2-wc-%s-peer-%d-evidence.json", prevWc.WorkcellID, idx))
+								var pStdout, pStderr, pStatus string
+								if pEvData, err := os.ReadFile(peerEvPath); err == nil {
+									var pEvObj map[string]any
+									if err := json.Unmarshal(pEvData, &pEvObj); err == nil {
+										if st, ok := pEvObj["stdout"].(string); ok {
+											pStdout = st
+										}
+										if se, ok := pEvObj["stderr"].(string); ok {
+											pStderr = se
+										}
+										if s, ok := pEvObj["status"].(string); ok {
+											pStatus = s
+										}
+									}
+								}
+								peerStates = append(peerStates, &peerRunState{
+									stateMu: &sync.Mutex{},
+									Index:   idx,
+									Status:  pStatus,
+									Stdout:  pStdout,
+									Stderr:  pStderr,
+								})
+							}
+						}
+
 						prevStates[prevWc.WorkcellID] = &workcellRunState{
 							ID:         prevWc.WorkcellID,
 							Status:     "passed",
@@ -2051,7 +2125,9 @@ func runResume(args []string, stdout, stderr io.Writer) int {
 							SpecSHA256: specSHA,
 							Workspace:  prevWc.Workspace,
 							Executor:   prevWc.Executor,
+							Peers:      prevWc.Peers,
 							Task:       prevWc.Task,
+							PeerStates: peerStates,
 						}
 					}
 				}
@@ -2524,8 +2600,6 @@ func parseMarkdownBrief(data []byte) (factoryBrief, error) {
 	lines := strings.Split(string(data), "\n")
 	currentSection := ""
 
-	workcellRegex := regexp.MustCompile(`^\s*[-\*]\s*([a-zA-Z0-9_-]+)\s*\((prepare|execute|verify|close)\)(?:\s+executor:\s*([a-zA-Z0-9_-]+))?(?:\s+workspace:\s*([^\s\(\)]+))?(?:\s+task:\s*"([^"]*)")?(?:\s+(?:depends\s+on|depends_on):\s*([a-zA-Z0-9_,\s-]+))?\s*$`)
-
 	for _, line := range lines {
 		trimmedLine := strings.TrimSpace(line)
 		if trimmedLine == "" {
@@ -2584,16 +2658,42 @@ func parseMarkdownBrief(data []byte) (factoryBrief, error) {
 			}
 		case "workcells":
 			if strings.HasPrefix(trimmedLine, "-") || strings.HasPrefix(trimmedLine, "*") {
-				matches := workcellRegex.FindStringSubmatch(trimmedLine)
+				prefixRegex := regexp.MustCompile(`^\s*[-\*]\s*([a-zA-Z0-9_-]+)\s*\((prepare|execute|verify|close)\)(.*)$`)
+				matches := prefixRegex.FindStringSubmatch(trimmedLine)
 				if len(matches) >= 3 {
 					wcID := matches[1]
 					wcKind := matches[2]
-					wcExecutor := matches[3]
-					wcWorkspace := matches[4]
-					wcTask := matches[5]
+					remainder := matches[3]
+
+					wcTask := ""
+					if idx := strings.Index(remainder, `task: "`); idx != -1 {
+						start := idx + len(`task: "`)
+						if end := strings.Index(remainder[start:], `"`); end != -1 {
+							wcTask = remainder[start : start+end]
+							remainder = remainder[:idx] + remainder[start+end+1:]
+						}
+					}
+
+					wcExecutor := ""
+					if execMatches := regexp.MustCompile(`\bexecutor:\s*([a-zA-Z0-9_-]+)`).FindStringSubmatch(remainder); len(execMatches) > 1 {
+						wcExecutor = execMatches[1]
+					}
+
+					wcPeers := 0
+					if peersMatches := regexp.MustCompile(`\bpeers:\s*([0-9]+)`).FindStringSubmatch(remainder); len(peersMatches) > 1 {
+						if p, err := strconv.Atoi(peersMatches[1]); err == nil {
+							wcPeers = p
+						}
+					}
+
+					wcWorkspace := ""
+					if wsMatches := regexp.MustCompile(`\bworkspace:\s*([^\s\(\)]+)`).FindStringSubmatch(remainder); len(wsMatches) > 1 {
+						wcWorkspace = wsMatches[1]
+					}
+
 					deps := []string{}
-					if len(matches) > 6 && matches[6] != "" {
-						depList := strings.Split(matches[6], ",")
+					if depMatches := regexp.MustCompile(`\b(?:depends\s+on|depends_on):\s*([a-zA-Z0-9_,\s-]+)`).FindStringSubmatch(remainder); len(depMatches) > 1 {
+						depList := strings.Split(depMatches[1], ",")
 						for _, d := range depList {
 							trimmedDep := strings.TrimSpace(d)
 							if trimmedDep != "" {
@@ -2601,10 +2701,12 @@ func parseMarkdownBrief(data []byte) (factoryBrief, error) {
 							}
 						}
 					}
+
 					brief.ExpectedWorkcells = append(brief.ExpectedWorkcells, briefWorkcell{
 						WorkcellID: wcID,
 						Kind:       wcKind,
 						Executor:   wcExecutor,
+						Peers:      wcPeers,
 						Workspace:  wcWorkspace,
 						Task:       wcTask,
 						DependsOn:  deps,
@@ -2695,12 +2797,24 @@ func writeMarkdownPacket(outPath string, packet factoryPacket) error {
 	return writeFile(mdPath, buf.Bytes())
 }
 
+type peerRunState struct {
+	stateMu *sync.Mutex
+	Index   int
+	Status  string // "pending", "running", "passed", "failed"
+	Stdout  string
+	Stderr  string
+	Summary string
+	Cost    float64
+	Tokens  float64
+}
+
 type workcellRunState struct {
 	stateMu    *sync.Mutex
 	ID         string
 	Kind       string
 	Workspace  string
 	Executor   string
+	Peers      int
 	Task       string
 	DependsOn  []string
 	Status     string // "pending", "running", "passed", "failed", "skipped"
@@ -2709,6 +2823,7 @@ type workcellRunState struct {
 	Stderr     string
 	SpecSHA256 string
 	Rubric     *workcellRubric
+	PeerStates []*peerRunState
 }
 
 func (w *workcellRunState) GetStatus() string {
@@ -2812,12 +2927,19 @@ func runWorkcellsConcurrent(
 				}
 			}
 		}
+		var peerStates []*peerRunState
+		if prevStates != nil {
+			if prev, ok := prevStates[wc.WorkcellID]; ok {
+				peerStates = prev.PeerStates
+			}
+		}
 		states[wc.WorkcellID] = &workcellRunState{
 			stateMu:    &sync.Mutex{},
 			ID:         wc.WorkcellID,
 			Kind:       wc.Kind,
 			Workspace:  wc.Workspace,
 			Executor:   wc.Executor,
+			Peers:      wc.Peers,
 			Task:       wc.Task,
 			DependsOn:  wc.DependsOn,
 			Status:     status,
@@ -2826,6 +2948,7 @@ func runWorkcellsConcurrent(
 			Stderr:     existingStderr,
 			SpecSHA256: existingSpecSHA256,
 			Rubric:     wc.Rubric,
+			PeerStates: peerStates,
 		}
 	}
 
@@ -3098,6 +3221,10 @@ func runWorkcellsConcurrent(
 }
 
 func executeSingleWorkcell(ctx context.Context, plan factoryPlan, wcState *workcellRunState, ao2Path string, liveMode bool) error {
+	if wcState.Peers > 1 && wcState.Executor != "agy-swarms" {
+		return fmt.Errorf("parallel peer execution is only supported for executor 'agy-swarms', got %q", wcState.Executor)
+	}
+
 	repoPath := plan.Objective.Workspace
 	if wcState.Workspace != "" {
 		repoPath = wcState.Workspace
@@ -3124,67 +3251,324 @@ func executeSingleWorkcell(ctx context.Context, plan factoryPlan, wcState *workc
 			return fmt.Errorf("failed to marshal agy-swarms task for %s: %v", wcState.ID, err)
 		}
 
-		tempTask, err := os.CreateTemp("", "agy-task-"+wcState.ID+"-*.json")
-		if err != nil {
-			return fmt.Errorf("failed to create temp task for %s: %v", wcState.ID, err)
-		}
-		defer os.Remove(tempTask.Name())
-
-		if _, err := tempTask.Write(taskData); err != nil {
-			tempTask.Close()
-			return fmt.Errorf("failed to write temp task for %s: %v", wcState.ID, err)
-		}
-		tempTask.Close()
-
-		tempReport, err := os.CreateTemp("", "agy-report-"+wcState.ID+"-*.json")
-		if err != nil {
-			return fmt.Errorf("failed to create temp report for %s: %v", wcState.ID, err)
-		}
-		tempReport.Close()
-		defer os.Remove(tempReport.Name())
-
 		specSum := sha256.Sum256(taskData)
 		wcState.SpecSHA256 = hex.EncodeToString(specSum[:])
 
-		args := append(cmdArgs[1:], "run", "--task", tempTask.Name(), "--report", tempReport.Name(), "--allow-local-commands")
-		if liveMode {
-			args = append(args, "--reviewer", "agy", "--closer", "agy")
-		} else {
-			args = append(args, "--dry-run")
-		}
-
-		cmdName := cmdArgs[0]
-		cmd := exec.CommandContext(ctx, cmdName, args...)
-		cmd.Dir = repoPath
-
-		cmd.Stdout = &realTimeWriter{appendFunc: wcState.AppendStdout}
-		cmd.Stderr = &realTimeWriter{appendFunc: wcState.AppendStderr}
-
-		runErr := cmd.Run()
-
-		if reportData, err := os.ReadFile(tempReport.Name()); err == nil {
-			var report map[string]interface{}
-			if err := json.Unmarshal(reportData, &report); err == nil {
-				_ = os.WriteFile(fmt.Sprintf("agy-swarms-report-%s.json", wcState.ID), reportData, 0644)
-				statusStr, _ := report["status"].(string)
-				spentTokens := 0.0
-				if st, ok := report["spent_tokens"].(float64); ok {
-					spentTokens = st
-				}
-				spentUSD := 0.0
-				if su, ok := report["spent_usd"].(float64); ok {
-					spentUSD = su
-				}
-				if statusStr == "succeeded" {
-					wcState.SetSummary(fmt.Sprintf("Swarm execution succeeded (Tokens: %.0f, Cost: $%.2f)", spentTokens, spentUSD))
-				} else {
-					wcState.SetSummary(fmt.Sprintf("Swarm execution failed (Tokens: %.0f, Cost: $%.2f)", spentTokens, spentUSD))
+		if wcState.Peers > 1 {
+			// CONCURRENT PEER EXECUTION
+			if len(wcState.PeerStates) == 0 {
+				wcState.PeerStates = make([]*peerRunState, wcState.Peers)
+				for i := 0; i < wcState.Peers; i++ {
+					wcState.PeerStates[i] = &peerRunState{
+						stateMu: &sync.Mutex{},
+						Index:   i,
+						Status:  "pending",
+					}
 				}
 			}
-		}
 
-		if runErr != nil {
-			return fmt.Errorf("agy-swarms execution failed for %s: %v (stderr: %q)", wcState.ID, runErr, wcState.GetStderr())
+			var wg sync.WaitGroup
+			peerErrs := make([]error, wcState.Peers)
+
+			for idx := 0; idx < wcState.Peers; idx++ {
+				wg.Add(1)
+				go func(i int) {
+					defer wg.Done()
+
+					pState := wcState.PeerStates[i]
+					pState.stateMu.Lock()
+					pState.Status = "running"
+					pState.stateMu.Unlock()
+
+					tempTask, err := os.CreateTemp("", fmt.Sprintf("agy-task-%s-peer-%d-*.json", wcState.ID, i))
+					if err != nil {
+						peerErrs[i] = fmt.Errorf("failed to create temp task: %w", err)
+						pState.stateMu.Lock()
+						pState.Status = "failed"
+						pState.stateMu.Unlock()
+						return
+					}
+					defer os.Remove(tempTask.Name())
+
+					if _, err := tempTask.Write(taskData); err != nil {
+						tempTask.Close()
+						peerErrs[i] = fmt.Errorf("failed to write temp task: %w", err)
+						pState.stateMu.Lock()
+						pState.Status = "failed"
+						pState.stateMu.Unlock()
+						return
+					}
+					tempTask.Close()
+
+					tempReport, err := os.CreateTemp("", fmt.Sprintf("agy-report-%s-peer-%d-*.json", wcState.ID, i))
+					if err != nil {
+						peerErrs[i] = fmt.Errorf("failed to create temp report: %w", err)
+						pState.stateMu.Lock()
+						pState.Status = "failed"
+						pState.stateMu.Unlock()
+						return
+					}
+					tempReport.Close()
+					defer os.Remove(tempReport.Name())
+
+					args := append(cmdArgs[1:], "run", "--task", tempTask.Name(), "--report", tempReport.Name(), "--allow-local-commands")
+					if liveMode {
+						args = append(args, "--reviewer", "agy", "--closer", "agy")
+					} else {
+						args = append(args, "--dry-run")
+					}
+
+					cmdName := cmdArgs[0]
+					cmd := exec.CommandContext(ctx, cmdName, args...)
+					cmd.Dir = repoPath
+					cmd.Env = append(os.Environ(), fmt.Sprintf("AO_FORGE_PEER_INDEX=%d", i))
+
+					cmd.Stdout = &realTimeWriter{appendFunc: func(data string) {
+						pState.stateMu.Lock()
+						pState.Stdout += data
+						pState.stateMu.Unlock()
+					}}
+					cmd.Stderr = &realTimeWriter{appendFunc: func(data string) {
+						pState.stateMu.Lock()
+						pState.Stderr += data
+						pState.stateMu.Unlock()
+					}}
+
+					runErr := cmd.Run()
+
+					if reportData, err := os.ReadFile(tempReport.Name()); err == nil {
+						var report map[string]interface{}
+						if err := json.Unmarshal(reportData, &report); err == nil {
+							_ = os.WriteFile(fmt.Sprintf("agy-swarms-report-%s-peer-%d.json", wcState.ID, i), reportData, 0644)
+							statusStr, _ := report["status"].(string)
+							spentTokens := 0.0
+							if st, ok := report["spent_tokens"].(float64); ok {
+								spentTokens = st
+							}
+							spentUSD := 0.0
+							if su, ok := report["spent_usd"].(float64); ok {
+								spentUSD = su
+							}
+
+							pState.stateMu.Lock()
+							pState.Tokens = spentTokens
+							pState.Cost = spentUSD
+							if statusStr == "succeeded" {
+								pState.Summary = fmt.Sprintf("Swarm execution succeeded (Tokens: %.0f, Cost: $%.2f)", spentTokens, spentUSD)
+							} else {
+								pState.Summary = fmt.Sprintf("Swarm execution failed (Tokens: %.0f, Cost: $%.2f)", spentTokens, spentUSD)
+							}
+							pState.stateMu.Unlock()
+						}
+					}
+
+					pState.stateMu.Lock()
+					if runErr != nil {
+						peerErrs[i] = fmt.Errorf("agy-swarms execution failed for peer %d: %v", i, runErr)
+						pState.Status = "failed"
+					} else {
+						pState.Status = "passed"
+					}
+					pState.stateMu.Unlock()
+				}(idx)
+			}
+
+			wg.Wait()
+
+			// ADVERSARIAL EVALUATION
+			type candidateGrade struct {
+				Index    int
+				IsValid  bool
+				Coverage float64
+			}
+			grades := make([]candidateGrade, wcState.Peers)
+			for i := 0; i < wcState.Peers; i++ {
+				pState := wcState.PeerStates[i]
+				pState.stateMu.Lock()
+				pStdout := pState.Stdout
+				pStderr := pState.Stderr
+				pStatus := pState.Status
+				pState.stateMu.Unlock()
+
+				grades[i] = candidateGrade{
+					Index:   i,
+					IsValid: true,
+				}
+
+				if peerErrs[i] != nil || pStatus != "passed" {
+					grades[i].IsValid = false
+					continue
+				}
+
+				combined := pStdout + "\n" + pStderr
+
+				// Verify rubric patterns
+				if wcState.Rubric != nil {
+					for _, pattern := range wcState.Rubric.RequiredPatterns {
+						if !strings.Contains(combined, pattern) {
+							grades[i].IsValid = false
+							break
+						}
+					}
+					if !grades[i].IsValid {
+						continue
+					}
+
+					for _, pattern := range wcState.Rubric.ForbiddenPatterns {
+						if strings.Contains(combined, pattern) {
+							grades[i].IsValid = false
+							break
+						}
+					}
+					if !grades[i].IsValid {
+						continue
+					}
+				}
+
+				// Parse coverage
+				var parsedCoverage *float64
+				prefixRegex := regexp.MustCompile(`(?i)(?:coverage\s*:\s*|coverage\s+is\s+|coverage\s+of\s+)([0-9.]+)\s*%`)
+				matches := prefixRegex.FindStringSubmatch(combined)
+				if len(matches) >= 2 {
+					val, err := strconv.ParseFloat(matches[1], 64)
+					if err == nil {
+						parsedCoverage = &val
+					}
+				}
+				if parsedCoverage == nil {
+					fallbackRegex := regexp.MustCompile(`([0-9.]+)\s*%`)
+					lines := strings.Split(combined, "\n")
+					for _, line := range lines {
+						if strings.Contains(strings.ToLower(line), "coverage") {
+							m := fallbackRegex.FindStringSubmatch(line)
+							if len(m) >= 2 {
+								val, err := strconv.ParseFloat(m[1], 64)
+								if err == nil {
+									parsedCoverage = &val
+									break
+								}
+							}
+						}
+					}
+				}
+
+				// Check min coverage
+				if wcState.Rubric != nil && wcState.Rubric.MinCoverage != nil {
+					if parsedCoverage == nil {
+						grades[i].IsValid = false
+						continue
+					}
+					if *parsedCoverage < *wcState.Rubric.MinCoverage {
+						grades[i].IsValid = false
+						continue
+					}
+				}
+
+				if parsedCoverage != nil {
+					grades[i].Coverage = *parsedCoverage
+				}
+			}
+
+			// Select winner
+			winnerIdx := -1
+			maxCoverage := -1.0
+			for _, g := range grades {
+				if !g.IsValid {
+					continue
+				}
+				if winnerIdx == -1 || g.Coverage > maxCoverage {
+					winnerIdx = g.Index
+					maxCoverage = g.Coverage
+				}
+			}
+
+			if winnerIdx == -1 {
+				var errMsgs []string
+				for i, err := range peerErrs {
+					if err != nil {
+						errMsgs = append(errMsgs, fmt.Sprintf("peer %d: %v", i, err))
+					} else {
+						errMsgs = append(errMsgs, fmt.Sprintf("peer %d: rubric failed", i))
+					}
+				}
+				return fmt.Errorf("all %d peer candidates failed: %s", wcState.Peers, strings.Join(errMsgs, "; "))
+			}
+
+			// Promote winner to main workcell result
+			winnerState := wcState.PeerStates[winnerIdx]
+			winnerState.stateMu.Lock()
+			wcState.Stdout = winnerState.Stdout
+			wcState.Stderr = winnerState.Stderr
+			winnerSummary := winnerState.Summary
+			winnerState.stateMu.Unlock()
+
+			wcState.Summary = fmt.Sprintf("%s (Winner: Peer %d)", winnerSummary, winnerIdx)
+
+			winnerReportPath := fmt.Sprintf("agy-swarms-report-%s-peer-%d.json", wcState.ID, winnerIdx)
+			if reportData, err := os.ReadFile(winnerReportPath); err == nil {
+				_ = os.WriteFile(fmt.Sprintf("agy-swarms-report-%s.json", wcState.ID), reportData, 0644)
+			}
+		} else {
+			// SINGLE EXECUTION
+			tempTask, err := os.CreateTemp("", "agy-task-"+wcState.ID+"-*.json")
+			if err != nil {
+				return fmt.Errorf("failed to create temp task for %s: %v", wcState.ID, err)
+			}
+			defer os.Remove(tempTask.Name())
+
+			if _, err := tempTask.Write(taskData); err != nil {
+				tempTask.Close()
+				return fmt.Errorf("failed to write temp task for %s: %v", wcState.ID, err)
+			}
+			tempTask.Close()
+
+			tempReport, err := os.CreateTemp("", "agy-report-"+wcState.ID+"-*.json")
+			if err != nil {
+				return fmt.Errorf("failed to create temp report for %s: %v", wcState.ID, err)
+			}
+			tempReport.Close()
+			defer os.Remove(tempReport.Name())
+
+			args := append(cmdArgs[1:], "run", "--task", tempTask.Name(), "--report", tempReport.Name(), "--allow-local-commands")
+			if liveMode {
+				args = append(args, "--reviewer", "agy", "--closer", "agy")
+			} else {
+				args = append(args, "--dry-run")
+			}
+
+			cmdName := cmdArgs[0]
+			cmd := exec.CommandContext(ctx, cmdName, args...)
+			cmd.Dir = repoPath
+
+			cmd.Stdout = &realTimeWriter{appendFunc: wcState.AppendStdout}
+			cmd.Stderr = &realTimeWriter{appendFunc: wcState.AppendStderr}
+
+			runErr := cmd.Run()
+
+			if reportData, err := os.ReadFile(tempReport.Name()); err == nil {
+				var report map[string]interface{}
+				if err := json.Unmarshal(reportData, &report); err == nil {
+					_ = os.WriteFile(fmt.Sprintf("agy-swarms-report-%s.json", wcState.ID), reportData, 0644)
+					statusStr, _ := report["status"].(string)
+					spentTokens := 0.0
+					if st, ok := report["spent_tokens"].(float64); ok {
+						spentTokens = st
+					}
+					spentUSD := 0.0
+					if su, ok := report["spent_usd"].(float64); ok {
+						spentUSD = su
+					}
+					if statusStr == "succeeded" {
+						wcState.SetSummary(fmt.Sprintf("Swarm execution succeeded (Tokens: %.0f, Cost: $%.2f)", spentTokens, spentUSD))
+					} else {
+						wcState.SetSummary(fmt.Sprintf("Swarm execution failed (Tokens: %.0f, Cost: $%.2f)", spentTokens, spentUSD))
+					}
+				}
+			}
+
+			if runErr != nil {
+				return fmt.Errorf("agy-swarms execution failed for %s: %v (stderr: %q)", wcState.ID, runErr, wcState.GetStderr())
+			}
 		}
 	} else {
 		specTask := runTask{
@@ -3458,6 +3842,15 @@ func archiveRunState(runID string, planPath string, gateResultPath string, summa
 		srcPath := filepath.Join(srcDir, wcEvName)
 		if evData, err := os.ReadFile(srcPath); err == nil {
 			_ = os.WriteFile(filepath.Join(runDir, wcEvName), evData, 0644)
+		}
+		if wc.Peers > 1 {
+			for idx := 0; idx < wc.Peers; idx++ {
+				peerEvName := fmt.Sprintf("ao2-wc-%s-peer-%d-evidence.json", wc.WorkcellID, idx)
+				peerSrcPath := filepath.Join(srcDir, peerEvName)
+				if peerEvData, err := os.ReadFile(peerSrcPath); err == nil {
+					_ = os.WriteFile(filepath.Join(runDir, peerEvName), peerEvData, 0644)
+				}
+			}
 		}
 	}
 

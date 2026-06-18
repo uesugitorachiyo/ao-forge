@@ -5339,6 +5339,429 @@ func TestDashboardRenderingUnits(t *testing.T) {
 	}
 }
 
+func compileTestAgySwarmsWithPeers(t *testing.T, tmpDir string, tracePath string) string {
+	t.Helper()
+	dummySrc := filepath.Join(tmpDir, "dummy_agy.go")
+	dummyBin := filepath.Join(tmpDir, "dummy_agy")
+	if os.PathSeparator == '\\' {
+		dummyBin += ".exe"
+	}
+	srcContent := fmt.Sprintf(`package main
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+)
+
+func main() {
+	var taskPath, reportPath string
+	for i, arg := range os.Args {
+		if arg == "--task" && i+1 < len(os.Args) {
+			taskPath = os.Args[i+1]
+		}
+		if arg == "--report" && i+1 < len(os.Args) {
+			reportPath = os.Args[i+1]
+		}
+	}
+	_ = taskPath
+
+	// Log execution trace
+	if %q != "" {
+		traceData := strings.Join(os.Args, " ") + "\n"
+		f, err := os.OpenFile(%q, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err == nil {
+			f.WriteString(traceData)
+			f.Close()
+		}
+	}
+
+	// Determine peer run index deterministically
+	runIdx := 0
+	peerIdxStr := os.Getenv("AO_FORGE_PEER_INDEX")
+	if peerIdxStr != "" {
+		if idx, err := strconv.Atoi(peerIdxStr); err == nil {
+			runIdx = idx
+		}
+	}
+
+	// Outputs based on index
+	var stdoutText string
+	var spentTokens float64
+	var spentUSD float64
+
+	switch runIdx {
+	case 0:
+		// Invalid due to forbidden pattern
+		stdoutText = "coverage is 98.0%%\nsuccess pattern present\nforbidden pattern found"
+		spentTokens = 1000
+		spentUSD = 0.01
+	case 1:
+		// Winner (highest coverage among valid)
+		stdoutText = "coverage is 95.0%%\nsuccess pattern present"
+		spentTokens = 1200
+		spentUSD = 0.02
+	case 2:
+		// Valid but lower coverage
+		stdoutText = "coverage is 85.0%%\nsuccess pattern present"
+		spentTokens = 800
+		spentUSD = 0.015
+	default:
+		stdoutText = "coverage is 50.0%%\nsuccess pattern present"
+		spentTokens = 500
+		spentUSD = 0.005
+	}
+
+	if reportPath != "" {
+		report := map[string]interface{}{
+			"status": "succeeded",
+			"spent_tokens": spentTokens,
+			"spent_usd": spentUSD,
+			"states": map[string]string{
+				"worker_0": "succeeded",
+			},
+			"blockers": []interface{}{},
+			"concerns": []interface{}{},
+			"changed_files": []string{},
+			"results": map[string]interface{}{
+				"worker_0": map[string]interface{}{
+					"status": "succeeded",
+					"error_class": "",
+					"artifact": map[string]interface{}{},
+					"stdout": stdoutText,
+					"stderr": "",
+					"exit_code": 0,
+				},
+			},
+		}
+		data, err := json.Marshal(report)
+		if err == nil {
+			os.WriteFile(reportPath, data, 0644)
+		}
+	}
+
+	fmt.Println(stdoutText)
+	os.Exit(0)
+}`, tracePath, tracePath)
+
+	if err := os.WriteFile(dummySrc, []byte(srcContent), 0644); err != nil {
+		t.Fatalf("write dummy agy src: %v", err)
+	}
+
+	cmd := exec.Command("go", "build", "-o", dummyBin, dummySrc)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy agy: %v (output: %q)", err, string(out))
+	}
+	return dummyBin
+}
+
+func TestParallelSwarmsPeerReview(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	traceFile := filepath.Join(tmpDir, "trace.log")
+	dummyAgy := compileTestAgySwarmsWithPeers(t, tmpDir, traceFile)
+	t.Setenv("AGY_SWARMS_PATH", dummyAgy)
+
+	dummyAo2 := compileTestAo2(t, tmpDir, filepath.Join(tmpDir, "ao2-trace.log"))
+	t.Setenv("AO2_PATH", dummyAo2)
+
+	defaultWS := filepath.Join(tmpDir, "default-ws")
+	if err := os.MkdirAll(defaultWS, 0755); err != nil {
+		t.Fatalf("mkdir default-ws: %v", err)
+	}
+
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer func() {
+		_ = os.Chdir(oldWd)
+	}()
+
+	if code, _, stderr := runCLI("init"); code != 0 {
+		t.Fatalf("init failed: %s", stderr)
+	}
+
+	// Construct plan with wc1 using agy-swarms with 3 peers, and wc2 using ao2
+	planContent := fmt.Sprintf(`{
+		"schema_version": "ao.forge.factory-plan.v0.1",
+		"plan_id": "forge-plan-1234567890ab",
+		"objective": {
+			"text": "test parallel peers execution",
+			"workspace": %q,
+			"release_mode": false
+		},
+		"constraints": {
+			"local_first": true,
+			"allow_network": false,
+			"allow_release_mutation": false,
+			"require_control_plane_readback": false
+		},
+		"execution_enabled": false,
+		"policy_gate": {
+			"required": true,
+			"status": "allowed",
+			"explanation": "gate allowed"
+		},
+		"workcells": [
+			{
+				"workcell_id": "wc1",
+				"kind": "prepare",
+				"executor": "agy-swarms",
+				"peers": 3,
+				"task": "Perform peer tasks",
+				"status": "planned",
+				"depends_on": [],
+				"rubric": {
+					"required_patterns": ["success pattern present"],
+					"forbidden_patterns": ["forbidden pattern found"],
+					"min_coverage": 80.0
+				}
+			},
+			{
+				"workcell_id": "wc2",
+				"kind": "execute",
+				"status": "planned",
+				"depends_on": ["wc1"]
+			}
+		],
+		"expected_evidence": ["test"],
+		"next_actions": [
+			{"action_id": "test", "description": "test", "required": true}
+		]
+	}`, defaultWS)
+
+	planPath := filepath.Join(tmpDir, "plan.json")
+	if err := os.WriteFile(planPath, []byte(planContent), 0644); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+
+	gatePath := filepath.Join(tmpDir, "gate_result.json")
+	gateContent := `{
+		"status": "allowed",
+		"plan_id": "forge-plan-1234567890ab",
+		"decision": {
+			"decision_id": "covenant-allow-local-safe",
+			"target": "factory-plan",
+			"decision": "allow",
+			"explanation": "Covenant policy verification passed locally",
+			"source": "covenant-gate"
+		}
+	}`
+	if err := os.WriteFile(gatePath, []byte(gateContent), 0644); err != nil {
+		t.Fatalf("write gate_result: %v", err)
+	}
+
+	outPath := filepath.Join(tmpDir, "packet-out.json")
+	code, stdout, stderr := runCLI("run", "--plan", planPath, "--gate-result", gatePath, "--out", outPath, "--no-dashboard", "--non-interactive")
+	if code != 0 {
+		packetData, _ := os.ReadFile(outPath)
+		t.Fatalf("run failed with code %d: %s\nStderr: %s\nPacket: %s", code, stdout, stderr, string(packetData))
+	}
+
+	// Read packet to assert chosen winner
+	packetData, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read packet: %v", err)
+	}
+	var packet map[string]interface{}
+	if err := json.Unmarshal(packetData, &packet); err != nil {
+		t.Fatalf("unmarshal packet: %v", err)
+	}
+
+	workcells, ok := packet["workcells"].([]interface{})
+	if !ok || len(workcells) < 2 {
+		t.Fatalf("unexpected workcells structure: %+v", packet["workcells"])
+	}
+
+	wc1 := workcells[0].(map[string]interface{})
+	summary, _ := wc1["summary"].(string)
+
+	// Winner must be Peer 1 (95% coverage)
+	if !strings.Contains(summary, "Winner: Peer 1") {
+		t.Fatalf("expected Winner: Peer 1, got summary: %q", summary)
+	}
+
+	// Verify evidence contains peer evidence files
+	evidence, ok := packet["evidence"].([]interface{})
+	if !ok {
+		t.Fatalf("unexpected evidence structure")
+	}
+
+	foundPeer0 := false
+	foundPeer1 := false
+	foundPeer2 := false
+	for _, ev := range evidence {
+		evMap := ev.(map[string]interface{})
+		label, _ := evMap["label"].(string)
+		if strings.Contains(label, "wc1 peer 0 evidence") {
+			foundPeer0 = true
+		}
+		if strings.Contains(label, "wc1 peer 1 evidence") {
+			foundPeer1 = true
+		}
+		if strings.Contains(label, "wc1 peer 2 evidence") {
+			foundPeer2 = true
+		}
+	}
+
+	if !foundPeer0 || !foundPeer1 || !foundPeer2 {
+		t.Fatalf("missing peer evidence files in packet evidence list: foundPeer0=%t, foundPeer1=%t, foundPeer2=%t", foundPeer0, foundPeer1, foundPeer2)
+	}
+
+	// Verify files are created in the runs archive
+	runID := packet["factory_plan"].(map[string]interface{})["plan_id"].(string)
+	archiveDir := filepath.Join(tmpDir, ".forge", "runs", runID)
+
+	for idx := 0; idx < 3; idx++ {
+		pEvName := fmt.Sprintf("ao2-wc-wc1-peer-%d-evidence.json", idx)
+		pEvPath := filepath.Join(archiveDir, pEvName)
+		if _, err := os.Stat(pEvPath); os.IsNotExist(err) {
+			t.Fatalf("peer evidence file not archived: %s", pEvName)
+		}
+	}
+
+	// Verify main report is promoted
+	mainReportPath := filepath.Join(tmpDir, "agy-swarms-report-wc1.json")
+	if _, err := os.Stat(mainReportPath); os.IsNotExist(err) {
+		t.Fatal("main report file agy-swarms-report-wc1.json was not promoted")
+	}
+}
+
+func TestParallelSwarmsAllFail(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	traceFile := filepath.Join(tmpDir, "trace.log")
+	dummyAgy := compileTestAgySwarmsWithPeers(t, tmpDir, traceFile)
+	t.Setenv("AGY_SWARMS_PATH", dummyAgy)
+
+	dummyAo2 := compileTestAo2(t, tmpDir, filepath.Join(tmpDir, "ao2-trace.log"))
+	t.Setenv("AO2_PATH", dummyAo2)
+
+	defaultWS := filepath.Join(tmpDir, "default-ws")
+	if err := os.MkdirAll(defaultWS, 0755); err != nil {
+		t.Fatalf("mkdir default-ws: %v", err)
+	}
+
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer func() {
+		_ = os.Chdir(oldWd)
+	}()
+
+	if code, _, stderr := runCLI("init"); code != 0 {
+		t.Fatalf("init failed: %s", stderr)
+	}
+
+	// Construct plan with wc1 using agy-swarms with 2 peers, both of which will fail the rubric
+	// Peer 0 will have "forbidden pattern found", and Peer 1 will have 95% coverage but we require 99% coverage!
+	planContent := fmt.Sprintf(`{
+		"schema_version": "ao.forge.factory-plan.v0.1",
+		"plan_id": "forge-plan-abcdef123456",
+		"objective": {
+			"text": "test parallel peers execution failure",
+			"workspace": %q,
+			"release_mode": false
+		},
+		"constraints": {
+			"local_first": true,
+			"allow_network": false,
+			"allow_release_mutation": false,
+			"require_control_plane_readback": false
+		},
+		"execution_enabled": false,
+		"policy_gate": {
+			"required": true,
+			"status": "allowed",
+			"explanation": "gate allowed"
+		},
+		"workcells": [
+			{
+				"workcell_id": "wc1",
+				"kind": "prepare",
+				"executor": "agy-swarms",
+				"peers": 2,
+				"task": "Perform peer tasks",
+				"status": "planned",
+				"depends_on": [],
+				"rubric": {
+					"required_patterns": ["success pattern present"],
+					"forbidden_patterns": ["forbidden pattern found"],
+					"min_coverage": 99.0
+				}
+			}
+		],
+		"expected_evidence": ["test"],
+		"next_actions": [
+			{"action_id": "test", "description": "test", "required": true}
+		]
+	}`, defaultWS)
+
+	planPath := filepath.Join(tmpDir, "plan.json")
+	if err := os.WriteFile(planPath, []byte(planContent), 0644); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+
+	gatePath := filepath.Join(tmpDir, "gate_result.json")
+	gateContent := `{
+		"status": "allowed",
+		"plan_id": "forge-plan-abcdef123456",
+		"decision": {
+			"decision_id": "covenant-allow-local-safe",
+			"target": "factory-plan",
+			"decision": "allow",
+			"explanation": "Covenant policy verification passed locally",
+			"source": "covenant-gate"
+		}
+	}`
+	if err := os.WriteFile(gatePath, []byte(gateContent), 0644); err != nil {
+		t.Fatalf("write gate_result: %v", err)
+	}
+
+	outPath := filepath.Join(tmpDir, "packet-out.json")
+	code, stdout, stderr := runCLI("run", "--plan", planPath, "--gate-result", gatePath, "--out", outPath, "--no-dashboard", "--non-interactive")
+	if code == 0 {
+		t.Fatal("expected run to fail but it succeeded")
+	}
+
+	// Verify packet-out.json status is failed
+	packetData, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read packet: %v\nExitCode: %d\nStdout: %s\nStderr: %s", err, code, stdout, stderr)
+	}
+	var packet map[string]interface{}
+	if err := json.Unmarshal(packetData, &packet); err != nil {
+		t.Fatalf("unmarshal packet: %v", err)
+	}
+
+	status, _ := packet["status"].(string)
+	if status != "failed" {
+		t.Fatalf("expected packet status to be failed, got: %q", status)
+	}
+
+	// Verify that evidence files are still archived for all peers
+	runID := packet["factory_plan"].(map[string]interface{})["plan_id"].(string)
+	archiveDir := filepath.Join(tmpDir, ".forge", "runs", runID)
+
+	for idx := 0; idx < 2; idx++ {
+		pEvName := fmt.Sprintf("ao2-wc-wc1-peer-%d-evidence.json", idx)
+		pEvPath := filepath.Join(archiveDir, pEvName)
+		if _, err := os.Stat(pEvPath); os.IsNotExist(err) {
+			t.Fatalf("failed peer evidence file not archived: %s", pEvName)
+		}
+	}
+}
+
+
 
 
 

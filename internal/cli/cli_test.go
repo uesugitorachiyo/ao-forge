@@ -5896,6 +5896,9 @@ func main() {
 func TestSelfHealingRepair(t *testing.T) {
 	tmpDir := t.TempDir()
 
+	dummyAo2 := compileTestAo2(t, tmpDir, filepath.Join(tmpDir, "ao2-trace.log"))
+	t.Setenv("AO2_PATH", dummyAo2)
+
 	traceFile := filepath.Join(tmpDir, "trace.log")
 	dummyAgy := compileTestRepairAgySwarms(t, tmpDir, traceFile)
 	t.Setenv("AGY_SWARMS_PATH", dummyAgy)
@@ -6602,7 +6605,6 @@ func main() {
 		t.Fatalf("expected run to fail closed due to missing github authentication, but it exited 0")
 	}
 }
-
 
 
 

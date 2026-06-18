@@ -71,6 +71,10 @@
             "type": "string",
             "enum": ["prepare", "execute", "verify", "close"]
           },
+          "workspace": {
+            "type": "string",
+            "minLength": 1
+          },
           "depends_on": {
             "type": "array",
             "items": {

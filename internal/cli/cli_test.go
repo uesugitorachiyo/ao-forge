@@ -591,8 +591,8 @@ func TestV010ReleaseNotesDraftIsPublicSafeAndEvidenceBacked(t *testing.T) {
 	for _, want := range []string{
 		"# AO Forge v0.1.0 Release Notes",
 		"v0.1.0",
-		"861b91b7c0234117504b6e48bb6ef7c075770c3a",
-		"https://github.com/uesugitorachiyo/ao-forge/actions/runs/27791719719",
+		"Commit: supplied by the generated Release Publish notes",
+		"Release evidence assets include `release-preview-inspect.json`,",
 		"linux-amd64",
 		"darwin-arm64",
 		"windows-amd64",
@@ -618,6 +618,17 @@ func TestV010ReleaseNotesDraftIsPublicSafeAndEvidenceBacked(t *testing.T) {
 	} {
 		if strings.Contains(notes, forbidden) {
 			t.Fatalf("release notes draft contains public-unsafe text %q", forbidden)
+		}
+	}
+
+	for _, stale := range []string{
+		"861b91b7c0234117504b6e48bb6ef7c075770c3a",
+		"23381599bf5d213fa3f12106b4f75a491df2333f",
+		"actions/runs/27791719719",
+		"actions/runs/27795241293",
+	} {
+		if strings.Contains(notes, stale) {
+			t.Fatalf("release notes draft contains stale publish evidence %q", stale)
 		}
 	}
 }
@@ -959,10 +970,16 @@ func TestReleasePublishWorkflowCreatesDraftReleaseOnlyAfterEvidenceGates(t *test
 		{name: "verify artifact path from portable manifest", doc: workflow, want: "artifact_path = pathlib.Path(\"dist\") / artifact_name"},
 		{name: "verify portable subject name", doc: workflow, want: "subject.get(\"name\") == artifact_name"},
 		{name: "release notes validation", doc: workflow, want: "Validate release notes"},
+		{name: "generated release notes", doc: workflow, want: "Generate publication release notes"},
+		{name: "generated release notes output", doc: workflow, want: "AO_FORGE_RELEASE_PUBLISH_NOTES"},
+		{name: "generated release commit", doc: workflow, want: "printf -- '- Commit: `%s`\\n' \"${GITHUB_SHA}\""},
+		{name: "generated publish run URL", doc: workflow, want: "actions/runs/%s`\\n' \"${GITHUB_REPOSITORY}\" \"${GITHUB_RUN_ID}\""},
+		{name: "generated rehearsal run URL", doc: workflow, want: "actions/runs/%s`\\n' \"${GITHUB_REPOSITORY}\" \"${RELEASE_REHEARSAL_RUN_ID}\""},
 		{name: "private path guard", doc: workflow, want: "/Users/"},
 		{name: "draft release create", doc: workflow, want: "gh release create"},
 		{name: "draft flag", doc: workflow, want: "--draft"},
 		{name: "target sha", doc: workflow, want: "--target \"${GITHUB_SHA}\""},
+		{name: "generated notes file used", doc: workflow, want: "--notes-file \"${AO_FORGE_RELEASE_PUBLISH_NOTES}\""},
 		{name: "upload publish evidence", doc: workflow, want: "release-publish-evidence"},
 		{name: "readme publish workflow", doc: readme, want: "`Release Publish`"},
 		{name: "preview runbook publish workflow", doc: previewRunbook, want: "## Draft Release Publish"},

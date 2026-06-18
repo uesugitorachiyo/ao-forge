@@ -78,6 +78,7 @@ jobs:
           echo "AO_FORGE_RELEASE_PREVIEW_TAG=$tag" >> "$GITHUB_ENV"
           echo "AO_FORGE_RELEASE_PUBLISH_TAG=$tag" >> "$GITHUB_ENV"
           echo "AO_FORGE_RELEASE_PUBLISH_OUT=${RUNNER_TEMP}/ao-forge-release-publish" >> "$GITHUB_ENV"
+          echo "AO_FORGE_RELEASE_PUBLISH_NOTES=${RUNNER_TEMP}/ao-forge-release-publish/release-notes.md" >> "$GITHUB_ENV"
           echo "tag=$tag" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Download release rehearsal evidence
@@ -310,6 +311,36 @@ jobs:
           print(f"release_notes={notes_path}")
           PY
 
+      - name: Generate publication release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${AO_FORGE_RELEASE_PUBLISH_OUT}"
+          {
+            cat "${RELEASE_NOTES_PATH}"
+            printf '\n## Publication Evidence\n\n'
+            printf -- '- Commit: `%s`\n' "${GITHUB_SHA}"
+            printf -- '- Release Publish run: `https://github.com/%s/actions/runs/%s`\n' "${GITHUB_REPOSITORY}" "${GITHUB_RUN_ID}"
+            printf -- '- Release Rehearsal run: `https://github.com/%s/actions/runs/%s`\n' "${GITHUB_REPOSITORY}" "${RELEASE_REHEARSAL_RUN_ID}"
+            printf -- '- Release evidence assets: `release-preview-audit.json`, `release-preview-inspect.json`, `checksums.txt`, and `*.attestation.json`.\n'
+          } > "${AO_FORGE_RELEASE_PUBLISH_NOTES}"
+
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import sys
+
+          notes_path = pathlib.Path(os.environ["AO_FORGE_RELEASE_PUBLISH_NOTES"])
+          text = notes_path.read_text()
+          forbidden = ["/Users/", "/tmp/", "gho_", "Bearer ", "Authorization:", "excluded handoff"]
+          found = [value for value in forbidden if value in text]
+          if found:
+              for value in found:
+                  print(f"::error::generated release notes contain forbidden public-unsafe text: {value}")
+              sys.exit(1)
+          print(f"generated_release_notes={notes_path}")
+          PY
+
       - name: Create draft GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -330,7 +361,7 @@ jobs:
             --repo "${GITHUB_REPOSITORY}" \
             --target "${GITHUB_SHA}" \
             --title "AO Forge ${AO_FORGE_RELEASE_PUBLISH_TAG}" \
-            --notes-file "${RELEASE_NOTES_PATH}" \
+            --notes-file "${AO_FORGE_RELEASE_PUBLISH_NOTES}" \
             --draft
 
       - name: Upload release publish evidence

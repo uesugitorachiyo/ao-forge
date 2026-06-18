@@ -150,6 +150,24 @@ push refs, or run live release flags. Review the uploaded
 `release-attestation-evidence` artifact, including `dist/*.attestation.json`,
 before any public release mutation.
 
+## Draft Release Publish
+
+The `Release Publish` workflow is the guarded GitHub Actions path for creating
+a draft release. It is manual-only and requires a successful `Release Rehearsal`
+run ID, `confirm_publish=true`, and the `production-release` environment before
+the job can mutate GitHub release state.
+
+In the publish job, AO Forge rebuilds the release archives, regenerates and
+verifies `dist/checksums.txt`, reruns release preview for the requested tag,
+validates release contracts, produces and verifies GitHub Artifact Attestations,
+checks release notes for public-unsafe text, and then creates a draft GitHub
+release with the archives, checksum manifest, release-preview evidence, release
+inventory, attestation plan, and `dist/*.attestation.json`.
+
+Do not mark the draft release public until the maintainer has reviewed the
+uploaded `release-publish-evidence` artifact and confirmed that the release
+notes, artifacts, checksums, and attestations match the intended tag and commit.
+
 ## Operator Rule
 
 Do not run a live confirmed release if the preview audit is `blocked`. Fix the

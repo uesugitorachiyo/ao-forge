@@ -247,8 +247,8 @@ Factory terms:
   workcell        bounded unit of factory work with dependencies and evidence
   factory packet  operator-ready JSON summary of plan, gates, evidence, and next actions
 
-Slice 2.2 status:
-  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, and dynamic LLM-first factory planning are enabled.
+Slice 2.3 status:
+  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, and GitHub publishing are enabled.
 `)
 }
 
@@ -4364,13 +4364,12 @@ func performReleaseMutation(
 		fmt.Fprintf(stdout, "Created local git tag %q\n", tagName)
 	}
 
-	// Try to push the tag (warning only if it fails)
+	// Push must succeed before any public release publishing can proceed.
 	pushCmd := exec.Command(gitBin, "-C", workspacePath, "push", "origin", tagName)
 	if out, err := pushCmd.CombinedOutput(); err != nil {
-		fmt.Fprintf(stderr, "Warning: failed to push git tag to remote origin: %v (output: %q)\n", err, string(out))
-	} else {
-		fmt.Fprintf(stdout, "Successfully pushed git tag %s to remote origin\n", tagName)
+		return fmt.Errorf("failed to push git tag %q to remote origin: %v (output: %q)", tagName, err, string(out))
 	}
+	fmt.Fprintf(stdout, "Successfully pushed git tag %s to remote origin\n", tagName)
 
 	// Compile changelog
 	var changelog string

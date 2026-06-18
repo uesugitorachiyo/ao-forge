@@ -60,6 +60,9 @@ func TestHelpExplainsFactoryTermsWithoutMarketingCopy(t *testing.T) {
 		"forge plan --brief",
 		"forge inspect --packet",
 		"dry-run execution",
+		"Slice 2.3 status:",
+		"release mutation",
+		"GitHub publishing",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("help missing %q\n%s", want, stdout)
@@ -2706,6 +2709,7 @@ func TestGateLiveExecutionMode(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "mock-github-token")
 
 	tmpDir := t.TempDir()
+	t.Setenv("GIT_PATH", buildGitPushWrapper(t, tmpDir))
 
 	// Compile a dummy binary that acts as covenant
 	dummyCovSrc := filepath.Join(tmpDir, "dummy_covenant.go")
@@ -6189,6 +6193,59 @@ func TestDynamicPlanGeneration(t *testing.T) {
 	}
 }
 
+func buildGitPushWrapper(t *testing.T, tmpDir string) string {
+	t.Helper()
+
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatalf("find git: %v", err)
+	}
+
+	wrapperSrc := filepath.Join(tmpDir, "dummy_git.go")
+	wrapperBin := filepath.Join(tmpDir, "dummy_git")
+	if os.PathSeparator == '\\' {
+		wrapperBin += ".exe"
+	}
+	source := fmt.Sprintf(`package main
+import (
+	"fmt"
+	"os"
+	"os/exec"
+)
+func main() {
+	for _, arg := range os.Args[1:] {
+		if arg == "push" {
+			if os.Getenv("AO_FORGE_TEST_GIT_PUSH_FAIL") == "1" {
+				fmt.Fprintln(os.Stderr, "simulated git push failure")
+				os.Exit(1)
+			}
+			fmt.Fprintln(os.Stdout, "simulated git push ok")
+			os.Exit(0)
+		}
+	}
+	cmd := exec.Command(%q, os.Args[1:]...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			os.Exit(exitErr.ExitCode())
+		}
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+`, realGit)
+	if err := os.WriteFile(wrapperSrc, []byte(source), 0644); err != nil {
+		t.Fatalf("write dummy git: %v", err)
+	}
+	cmdBuild := exec.Command("go", "build", "-o", wrapperBin, wrapperSrc)
+	if out, err := cmdBuild.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy git: %v (output: %q)", err, string(out))
+	}
+	return wrapperBin
+}
+
 func TestReleaseMutationDraftPublishing(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -6260,6 +6317,7 @@ func main() {
 	t.Setenv("GH_PATH", dummyGhBin)
 	t.Setenv("AO_FORGE_MOCK_GITHUB_API", ts.URL)
 	t.Setenv("GITHUB_TOKEN", "mock-token")
+	t.Setenv("GIT_PATH", buildGitPushWrapper(t, tmpDir))
 
 	// Compile a dummy ao2
 	dummyAo2Src := filepath.Join(tmpDir, "dummy_ao2.go")
@@ -6373,6 +6431,67 @@ func main() {
 	}
 }
 
+func TestReleaseMutationFailsClosedWhenTagPushFails(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	workspaceDir := filepath.Join(tmpDir, "workspace")
+	if err := os.MkdirAll(workspaceDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = workspaceDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v (output: %q)", args, err, string(out))
+		}
+	}
+
+	runGit("init")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	runGit("config", "commit.gpgSign", "false")
+	runGit("remote", "add", "origin", "git@github.com:test-owner/test-repo.git")
+
+	versionPath := filepath.Join(workspaceDir, "VERSION")
+	if err := os.WriteFile(versionPath, []byte("1.2.4"), 0644); err != nil {
+		t.Fatalf("write VERSION: %v", err)
+	}
+
+	runGit("add", "VERSION")
+	runGit("commit", "-m", "version 1.2.4")
+
+	t.Setenv("GIT_PATH", buildGitPushWrapper(t, tmpDir))
+	t.Setenv("AO_FORGE_TEST_GIT_PUSH_FAIL", "1")
+
+	plan := factoryPlan{
+		SchemaVersion: "ao.forge.factory-plan.v0.1",
+		PlanID:        "forge-plan-1234567890ab",
+		Objective: factoryObjective{
+			Text:        "Deploy release version",
+			Workspace:   workspaceDir,
+			ReleaseMode: true,
+		},
+		Constraints: factoryConstraints{
+			LocalFirst:           true,
+			AllowNetwork:         false,
+			AllowReleaseMutation: true,
+		},
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := performReleaseMutation(plan, filepath.Join(tmpDir, "packet.json"), nil, &stdout, &stderr)
+	if err == nil {
+		t.Fatalf("expected release mutation to fail closed when git tag push fails")
+	}
+	if !strings.Contains(err.Error(), "failed to push git tag") {
+		t.Fatalf("expected git tag push failure, got: %v", err)
+	}
+	if strings.Contains(stdout.String(), "Published GitHub release") {
+		t.Fatalf("release publishing should not continue after tag push failure; stdout: %s", stdout.String())
+	}
+}
+
 func TestReleaseMutationMissingTokenFailsClosed(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -6404,6 +6523,7 @@ func TestReleaseMutationMissingTokenFailsClosed(t *testing.T) {
 	t.Setenv("GH_PATH", "/non-existent/gh")
 	t.Setenv("GITHUB_TOKEN", "")
 	t.Setenv("AO_FORGE_GITHUB_TOKEN", "")
+	t.Setenv("GIT_PATH", buildGitPushWrapper(t, tmpDir))
 
 	// Compile a dummy ao2
 	dummyAo2Src := filepath.Join(tmpDir, "dummy_ao2.go")
@@ -6482,7 +6602,6 @@ func main() {
 		t.Fatalf("expected run to fail closed due to missing github authentication, but it exited 0")
 	}
 }
-
 
 
 

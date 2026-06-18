@@ -79,15 +79,24 @@ func (d *dashboard) render(fd uintptr) {
 		if state.GetStatus() == "running" {
 			activeTasks++
 		}
-		// Try to parse agy-swarms summary token and cost info
-		// Swarm execution succeeded (Tokens: 123, Cost: $0.45)
-		var tokens, cost float64
-		if _, err := fmt.Sscanf(state.Summary, "Swarm execution succeeded (Tokens: %f, Cost: $%f)", &tokens, &cost); err == nil {
-			accumulatedCost += cost
-			accumulatedTokens += tokens
-		} else if _, err := fmt.Sscanf(state.Summary, "Swarm execution failed (Tokens: %f, Cost: $%f)", &tokens, &cost); err == nil {
-			accumulatedCost += cost
-			accumulatedTokens += tokens
+		if state.Peers > 1 && len(state.PeerStates) > 0 {
+			for _, pState := range state.PeerStates {
+				pState.stateMu.Lock()
+				accumulatedCost += pState.Cost
+				accumulatedTokens += pState.Tokens
+				pState.stateMu.Unlock()
+			}
+		} else {
+			// Try to parse agy-swarms summary token and cost info
+			// Swarm execution succeeded (Tokens: 123, Cost: $0.45)
+			var tokens, cost float64
+			if _, err := fmt.Sscanf(state.Summary, "Swarm execution succeeded (Tokens: %f, Cost: $%f)", &tokens, &cost); err == nil {
+				accumulatedCost += cost
+				accumulatedTokens += tokens
+			} else if _, err := fmt.Sscanf(state.Summary, "Swarm execution failed (Tokens: %f, Cost: $%f)", &tokens, &cost); err == nil {
+				accumulatedCost += cost
+				accumulatedTokens += tokens
+			}
 		}
 	}
 
@@ -112,7 +121,11 @@ func (d *dashboard) render(fd uintptr) {
 
 		fmt.Fprintf(d.writer, "- %s (%s) -> %s%s\033[0m", wc.WorkcellID, wc.Kind, statusColor, strings.ToUpper(status))
 		if status == "running" {
-			fmt.Fprintf(d.writer, " (running...)")
+			if state.Peers > 1 {
+				fmt.Fprintf(d.writer, " (running %d peers...)", state.Peers)
+			} else {
+				fmt.Fprintf(d.writer, " (running...)")
+			}
 		} else if state.Summary != "" {
 			fmt.Fprintf(d.writer, " - %s", state.Summary)
 		}
@@ -120,13 +133,44 @@ func (d *dashboard) render(fd uintptr) {
 
 		// Tail logs for running workcells
 		if status == "running" {
-			stdoutTail := getTailLines(state.GetStdout(), 2)
-			stderrTail := getTailLines(state.GetStderr(), 2)
-			for _, line := range stdoutTail {
-				fmt.Fprintf(d.writer, "    \033[90m> %s\033[0m\033[K\n", truncateString(line, width-10))
-			}
-			for _, line := range stderrTail {
-				fmt.Fprintf(d.writer, "    \033[31m! %s\033[0m\033[K\n", truncateString(line, width-10))
+			if state.Peers > 1 && len(state.PeerStates) > 0 {
+				for _, pState := range state.PeerStates {
+					pState.stateMu.Lock()
+					pStatus := pState.Status
+					pStdout := pState.Stdout
+					pStderr := pState.Stderr
+					pState.stateMu.Unlock()
+
+					pColor := "\033[90m" // Gray
+					switch pStatus {
+					case "running":
+						pColor = "\033[36m" // Cyan
+					case "passed":
+						pColor = "\033[32m" // Green
+					case "failed":
+						pColor = "\033[31m" // Red
+					}
+					fmt.Fprintf(d.writer, "    Peer %d: %s%s\033[0m\033[K\n", pState.Index, pColor, strings.ToUpper(pStatus))
+					if pStatus == "running" {
+						stdoutTail := getTailLines(pStdout, 1)
+						stderrTail := getTailLines(pStderr, 1)
+						for _, line := range stdoutTail {
+							fmt.Fprintf(d.writer, "      \033[90m> %s\033[0m\033[K\n", truncateString(line, width-12))
+						}
+						for _, line := range stderrTail {
+							fmt.Fprintf(d.writer, "      \033[31m! %s\033[0m\033[K\n", truncateString(line, width-12))
+						}
+					}
+				}
+			} else {
+				stdoutTail := getTailLines(state.GetStdout(), 2)
+				stderrTail := getTailLines(state.GetStderr(), 2)
+				for _, line := range stdoutTail {
+					fmt.Fprintf(d.writer, "    \033[90m> %s\033[0m\033[K\n", truncateString(line, width-10))
+				}
+				for _, line := range stderrTail {
+					fmt.Fprintf(d.writer, "    \033[31m! %s\033[0m\033[K\n", truncateString(line, width-10))
+				}
 			}
 		}
 	}

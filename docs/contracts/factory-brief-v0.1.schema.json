@@ -79,6 +79,10 @@
             "type": "string",
             "enum": ["ao2", "agy-swarms"]
           },
+          "peers": {
+            "type": "integer",
+            "minimum": 1
+          },
           "task": {
             "type": "string",
             "minLength": 1

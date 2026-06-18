@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -4769,7 +4770,7 @@ func TestInteractiveGateOverrideApprove(t *testing.T) {
 	stdinMock := strings.NewReader("y\n")
 	var stdoutBuf, stderrBuf bytes.Buffer
 
-	code := executePlanRun(plan, planPath, gatePath, outPath, "", false, false, false, stdinMock, nil, &stdoutBuf, &stderrBuf)
+	code := executePlanRun(plan, planPath, gatePath, outPath, "", false, false, false, true, stdinMock, nil, &stdoutBuf, &stderrBuf)
 	if code != 0 {
 		t.Fatalf("expected executePlanRun to succeed (exit code 0), got %d. stderr: %s", code, stderrBuf.String())
 	}
@@ -4861,7 +4862,7 @@ func TestInteractiveGateOverrideDeny(t *testing.T) {
 	stdinMock := strings.NewReader("n\n")
 	var stdoutBuf, stderrBuf bytes.Buffer
 
-	code := executePlanRun(plan, planPath, gatePath, outPath, "", false, false, false, stdinMock, nil, &stdoutBuf, &stderrBuf)
+	code := executePlanRun(plan, planPath, gatePath, outPath, "", false, false, false, true, stdinMock, nil, &stdoutBuf, &stderrBuf)
 	if code != 1 {
 		t.Fatalf("expected executePlanRun to fail with exit code 1, got %d", code)
 	}
@@ -4976,7 +4977,7 @@ func TestInteractiveWorkcellFailureRetry(t *testing.T) {
 	stdinMock := strings.NewReader("r\n")
 	var stdoutBuf, stderrBuf bytes.Buffer
 
-	code := executePlanRun(plan, planPath, gatePath, outPath, "", false, false, false, stdinMock, nil, &stdoutBuf, &stderrBuf)
+	code := executePlanRun(plan, planPath, gatePath, outPath, "", false, false, false, true, stdinMock, nil, &stdoutBuf, &stderrBuf)
 	if code != 0 {
 		t.Fatalf("expected executePlanRun to succeed (exit code 0), got %d. stderr: %s", code, stderrBuf.String())
 	}
@@ -5121,7 +5122,7 @@ func TestInteractiveWorkcellFailureSkip(t *testing.T) {
 	stdinMock := strings.NewReader("s\n")
 	var stdoutBuf, stderrBuf bytes.Buffer
 
-	code := executePlanRun(plan, planPath, gatePath, outPath, "", false, false, false, stdinMock, nil, &stdoutBuf, &stderrBuf)
+	code := executePlanRun(plan, planPath, gatePath, outPath, "", false, false, false, true, stdinMock, nil, &stdoutBuf, &stderrBuf)
 	if code != 0 {
 		t.Fatalf("expected executePlanRun to succeed (exit code 0) after skip, got %d. stderr: %s", code, stderrBuf.String())
 	}
@@ -5202,7 +5203,7 @@ func TestInteractiveWorkcellFailureAbort(t *testing.T) {
 	stdinMock := strings.NewReader("a\n")
 	var stdoutBuf, stderrBuf bytes.Buffer
 
-	code := executePlanRun(plan, planPath, gatePath, outPath, "", false, false, false, stdinMock, nil, &stdoutBuf, &stderrBuf)
+	code := executePlanRun(plan, planPath, gatePath, outPath, "", false, false, false, true, stdinMock, nil, &stdoutBuf, &stderrBuf)
 	if code != 1 {
 		t.Fatalf("expected executePlanRun to fail (exit code 1), got %d. stderr: %s", code, stderrBuf.String())
 	}
@@ -5223,6 +5224,121 @@ func TestInteractiveWorkcellFailureAbort(t *testing.T) {
 		t.Fatalf("expected wc1 status to be failed, got %q", packet.Workcells[0].Status)
 	}
 }
+
+func TestTerminalDetectionMock(t *testing.T) {
+	// Simple sanity test for terminal check
+	isTerm := isTerminal(os.Stdout.Fd())
+	t.Logf("isTerminal(stdout) = %t", isTerm)
+	width, height, err := getTerminalSize(os.Stdout.Fd())
+	t.Logf("getTerminalSize(stdout) = %d x %d (err: %v)", width, height, err)
+}
+
+func TestDashboardDisabledInNonInteractive(t *testing.T) {
+	tmpDir := t.TempDir()
+	plan := factoryPlan{
+		PlanID: "dash-dis-plan",
+		Objective: factoryObjective{
+			Text:      "test dashboard bypass",
+			Workspace: tmpDir,
+		},
+		Workcells: []planWorkcell{
+			{
+				WorkcellID: "wc1",
+				Kind:       "prepare",
+				Status:     "planned",
+			},
+		},
+	}
+	planPath := filepath.Join(tmpDir, "plan.json")
+	planData, _ := json.Marshal(plan)
+	_ = os.WriteFile(planPath, planData, 0644)
+	gatePath := filepath.Join(tmpDir, "gate.json")
+	gate := covenantGateResult{
+		Status: "allowed",
+		PlanID: "dash-dis-plan",
+	}
+	gateData, _ := json.Marshal(gate)
+	_ = os.WriteFile(gatePath, gateData, 0644)
+
+	dummyAo2 := compileDummyAo2(t, tmpDir)
+	t.Setenv("AO2_PATH", dummyAo2)
+
+	outPath := filepath.Join(tmpDir, "packet.json")
+	var stdoutBuf, stderrBuf bytes.Buffer
+
+	// executePlanRun with noDashboard = true
+	code := executePlanRun(plan, planPath, gatePath, outPath, "", false, false, false, true, strings.NewReader(""), nil, &stdoutBuf, &stderrBuf)
+	if code != 0 {
+		t.Fatalf("run failed: %d", code)
+	}
+
+	if strings.Contains(stderrBuf.String(), "\033[?1049h") {
+		t.Fatal("TUI alternate screen characters should not be emitted when noDashboard is true")
+	}
+}
+
+func TestDashboardLogStreaming(t *testing.T) {
+	state := &workcellRunState{
+		stateMu: &sync.Mutex{},
+		ID:      "wc1",
+		Status:  "pending",
+	}
+	state.AppendStdout("line 1\n")
+	if state.GetStdout() != "line 1\n" {
+		t.Fatalf("expected stdout 'line 1\n', got %q", state.GetStdout())
+	}
+	state.AppendStderr("error 1\n")
+	if state.GetStderr() != "error 1\n" {
+		t.Fatalf("expected stderr 'error 1\n', got %q", state.GetStderr())
+	}
+}
+
+func TestDashboardRenderingUnits(t *testing.T) {
+	plan := factoryPlan{
+		PlanID:    "tui-plan-id",
+		Objective: factoryObjective{Text: "Test rendering of TUI dashboard"},
+		Workcells: []planWorkcell{
+			{WorkcellID: "wc1", Kind: "prepare"},
+			{WorkcellID: "wc2", Kind: "execute"},
+		},
+	}
+	states := map[string]*workcellRunState{
+		"wc1": {stateMu: &sync.Mutex{}, ID: "wc1", Kind: "prepare", Status: "passed", Summary: "Succeeded cleanly"},
+		"wc2": {stateMu: &sync.Mutex{}, ID: "wc2", Kind: "execute", Status: "running", Stdout: "Task progress: 50%\n"},
+	}
+	var buf bytes.Buffer
+	d := &dashboard{
+		plan:      plan,
+		states:    states,
+		mu:        &sync.Mutex{},
+		startTime: time.Now().Add(-10 * time.Second),
+		writer:    &buf,
+	}
+
+	// We pass a dummy FD value of 0 since getTerminalSize won't succeed on it and will fallback to 80 width
+	d.render(0)
+
+	rendered := buf.String()
+	if !strings.Contains(rendered, "[AO Forge Factory Dashboard]") {
+		t.Fatal("Header tag not found in TUI render output")
+	}
+	if !strings.Contains(rendered, "tui-plan-id") {
+		t.Fatal("Plan ID not found in TUI render output")
+	}
+	if !strings.Contains(rendered, "Test rendering of TUI dashboard") {
+		t.Fatal("Objective not found in TUI render output")
+	}
+	if !strings.Contains(rendered, "wc1 (prepare) -> \033[32mPASSED\033[0m") {
+		t.Fatal("wc1 PASSED status line not formatted correctly")
+	}
+	if !strings.Contains(rendered, "wc2 (execute) -> \033[36mRUNNING\033[0m") {
+		t.Fatal("wc2 RUNNING status line not formatted correctly")
+	}
+	if !strings.Contains(rendered, "Task progress: 50%") {
+		t.Fatal("Log tail preview not printed in TUI output")
+	}
+}
+
 
 
 

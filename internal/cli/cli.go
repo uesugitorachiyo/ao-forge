@@ -18,12 +18,14 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/uesugitorachiyo/ao-forge/internal/foundation"
@@ -1253,6 +1255,7 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 	var liveMode bool
 	var confirmRelease bool
 	var nonInteractive bool
+	var noDashboard bool
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--plan":
@@ -1289,6 +1292,8 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 			confirmRelease = true
 		case "--non-interactive", "--yes", "-y":
 			nonInteractive = true
+		case "--no-dashboard":
+			noDashboard = true
 		default:
 			fmt.Fprintf(stderr, "forge run: unexpected argument %s\n", args[i])
 			return 2
@@ -1310,7 +1315,7 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	return executePlanRun(plan, planPath, gateResultPath, outPath, controlPlaneURL, liveMode, confirmRelease, nonInteractive, os.Stdin, nil, stdout, stderr)
+	return executePlanRun(plan, planPath, gateResultPath, outPath, controlPlaneURL, liveMode, confirmRelease, nonInteractive, noDashboard, os.Stdin, nil, stdout, stderr)
 }
 
 func executePlanRun(
@@ -1322,6 +1327,7 @@ func executePlanRun(
 	liveMode bool,
 	confirmRelease bool,
 	nonInteractive bool,
+	noDashboard bool,
 	stdin io.Reader,
 	prevStates map[string]*workcellRunState,
 	stdout, stderr io.Writer,
@@ -1619,7 +1625,7 @@ func executePlanRun(
 
 	// 1. Run Workcells
 	var runErr error
-	schedulerStates, runErr = runWorkcellsConcurrent(context.Background(), plan, ao2Path, stdout, stderr, liveMode, nonInteractive, stdin, prevStates)
+	schedulerStates, runErr = runWorkcellsConcurrent(context.Background(), plan, ao2Path, stdout, stderr, liveMode, nonInteractive, noDashboard, stdin, prevStates)
 
 	// Determine status
 	runSummaryStatus := "dry_run_accepted"
@@ -1939,6 +1945,7 @@ func runResume(args []string, stdout, stderr io.Writer) int {
 	var liveMode bool
 	var confirmRelease bool
 	var nonInteractive bool
+	var noDashboard bool
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--run":
@@ -1968,6 +1975,8 @@ func runResume(args []string, stdout, stderr io.Writer) int {
 			confirmRelease = true
 		case "--non-interactive", "--yes", "-y":
 			nonInteractive = true
+		case "--no-dashboard":
+			noDashboard = true
 		default:
 			fmt.Fprintf(stderr, "forge resume: unexpected argument %s\n", args[i])
 			return 2
@@ -2050,7 +2059,7 @@ func runResume(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	return executePlanRun(plan, planPath, gateResultPath, outPath, controlPlaneURL, liveMode, confirmRelease, nonInteractive, os.Stdin, prevStates, stdout, stderr)
+	return executePlanRun(plan, planPath, gateResultPath, outPath, controlPlaneURL, liveMode, confirmRelease, nonInteractive, noDashboard, os.Stdin, prevStates, stdout, stderr)
 }
 
 func runOnce(args []string, stdout, stderr io.Writer) int {
@@ -2060,6 +2069,7 @@ func runOnce(args []string, stdout, stderr io.Writer) int {
 	var liveMode bool
 	var confirmRelease bool
 	var nonInteractive bool
+	var noDashboard bool
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--brief":
@@ -2103,6 +2113,8 @@ func runOnce(args []string, stdout, stderr io.Writer) int {
 			confirmRelease = true
 		case "--non-interactive", "--yes", "-y":
 			nonInteractive = true
+		case "--no-dashboard":
+			noDashboard = true
 		default:
 			fmt.Fprintf(stderr, "forge once: unexpected argument %s\n", args[i])
 			return 2
@@ -2202,6 +2214,9 @@ func runOnce(args []string, stdout, stderr io.Writer) int {
 	}
 	if nonInteractive {
 		runArgs = append(runArgs, "--non-interactive")
+	}
+	if noDashboard {
+		runArgs = append(runArgs, "--no-dashboard")
 	}
 
 	runCode := runRun(runArgs, stdout, stderr)
@@ -2681,6 +2696,7 @@ func writeMarkdownPacket(outPath string, packet factoryPacket) error {
 }
 
 type workcellRunState struct {
+	stateMu    *sync.Mutex
 	ID         string
 	Kind       string
 	Workspace  string
@@ -2695,6 +2711,80 @@ type workcellRunState struct {
 	Rubric     *workcellRubric
 }
 
+func (w *workcellRunState) GetStatus() string {
+	if w.stateMu != nil {
+		w.stateMu.Lock()
+		defer w.stateMu.Unlock()
+	}
+	return w.Status
+}
+
+func (w *workcellRunState) SetStatus(status string) {
+	if w.stateMu != nil {
+		w.stateMu.Lock()
+		defer w.stateMu.Unlock()
+	}
+	w.Status = status
+}
+
+func (w *workcellRunState) GetSummary() string {
+	if w.stateMu != nil {
+		w.stateMu.Lock()
+		defer w.stateMu.Unlock()
+	}
+	return w.Summary
+}
+
+func (w *workcellRunState) SetSummary(sum string) {
+	if w.stateMu != nil {
+		w.stateMu.Lock()
+		defer w.stateMu.Unlock()
+	}
+	w.Summary = sum
+}
+
+func (w *workcellRunState) AppendStdout(data string) {
+	if w.stateMu != nil {
+		w.stateMu.Lock()
+		defer w.stateMu.Unlock()
+	}
+	w.Stdout += data
+}
+
+func (w *workcellRunState) AppendStderr(data string) {
+	if w.stateMu != nil {
+		w.stateMu.Lock()
+		defer w.stateMu.Unlock()
+	}
+	w.Stderr += data
+}
+
+func (w *workcellRunState) GetStdout() string {
+	if w.stateMu != nil {
+		w.stateMu.Lock()
+		defer w.stateMu.Unlock()
+	}
+	return w.Stdout
+}
+
+func (w *workcellRunState) GetStderr() string {
+	if w.stateMu != nil {
+		w.stateMu.Lock()
+		defer w.stateMu.Unlock()
+	}
+	return w.Stderr
+}
+
+type realTimeWriter struct {
+	appendFunc func(string)
+}
+
+func (w *realTimeWriter) Write(p []byte) (n int, err error) {
+	w.appendFunc(string(p))
+	return len(p), nil
+}
+
+
 func runWorkcellsConcurrent(
 	ctx context.Context,
 	plan factoryPlan,
@@ -2702,6 +2792,7 @@ func runWorkcellsConcurrent(
 	stdout, stderr io.Writer,
 	liveMode bool,
 	nonInteractive bool,
+	noDashboard bool,
 	stdin io.Reader,
 	prevStates map[string]*workcellRunState,
 ) ([]workcellRunState, error) {
@@ -2722,6 +2813,7 @@ func runWorkcellsConcurrent(
 			}
 		}
 		states[wc.WorkcellID] = &workcellRunState{
+			stateMu:    &sync.Mutex{},
 			ID:         wc.WorkcellID,
 			Kind:       wc.Kind,
 			Workspace:  wc.Workspace,
@@ -2741,6 +2833,55 @@ func runWorkcellsConcurrent(
 	// Use a WaitGroup to wait for all running goroutines to complete
 	var wg sync.WaitGroup
 	var promptMu sync.Mutex
+
+	var tuiFd uintptr
+	useDashboard := false
+	if f, ok := stderr.(*os.File); ok && !nonInteractive && !noDashboard {
+		if isTerminal(f.Fd()) {
+			useDashboard = true
+			tuiFd = f.Fd()
+		}
+	}
+
+	if useDashboard {
+		enterAlternateScreen(stderr)
+		defer exitAlternateScreen(stderr)
+
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+		go func() {
+			<-sigChan
+			exitAlternateScreen(stderr)
+			os.Exit(130)
+		}()
+		defer signal.Stop(sigChan)
+
+		d := &dashboard{
+			plan:      plan,
+			states:    states,
+			mu:        &mu,
+			startTime: time.Now(),
+			writer:    stderr,
+		}
+
+		doneChan := make(chan struct{})
+		go func() {
+			ticker := time.NewTicker(100 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					d.render(tuiFd)
+				case <-doneChan:
+					return
+				}
+			}
+		}()
+		defer func() {
+			close(doneChan)
+			d.render(tuiFd)
+		}()
+	}
 
 	// Create a cancellable context to abort pending runs if one fails
 	ctx, cancel := context.WithCancel(ctx)
@@ -3016,13 +3157,10 @@ func executeSingleWorkcell(ctx context.Context, plan factoryPlan, wcState *workc
 		cmd := exec.CommandContext(ctx, cmdName, args...)
 		cmd.Dir = repoPath
 
-		var stdoutBuf, stderrBuf bytes.Buffer
-		cmd.Stdout = &stdoutBuf
-		cmd.Stderr = &stderrBuf
+		cmd.Stdout = &realTimeWriter{appendFunc: wcState.AppendStdout}
+		cmd.Stderr = &realTimeWriter{appendFunc: wcState.AppendStderr}
 
 		runErr := cmd.Run()
-		wcState.Stdout = stdoutBuf.String()
-		wcState.Stderr = stderrBuf.String()
 
 		if reportData, err := os.ReadFile(tempReport.Name()); err == nil {
 			var report map[string]interface{}
@@ -3038,15 +3176,15 @@ func executeSingleWorkcell(ctx context.Context, plan factoryPlan, wcState *workc
 					spentUSD = su
 				}
 				if statusStr == "succeeded" {
-					wcState.Summary = fmt.Sprintf("Swarm execution succeeded (Tokens: %.0f, Cost: $%.2f)", spentTokens, spentUSD)
+					wcState.SetSummary(fmt.Sprintf("Swarm execution succeeded (Tokens: %.0f, Cost: $%.2f)", spentTokens, spentUSD))
 				} else {
-					wcState.Summary = fmt.Sprintf("Swarm execution failed (Tokens: %.0f, Cost: $%.2f)", spentTokens, spentUSD)
+					wcState.SetSummary(fmt.Sprintf("Swarm execution failed (Tokens: %.0f, Cost: $%.2f)", spentTokens, spentUSD))
 				}
 			}
 		}
 
 		if runErr != nil {
-			return fmt.Errorf("agy-swarms execution failed for %s: %v (stderr: %q)", wcState.ID, runErr, wcState.Stderr)
+			return fmt.Errorf("agy-swarms execution failed for %s: %v (stderr: %q)", wcState.ID, runErr, wcState.GetStderr())
 		}
 	} else {
 		specTask := runTask{
@@ -3107,34 +3245,31 @@ func executeSingleWorkcell(ctx context.Context, plan factoryPlan, wcState *workc
 		} else {
 			cmd = exec.CommandContext(ctx, ao2Path, "run", "--dry-run", "--spec", tempSpec.Name())
 		}
-		var stdoutBuf, stderrBuf bytes.Buffer
-		cmd.Stdout = &stdoutBuf
-		cmd.Stderr = &stderrBuf
+		cmd.Stdout = &realTimeWriter{appendFunc: wcState.AppendStdout}
+		cmd.Stderr = &realTimeWriter{appendFunc: wcState.AppendStderr}
 
 		runErr := cmd.Run()
-		wcState.Stdout = stdoutBuf.String()
-		wcState.Stderr = stderrBuf.String()
 
 		if runErr != nil {
-			return fmt.Errorf("ao2 run failed for %s: %v (stderr: %q)", wcState.ID, runErr, wcState.Stderr)
+			return fmt.Errorf("ao2 run failed for %s: %v (stderr: %q)", wcState.ID, runErr, wcState.GetStderr())
 		}
 
 		if liveMode {
-			if !strings.Contains(wcState.Stdout, "status=governed_run_started") &&
-				!strings.Contains(wcState.Stdout, "status=governed_provider_run_started") &&
-				!strings.Contains(wcState.Stdout, "status=Accepted") &&
-				!strings.Contains(wcState.Stdout, "status=accepted") {
-				return fmt.Errorf("ao2 run output for %s did not confirm acceptance: %q (stderr: %q)", wcState.ID, wcState.Stdout, wcState.Stderr)
+			if !strings.Contains(wcState.GetStdout(), "status=governed_run_started") &&
+				!strings.Contains(wcState.GetStdout(), "status=governed_provider_run_started") &&
+				!strings.Contains(wcState.GetStdout(), "status=Accepted") &&
+				!strings.Contains(wcState.GetStdout(), "status=accepted") {
+				return fmt.Errorf("ao2 run output for %s did not confirm acceptance: %q (stderr: %q)", wcState.ID, wcState.GetStdout(), wcState.GetStderr())
 			}
 		} else {
-			if !strings.Contains(wcState.Stdout, "status=dry_run_accepted") {
-				return fmt.Errorf("ao2 run output for %s did not confirm acceptance: %q (stderr: %q)", wcState.ID, wcState.Stdout, wcState.Stderr)
+			if !strings.Contains(wcState.GetStdout(), "status=dry_run_accepted") {
+				return fmt.Errorf("ao2 run output for %s did not confirm acceptance: %q (stderr: %q)", wcState.ID, wcState.GetStdout(), wcState.GetStderr())
 			}
 		}
 	}
 
 	if wcState.Rubric != nil {
-		combined := wcState.Stdout + "\n" + wcState.Stderr
+		combined := wcState.GetStdout() + "\n" + wcState.GetStderr()
 		for _, pattern := range wcState.Rubric.RequiredPatterns {
 			if !strings.Contains(combined, pattern) {
 				return fmt.Errorf("rubric validation failed for %s: required pattern %q not found in output", wcState.ID, pattern)

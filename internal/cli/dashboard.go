@@ -121,7 +121,9 @@ func (d *dashboard) render(fd uintptr) {
 
 		fmt.Fprintf(d.writer, "- %s (%s) -> %s%s\033[0m", wc.WorkcellID, wc.Kind, statusColor, strings.ToUpper(status))
 		if status == "running" {
-			if state.Peers > 1 {
+			if state.RepairsAttempted > 0 {
+				fmt.Fprintf(d.writer, " (REPAIRING (Attempt %d/%d))", state.RepairsAttempted, state.MaxRepairs)
+			} else if state.Peers > 1 {
 				fmt.Fprintf(d.writer, " (running %d peers...)", state.Peers)
 			} else {
 				fmt.Fprintf(d.writer, " (running...)")

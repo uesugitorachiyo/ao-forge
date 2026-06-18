@@ -70,6 +70,7 @@ type briefWorkcell struct {
 	Workspace  string          `json:"workspace,omitempty"`
 	Executor   string          `json:"executor,omitempty"`
 	Peers      int             `json:"peers,omitempty"`
+	MaxRepairs int             `json:"max_repairs,omitempty"`
 	Task       string          `json:"task,omitempty"`
 	DependsOn  []string        `json:"depends_on"`
 	Rubric     *workcellRubric `json:"rubric,omitempty"`
@@ -112,6 +113,7 @@ type planWorkcell struct {
 	Workspace  string          `json:"workspace,omitempty"`
 	Executor   string          `json:"executor,omitempty"`
 	Peers      int             `json:"peers,omitempty"`
+	MaxRepairs int             `json:"max_repairs,omitempty"`
 	Task       string          `json:"task,omitempty"`
 	Status     string          `json:"status"`
 	DependsOn  []string        `json:"depends_on"`
@@ -163,16 +165,18 @@ type factoryPacket struct {
 		Source      string `json:"source"`
 	} `json:"policy_decisions"`
 	Workcells []struct {
-		WorkcellID string   `json:"workcell_id"`
-		Kind       string   `json:"kind"`
-		Workspace  string   `json:"workspace,omitempty"`
-		Executor   string   `json:"executor,omitempty"`
-		Peers      int      `json:"peers,omitempty"`
-		Task       string   `json:"task,omitempty"`
-		Status     string   `json:"status"`
-		DependsOn  []string `json:"depends_on"`
-		AO2Run     string   `json:"ao2_run"`
-		Summary    string   `json:"summary"`
+		WorkcellID       string   `json:"workcell_id"`
+		Kind             string   `json:"kind"`
+		Workspace        string   `json:"workspace,omitempty"`
+		Executor         string   `json:"executor,omitempty"`
+		Peers            int      `json:"peers,omitempty"`
+		MaxRepairs       int      `json:"max_repairs,omitempty"`
+		Task             string   `json:"task,omitempty"`
+		Status           string   `json:"status"`
+		DependsOn        []string `json:"depends_on"`
+		AO2Run           string   `json:"ao2_run"`
+		Summary          string   `json:"summary"`
+		RepairsAttempted int      `json:"repairs_attempted,omitempty"`
 	} `json:"workcells"`
 	Evidence []struct {
 		Label         string `json:"label"`
@@ -229,7 +233,7 @@ func printHelp(w io.Writer) {
 Usage:
   forge --help
   forge init
-  forge plan --brief <factory-brief.json> [--out <factory-plan.json>]
+  forge plan --brief <factory-brief.json> [--out <factory-plan.json>] [--dynamic]
   forge gate --plan <factory-plan.json> --covenant <path-to-covenant-or-config> [--out <gate-result.json>]
   forge run --plan <factory-plan.json> --gate-result <gate-result.json> [--out <factory-packet.json>] [--live] [--confirm-release]
   forge once --brief <factory-brief.json> --covenant <path-to-covenant-or-config> [--out <factory-packet.json>] [--live] [--confirm-release]
@@ -243,28 +247,75 @@ Factory terms:
   workcell        bounded unit of factory work with dependencies and evidence
   factory packet  operator-ready JSON summary of plan, gates, evidence, and next actions
 
-Slice 1.13 status:
-  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, and parallel swarms peer review are enabled.
+Slice 2.3 status:
+  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, and GitHub publishing are enabled.
 `)
 }
 
+type planFlags struct {
+	briefPath string
+	outPath   string
+	dynamic   bool
+}
+
+func parsePlanFlags(args []string) (planFlags, error) {
+	var flags planFlags
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--brief":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return planFlags{}, fmt.Errorf("--brief requires a value")
+			}
+			flags.briefPath = args[i+1]
+			i++
+		case "--out":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return planFlags{}, fmt.Errorf("--out requires a value")
+			}
+			flags.outPath = args[i+1]
+			i++
+		case "--dynamic":
+			flags.dynamic = true
+		case "--help", "-h":
+			return planFlags{}, fmt.Errorf("help is available with `forge --help`")
+		default:
+			if strings.HasPrefix(arg, "--") {
+				return planFlags{}, fmt.Errorf("unknown flag %s", arg)
+			}
+			return planFlags{}, fmt.Errorf("unexpected argument %s", arg)
+		}
+	}
+	if flags.briefPath == "" {
+		return planFlags{}, fmt.Errorf("missing required --brief")
+	}
+	return flags, nil
+}
+
 func runPlan(args []string, stdout, stderr io.Writer) int {
-	briefPath, outPath, err := parsePathFlags(args, "--brief", "--out")
+	flags, err := parsePlanFlags(args)
 	if err != nil {
 		fmt.Fprintf(stderr, "forge plan: %v\n", err)
 		return 2
 	}
-	if briefPath == "" {
-		fmt.Fprintln(stderr, "forge plan: missing required --brief")
-		return 2
-	}
 
-	brief, canonical, err := readBrief(briefPath)
+	brief, canonical, err := readBrief(flags.briefPath, flags.dynamic)
 	if err != nil {
 		fmt.Fprintf(stderr, "forge plan: %v\n", err)
 		return 1
 	}
-	plan := buildPlan(brief, canonical)
+
+	var plan factoryPlan
+	if flags.dynamic {
+		plan, err = buildDynamicPlan(context.Background(), brief, canonical)
+		if err != nil {
+			fmt.Fprintf(stderr, "forge plan: dynamic planning failed: %v\n", err)
+			return 1
+		}
+	} else {
+		plan = buildPlan(brief, canonical)
+	}
+
 	if err := validatePlan(plan); err != nil {
 		fmt.Fprintf(stderr, "forge plan: generated plan failed contract validation: %v\n", err)
 		return 1
@@ -275,17 +326,149 @@ func runPlan(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	if outPath != "" {
-		if err := writeFile(outPath, encoded); err != nil {
+	if flags.outPath != "" {
+		if err := writeFile(flags.outPath, encoded); err != nil {
 			fmt.Fprintf(stderr, "forge plan: %v\n", err)
 			return 1
 		}
-		fmt.Fprintf(stdout, "factory_plan=%s\n", outPath)
+		fmt.Fprintf(stdout, "factory_plan=%s\n", flags.outPath)
 		return 0
 	}
 
 	_, _ = stdout.Write(encoded)
 	return 0
+}
+
+func buildDynamicPlan(ctx context.Context, brief factoryBrief, canonicalBrief []byte) (factoryPlan, error) {
+	cmdArgs, err := resolveAgySwarmsCommand()
+	if err != nil {
+		return factoryPlan{}, fmt.Errorf("failed to resolve agy-swarms command: %v", err)
+	}
+
+	workspacePath := brief.Objective.Workspace
+
+	prompt := fmt.Sprintf(
+		"Analyze the target workspace structure (files, directories, package managers) to understand the codebase.\n"+
+			"Decompose the objective into a sequence of workcells to achieve the objective.\n\n"+
+			"Objective: %s\n\n"+
+			"Each workcell must follow this JSON schema:\n"+
+			"{\n"+
+			"  \"workcell_id\": \"string (unique identifier)\",\n"+
+			"  \"kind\": \"prepare\" | \"execute\" | \"verify\" | \"close\",\n"+
+			"  \"workspace\": \"string (optional path relative to workspace root)\",\n"+
+			"  \"executor\": \"ao2\" | \"agy-swarms\",\n"+
+			"  \"peers\": integer (optional),\n"+
+			"  \"max_repairs\": integer (optional),\n"+
+			"  \"task\": \"string\",\n"+
+			"  \"depends_on\": [\"array of dependency workcell_ids\"],\n"+
+			"  \"rubric\": {\n"+
+			"    \"required_patterns\": [\"array of strings\"],\n"+
+			"    \"forbidden_patterns\": [\"array of strings\"],\n"+
+			"    \"min_coverage\": number\n"+
+			"  }\n"+
+			"}\n\n"+
+			"Write the resulting list of workcells as a JSON array to 'dynamic-plan-workcells.json' in the current workspace directory. Do not output anything else.",
+		brief.Objective.Text,
+	)
+
+	taskSpec := map[string]interface{}{
+		"task": prompt,
+		"model_pins": map[string]string{
+			"default": "gemini-3.5-flash",
+		},
+	}
+	taskData, err := json.MarshalIndent(taskSpec, "", "  ")
+	if err != nil {
+		return factoryPlan{}, fmt.Errorf("failed to marshal dynamic planning task: %v", err)
+	}
+
+	tempTask, err := os.CreateTemp("", "agy-dynamic-task-*.json")
+	if err != nil {
+		return factoryPlan{}, fmt.Errorf("failed to create temp task: %v", err)
+	}
+	defer os.Remove(tempTask.Name())
+
+	if _, err := tempTask.Write(taskData); err != nil {
+		tempTask.Close()
+		return factoryPlan{}, fmt.Errorf("failed to write temp task: %v", err)
+	}
+	tempTask.Close()
+
+	tempReport, err := os.CreateTemp("", "agy-dynamic-report-*.json")
+	if err != nil {
+		return factoryPlan{}, fmt.Errorf("failed to create temp report: %v", err)
+	}
+	tempReport.Close()
+	defer os.Remove(tempReport.Name())
+
+	args := append(cmdArgs[1:], "run", "--task", tempTask.Name(), "--report", tempReport.Name(), "--allow-local-commands", "--reviewer", "agy", "--closer", "agy")
+
+	cmdName := cmdArgs[0]
+	cmd := exec.CommandContext(ctx, cmdName, args...)
+	cmd.Dir = workspacePath
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+
+	runErr := cmd.Run()
+	if runErr != nil {
+		return factoryPlan{}, fmt.Errorf("dynamic planner swarm execution failed: %v (stderr: %q)", runErr, stderrBuf.String())
+	}
+
+	outputPath := filepath.Join(workspacePath, "dynamic-plan-workcells.json")
+	outputData, err := os.ReadFile(outputPath)
+	if err != nil {
+		return factoryPlan{}, fmt.Errorf("failed to read dynamic planner output 'dynamic-plan-workcells.json': %v", err)
+	}
+	defer os.Remove(outputPath)
+
+	var parsedWorkcells []planWorkcell
+	if err := json.Unmarshal(outputData, &parsedWorkcells); err != nil {
+		return factoryPlan{}, fmt.Errorf("failed to parse dynamic planner output: %v (raw data: %q)", err, string(outputData))
+	}
+
+	for i := range parsedWorkcells {
+		if parsedWorkcells[i].Status == "" {
+			parsedWorkcells[i].Status = "planned"
+		}
+		if parsedWorkcells[i].DependsOn == nil {
+			parsedWorkcells[i].DependsOn = []string{}
+		}
+	}
+
+	plan := factoryPlan{
+		SchemaVersion: planSchemaVersion,
+		PlanID:        planID(canonicalBrief),
+		Objective: factoryObjective{
+			Text:        brief.Objective.Text,
+			Workspace:   brief.Objective.Workspace,
+			ReleaseMode: brief.Objective.ReleaseMode,
+		},
+		Constraints: factoryConstraints{
+			LocalFirst:                  brief.Constraints.LocalFirst,
+			AllowNetwork:                brief.Constraints.AllowNetwork,
+			AllowReleaseMutation:        brief.Constraints.AllowReleaseMutation,
+			RequireControlPlaneReadback: brief.Constraints.RequireControlPlaneReadback,
+		},
+		ExecutionEnabled: false,
+		PolicyGate: policyGate{
+			Required:    true,
+			Status:      "not_requested",
+			Explanation: "Slice 0.2 creates deterministic plans only; Covenant gate execution is introduced in slice 0.3.",
+		},
+		Workcells:        parsedWorkcells,
+		ExpectedEvidence: cloneStrings(brief.ExpectedEvidence),
+		NextActions: []nextAction{
+			{
+				ActionID:    "run-covenant-gate",
+				Description: "Implement or invoke the Covenant gate before AO2 execution is enabled.",
+				Required:    true,
+			},
+		},
+	}
+
+	return plan, nil
 }
 
 func runGate(args []string, stdout, stderr io.Writer) int {
@@ -563,7 +746,7 @@ func parsePathFlags(args []string, required string, optional string) (string, st
 	return requiredValue, optionalValue, nil
 }
 
-func readBrief(path string) (factoryBrief, []byte, error) {
+func readBrief(path string, allowEmptyWorkcells bool) (factoryBrief, []byte, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return factoryBrief{}, nil, fmt.Errorf("read brief: %w", err)
@@ -600,7 +783,7 @@ func readBrief(path string) (factoryBrief, []byte, error) {
 		if err != nil {
 			return factoryBrief{}, nil, fmt.Errorf("canonicalize brief JSON: %w", err)
 		}
-		if err := validateBriefRequiredFields(data); err != nil {
+		if err := validateBriefRequiredFields(data, allowEmptyWorkcells); err != nil {
 			return factoryBrief{}, nil, err
 		}
 		if err := decodeJSONStrict(data, &brief); err != nil {
@@ -617,20 +800,24 @@ func readBrief(path string) (factoryBrief, []byte, error) {
 	if strings.TrimSpace(brief.Objective.Workspace) == "" {
 		return factoryBrief{}, nil, fmt.Errorf("brief objective.workspace is required")
 	}
-	if len(brief.ExpectedWorkcells) == 0 {
+	if !allowEmptyWorkcells && len(brief.ExpectedWorkcells) == 0 {
 		return factoryBrief{}, nil, fmt.Errorf("brief expected_workcells must not be empty")
 	}
 	return brief, canonical, nil
 }
 
-func validateBriefRequiredFields(data []byte) error {
+func validateBriefRequiredFields(data []byte, allowEmptyWorkcells bool) error {
 	var root map[string]json.RawMessage
 	if err := json.Unmarshal(data, &root); err != nil {
 		return fmt.Errorf("parse brief JSON: %w", err)
 	}
 
 	var missing []string
-	requireFields(&missing, root, "", "schema_version", "objective", "constraints", "expected_workcells", "expected_evidence")
+	if allowEmptyWorkcells {
+		requireFields(&missing, root, "", "schema_version", "objective", "constraints", "expected_evidence")
+	} else {
+		requireFields(&missing, root, "", "schema_version", "objective", "constraints", "expected_workcells", "expected_evidence")
+	}
 
 	if raw, ok := root["objective"]; ok {
 		objective, err := decodeObject(raw, "brief objective")
@@ -903,6 +1090,7 @@ func buildPlan(brief factoryBrief, canonicalBrief []byte) factoryPlan {
 			Workspace:  cell.Workspace,
 			Executor:   cell.Executor,
 			Peers:      cell.Peers,
+			MaxRepairs: cell.MaxRepairs,
 			Task:       cell.Task,
 			Status:     "planned",
 			DependsOn:  cloneStrings(cell.DependsOn),
@@ -1384,16 +1572,18 @@ func executePlanRun(
 		}
 
 		packet.Workcells = make([]struct {
-			WorkcellID string   `json:"workcell_id"`
-			Kind       string   `json:"kind"`
-			Workspace  string   `json:"workspace,omitempty"`
-			Executor   string   `json:"executor,omitempty"`
-			Peers      int      `json:"peers,omitempty"`
-			Task       string   `json:"task,omitempty"`
-			Status     string   `json:"status"`
-			DependsOn  []string `json:"depends_on"`
-			AO2Run     string   `json:"ao2_run"`
-			Summary    string   `json:"summary"`
+			WorkcellID       string   `json:"workcell_id"`
+			Kind             string   `json:"kind"`
+			Workspace        string   `json:"workspace,omitempty"`
+			Executor         string   `json:"executor,omitempty"`
+			Peers            int      `json:"peers,omitempty"`
+			MaxRepairs       int      `json:"max_repairs,omitempty"`
+			Task             string   `json:"task,omitempty"`
+			Status           string   `json:"status"`
+			DependsOn        []string `json:"depends_on"`
+			AO2Run           string   `json:"ao2_run"`
+			Summary          string   `json:"summary"`
+			RepairsAttempted int      `json:"repairs_attempted,omitempty"`
 		}, len(plan.Workcells))
 
 		for i, wc := range plan.Workcells {
@@ -1402,11 +1592,13 @@ func executePlanRun(
 			packet.Workcells[i].Workspace = wc.Workspace
 			packet.Workcells[i].Executor = wc.Executor
 			packet.Workcells[i].Peers = wc.Peers
+			packet.Workcells[i].MaxRepairs = wc.MaxRepairs
 			packet.Workcells[i].Task = wc.Task
 			packet.Workcells[i].DependsOn = cloneStrings(wc.DependsOn)
 			if schedulerStates != nil && i < len(schedulerStates) {
 				packet.Workcells[i].Status = schedulerStates[i].Status
 				packet.Workcells[i].Summary = schedulerStates[i].Summary
+				packet.Workcells[i].RepairsAttempted = schedulerStates[i].RepairsAttempted
 				if schedulerStates[i].Status == "passed" {
 					if liveMode {
 						packet.Workcells[i].AO2Run = "live"
@@ -1899,16 +2091,18 @@ func executePlanRun(
 	}
 
 	packet.Workcells = make([]struct {
-		WorkcellID string   `json:"workcell_id"`
-		Kind       string   `json:"kind"`
-		Workspace  string   `json:"workspace,omitempty"`
-		Executor   string   `json:"executor,omitempty"`
-		Peers      int      `json:"peers,omitempty"`
-		Task       string   `json:"task,omitempty"`
-		Status     string   `json:"status"`
-		DependsOn  []string `json:"depends_on"`
-		AO2Run     string   `json:"ao2_run"`
-		Summary    string   `json:"summary"`
+		WorkcellID       string   `json:"workcell_id"`
+		Kind             string   `json:"kind"`
+		Workspace        string   `json:"workspace,omitempty"`
+		Executor         string   `json:"executor,omitempty"`
+		Peers            int      `json:"peers,omitempty"`
+		MaxRepairs       int      `json:"max_repairs,omitempty"`
+		Task             string   `json:"task,omitempty"`
+		Status           string   `json:"status"`
+		DependsOn        []string `json:"depends_on"`
+		AO2Run           string   `json:"ao2_run"`
+		Summary          string   `json:"summary"`
+		RepairsAttempted int      `json:"repairs_attempted,omitempty"`
 	}, len(plan.Workcells))
 
 	for i, wc := range plan.Workcells {
@@ -1917,12 +2111,14 @@ func executePlanRun(
 		packet.Workcells[i].Workspace = wc.Workspace
 		packet.Workcells[i].Executor = wc.Executor
 		packet.Workcells[i].Peers = wc.Peers
+		packet.Workcells[i].MaxRepairs = wc.MaxRepairs
 		packet.Workcells[i].Task = wc.Task
 		packet.Workcells[i].DependsOn = cloneStrings(wc.DependsOn)
 		packet.Workcells[i].AO2Run = "none"
 		if schedulerStates != nil && i < len(schedulerStates) {
 			packet.Workcells[i].Status = schedulerStates[i].Status
 			packet.Workcells[i].Summary = schedulerStates[i].Summary
+			packet.Workcells[i].RepairsAttempted = schedulerStates[i].RepairsAttempted
 			if schedulerStates[i].Status == "passed" {
 				if liveMode {
 					packet.Workcells[i].AO2Run = "live"
@@ -1969,6 +2165,13 @@ func executePlanRun(
 	}
 
 	archiveRunState(plan.PlanID, planPath, gateResultPath, summaryPath, packetData, packet)
+
+	if liveMode && plan.Objective.ReleaseMode && confirmRelease {
+		if err := performReleaseMutation(plan, outPath, evidenceList, stdout, stderr); err != nil {
+			fmt.Fprintf(stderr, "forge run: release mutation failed: %v\n", err)
+			return 1
+		}
+	}
 
 	if outPath != "" {
 		if err := writeFile(outPath, packetData); err != nil {
@@ -2117,17 +2320,19 @@ func runResume(args []string, stdout, stderr io.Writer) int {
 						}
 
 						prevStates[prevWc.WorkcellID] = &workcellRunState{
-							ID:         prevWc.WorkcellID,
-							Status:     "passed",
-							Summary:    prevWc.Summary,
-							Stdout:     stdoutText,
-							Stderr:     stderrText,
-							SpecSHA256: specSHA,
-							Workspace:  prevWc.Workspace,
-							Executor:   prevWc.Executor,
-							Peers:      prevWc.Peers,
-							Task:       prevWc.Task,
-							PeerStates: peerStates,
+							ID:               prevWc.WorkcellID,
+							Status:           "passed",
+							Summary:          prevWc.Summary,
+							Stdout:           stdoutText,
+							Stderr:           stderrText,
+							SpecSHA256:       specSHA,
+							Workspace:        prevWc.Workspace,
+							Executor:         prevWc.Executor,
+							Peers:            prevWc.Peers,
+							MaxRepairs:       prevWc.MaxRepairs,
+							RepairsAttempted: prevWc.RepairsAttempted,
+							Task:             prevWc.Task,
+							PeerStates:       peerStates,
 						}
 					}
 				}
@@ -2207,7 +2412,7 @@ func runOnce(args []string, stdout, stderr io.Writer) int {
 	}
 
 	// 1. Generate plan from brief
-	brief, canonical, err := readBrief(briefPath)
+	brief, canonical, err := readBrief(briefPath, false)
 	if err != nil {
 		fmt.Fprintf(stderr, "forge once: %v\n", err)
 		return 1
@@ -2686,6 +2891,13 @@ func parseMarkdownBrief(data []byte) (factoryBrief, error) {
 						}
 					}
 
+					wcMaxRepairs := 0
+					if maxRepairsMatches := regexp.MustCompile(`\b(?:max_repairs|max-repairs):\s*([0-9]+)`).FindStringSubmatch(remainder); len(maxRepairsMatches) > 1 {
+						if r, err := strconv.Atoi(maxRepairsMatches[1]); err == nil {
+							wcMaxRepairs = r
+						}
+					}
+
 					wcWorkspace := ""
 					if wsMatches := regexp.MustCompile(`\bworkspace:\s*([^\s\(\)]+)`).FindStringSubmatch(remainder); len(wsMatches) > 1 {
 						wcWorkspace = wsMatches[1]
@@ -2707,6 +2919,7 @@ func parseMarkdownBrief(data []byte) (factoryBrief, error) {
 						Kind:       wcKind,
 						Executor:   wcExecutor,
 						Peers:      wcPeers,
+						MaxRepairs: wcMaxRepairs,
 						Workspace:  wcWorkspace,
 						Task:       wcTask,
 						DependsOn:  deps,
@@ -2815,6 +3028,7 @@ type workcellRunState struct {
 	Workspace  string
 	Executor   string
 	Peers      int
+	MaxRepairs int
 	Task       string
 	DependsOn  []string
 	Status     string // "pending", "running", "passed", "failed", "skipped"
@@ -2824,6 +3038,7 @@ type workcellRunState struct {
 	SpecSHA256 string
 	Rubric     *workcellRubric
 	PeerStates []*peerRunState
+	RepairsAttempted int
 }
 
 func (w *workcellRunState) GetStatus() string {
@@ -2916,6 +3131,7 @@ func runWorkcellsConcurrent(
 	for _, wc := range plan.Workcells {
 		status := "pending"
 		var existingSummary, existingStdout, existingStderr, existingSpecSHA256 string
+		var existingRepairsAttempted int
 		if prevStates != nil {
 			if prev, ok := prevStates[wc.WorkcellID]; ok {
 				if prev.Status == "passed" {
@@ -2924,6 +3140,7 @@ func runWorkcellsConcurrent(
 					existingStdout = prev.Stdout
 					existingStderr = prev.Stderr
 					existingSpecSHA256 = prev.SpecSHA256
+					existingRepairsAttempted = prev.RepairsAttempted
 				}
 			}
 		}
@@ -2934,21 +3151,23 @@ func runWorkcellsConcurrent(
 			}
 		}
 		states[wc.WorkcellID] = &workcellRunState{
-			stateMu:    &sync.Mutex{},
-			ID:         wc.WorkcellID,
-			Kind:       wc.Kind,
-			Workspace:  wc.Workspace,
-			Executor:   wc.Executor,
-			Peers:      wc.Peers,
-			Task:       wc.Task,
-			DependsOn:  wc.DependsOn,
-			Status:     status,
-			Summary:    existingSummary,
-			Stdout:     existingStdout,
-			Stderr:     existingStderr,
-			SpecSHA256: existingSpecSHA256,
-			Rubric:     wc.Rubric,
-			PeerStates: peerStates,
+			stateMu:          &sync.Mutex{},
+			ID:               wc.WorkcellID,
+			Kind:             wc.Kind,
+			Workspace:        wc.Workspace,
+			Executor:         wc.Executor,
+			Peers:            wc.Peers,
+			MaxRepairs:       wc.MaxRepairs,
+			RepairsAttempted: existingRepairsAttempted,
+			Task:             wc.Task,
+			DependsOn:        wc.DependsOn,
+			Status:           status,
+			Summary:          existingSummary,
+			Stdout:           existingStdout,
+			Stderr:           existingStderr,
+			SpecSHA256:       existingSpecSHA256,
+			Rubric:           wc.Rubric,
+			PeerStates:       peerStates,
 		}
 	}
 
@@ -3230,441 +3449,243 @@ func executeSingleWorkcell(ctx context.Context, plan factoryPlan, wcState *workc
 		repoPath = wcState.Workspace
 	}
 
-	if wcState.Executor == "agy-swarms" {
-		cmdArgs, err := resolveAgySwarmsCommand()
-		if err != nil {
-			return fmt.Errorf("failed to resolve agy-swarms command: %v", err)
-		}
+	for {
+		wcState.ResetOutputs()
 
-		taskPrompt := wcState.Task
-		if taskPrompt == "" {
-			taskPrompt = plan.Objective.Text
-		}
-		taskSpec := map[string]interface{}{
-			"task": taskPrompt,
-			"model_pins": map[string]string{
-				"default": "gemini-3.5-flash",
-			},
-		}
-		taskData, err := json.MarshalIndent(taskSpec, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal agy-swarms task for %s: %v", wcState.ID, err)
-		}
-
-		specSum := sha256.Sum256(taskData)
-		wcState.SpecSHA256 = hex.EncodeToString(specSum[:])
-
-		if wcState.Peers > 1 {
-			// CONCURRENT PEER EXECUTION
-			if len(wcState.PeerStates) == 0 {
-				wcState.PeerStates = make([]*peerRunState, wcState.Peers)
-				for i := 0; i < wcState.Peers; i++ {
-					wcState.PeerStates[i] = &peerRunState{
-						stateMu: &sync.Mutex{},
-						Index:   i,
-						Status:  "pending",
-					}
-				}
-			}
-
-			var wg sync.WaitGroup
-			peerErrs := make([]error, wcState.Peers)
-
-			for idx := 0; idx < wcState.Peers; idx++ {
-				wg.Add(1)
-				go func(i int) {
-					defer wg.Done()
-
-					pState := wcState.PeerStates[i]
-					pState.stateMu.Lock()
-					pState.Status = "running"
-					pState.stateMu.Unlock()
-
-					tempTask, err := os.CreateTemp("", fmt.Sprintf("agy-task-%s-peer-%d-*.json", wcState.ID, i))
-					if err != nil {
-						peerErrs[i] = fmt.Errorf("failed to create temp task: %w", err)
-						pState.stateMu.Lock()
-						pState.Status = "failed"
-						pState.stateMu.Unlock()
-						return
-					}
-					defer os.Remove(tempTask.Name())
-
-					if _, err := tempTask.Write(taskData); err != nil {
-						tempTask.Close()
-						peerErrs[i] = fmt.Errorf("failed to write temp task: %w", err)
-						pState.stateMu.Lock()
-						pState.Status = "failed"
-						pState.stateMu.Unlock()
-						return
-					}
-					tempTask.Close()
-
-					tempReport, err := os.CreateTemp("", fmt.Sprintf("agy-report-%s-peer-%d-*.json", wcState.ID, i))
-					if err != nil {
-						peerErrs[i] = fmt.Errorf("failed to create temp report: %w", err)
-						pState.stateMu.Lock()
-						pState.Status = "failed"
-						pState.stateMu.Unlock()
-						return
-					}
-					tempReport.Close()
-					defer os.Remove(tempReport.Name())
-
-					args := append(cmdArgs[1:], "run", "--task", tempTask.Name(), "--report", tempReport.Name(), "--allow-local-commands")
-					if liveMode {
-						args = append(args, "--reviewer", "agy", "--closer", "agy")
-					} else {
-						args = append(args, "--dry-run")
-					}
-
-					cmdName := cmdArgs[0]
-					cmd := exec.CommandContext(ctx, cmdName, args...)
-					cmd.Dir = repoPath
-					cmd.Env = append(os.Environ(), fmt.Sprintf("AO_FORGE_PEER_INDEX=%d", i))
-
-					cmd.Stdout = &realTimeWriter{appendFunc: func(data string) {
-						pState.stateMu.Lock()
-						pState.Stdout += data
-						pState.stateMu.Unlock()
-					}}
-					cmd.Stderr = &realTimeWriter{appendFunc: func(data string) {
-						pState.stateMu.Lock()
-						pState.Stderr += data
-						pState.stateMu.Unlock()
-					}}
-
-					runErr := cmd.Run()
-
-					if reportData, err := os.ReadFile(tempReport.Name()); err == nil {
-						var report map[string]interface{}
-						if err := json.Unmarshal(reportData, &report); err == nil {
-							_ = os.WriteFile(fmt.Sprintf("agy-swarms-report-%s-peer-%d.json", wcState.ID, i), reportData, 0644)
-							statusStr, _ := report["status"].(string)
-							spentTokens := 0.0
-							if st, ok := report["spent_tokens"].(float64); ok {
-								spentTokens = st
-							}
-							spentUSD := 0.0
-							if su, ok := report["spent_usd"].(float64); ok {
-								spentUSD = su
-							}
-
-							pState.stateMu.Lock()
-							pState.Tokens = spentTokens
-							pState.Cost = spentUSD
-							if statusStr == "succeeded" {
-								pState.Summary = fmt.Sprintf("Swarm execution succeeded (Tokens: %.0f, Cost: $%.2f)", spentTokens, spentUSD)
-							} else {
-								pState.Summary = fmt.Sprintf("Swarm execution failed (Tokens: %.0f, Cost: $%.2f)", spentTokens, spentUSD)
-							}
-							pState.stateMu.Unlock()
-						}
-					}
-
-					pState.stateMu.Lock()
-					if runErr != nil {
-						peerErrs[i] = fmt.Errorf("agy-swarms execution failed for peer %d: %v", i, runErr)
-						pState.Status = "failed"
-					} else {
-						pState.Status = "passed"
-					}
-					pState.stateMu.Unlock()
-				}(idx)
-			}
-
-			wg.Wait()
-
-			// ADVERSARIAL EVALUATION
-			type candidateGrade struct {
-				Index    int
-				IsValid  bool
-				Coverage float64
-			}
-			grades := make([]candidateGrade, wcState.Peers)
-			for i := 0; i < wcState.Peers; i++ {
-				pState := wcState.PeerStates[i]
-				pState.stateMu.Lock()
-				pStdout := pState.Stdout
-				pStderr := pState.Stderr
-				pStatus := pState.Status
-				pState.stateMu.Unlock()
-
-				grades[i] = candidateGrade{
-					Index:   i,
-					IsValid: true,
-				}
-
-				if peerErrs[i] != nil || pStatus != "passed" {
-					grades[i].IsValid = false
-					continue
-				}
-
-				combined := pStdout + "\n" + pStderr
-
-				// Verify rubric patterns
-				if wcState.Rubric != nil {
-					for _, pattern := range wcState.Rubric.RequiredPatterns {
-						if !strings.Contains(combined, pattern) {
-							grades[i].IsValid = false
-							break
-						}
-					}
-					if !grades[i].IsValid {
-						continue
-					}
-
-					for _, pattern := range wcState.Rubric.ForbiddenPatterns {
-						if strings.Contains(combined, pattern) {
-							grades[i].IsValid = false
-							break
-						}
-					}
-					if !grades[i].IsValid {
-						continue
-					}
-				}
-
-				// Parse coverage
-				var parsedCoverage *float64
-				prefixRegex := regexp.MustCompile(`(?i)(?:coverage\s*:\s*|coverage\s+is\s+|coverage\s+of\s+)([0-9.]+)\s*%`)
-				matches := prefixRegex.FindStringSubmatch(combined)
-				if len(matches) >= 2 {
-					val, err := strconv.ParseFloat(matches[1], 64)
-					if err == nil {
-						parsedCoverage = &val
-					}
-				}
-				if parsedCoverage == nil {
-					fallbackRegex := regexp.MustCompile(`([0-9.]+)\s*%`)
-					lines := strings.Split(combined, "\n")
-					for _, line := range lines {
-						if strings.Contains(strings.ToLower(line), "coverage") {
-							m := fallbackRegex.FindStringSubmatch(line)
-							if len(m) >= 2 {
-								val, err := strconv.ParseFloat(m[1], 64)
-								if err == nil {
-									parsedCoverage = &val
-									break
-								}
-							}
-						}
-					}
-				}
-
-				// Check min coverage
-				if wcState.Rubric != nil && wcState.Rubric.MinCoverage != nil {
-					if parsedCoverage == nil {
-						grades[i].IsValid = false
-						continue
-					}
-					if *parsedCoverage < *wcState.Rubric.MinCoverage {
-						grades[i].IsValid = false
-						continue
-					}
-				}
-
-				if parsedCoverage != nil {
-					grades[i].Coverage = *parsedCoverage
-				}
-			}
-
-			// Select winner
-			winnerIdx := -1
-			maxCoverage := -1.0
-			for _, g := range grades {
-				if !g.IsValid {
-					continue
-				}
-				if winnerIdx == -1 || g.Coverage > maxCoverage {
-					winnerIdx = g.Index
-					maxCoverage = g.Coverage
-				}
-			}
-
-			if winnerIdx == -1 {
-				var errMsgs []string
-				for i, err := range peerErrs {
-					if err != nil {
-						errMsgs = append(errMsgs, fmt.Sprintf("peer %d: %v", i, err))
-					} else {
-						errMsgs = append(errMsgs, fmt.Sprintf("peer %d: rubric failed", i))
-					}
-				}
-				return fmt.Errorf("all %d peer candidates failed: %s", wcState.Peers, strings.Join(errMsgs, "; "))
-			}
-
-			// Promote winner to main workcell result
-			winnerState := wcState.PeerStates[winnerIdx]
-			winnerState.stateMu.Lock()
-			wcState.Stdout = winnerState.Stdout
-			wcState.Stderr = winnerState.Stderr
-			winnerSummary := winnerState.Summary
-			winnerState.stateMu.Unlock()
-
-			wcState.Summary = fmt.Sprintf("%s (Winner: Peer %d)", winnerSummary, winnerIdx)
-
-			winnerReportPath := fmt.Sprintf("agy-swarms-report-%s-peer-%d.json", wcState.ID, winnerIdx)
-			if reportData, err := os.ReadFile(winnerReportPath); err == nil {
-				_ = os.WriteFile(fmt.Sprintf("agy-swarms-report-%s.json", wcState.ID), reportData, 0644)
-			}
+		var err error
+		if wcState.Executor == "agy-swarms" {
+			err = runAgySwarmsWorkcell(ctx, plan, wcState, repoPath, liveMode)
 		} else {
-			// SINGLE EXECUTION
-			tempTask, err := os.CreateTemp("", "agy-task-"+wcState.ID+"-*.json")
-			if err != nil {
-				return fmt.Errorf("failed to create temp task for %s: %v", wcState.ID, err)
+			err = runAo2Workcell(ctx, plan, wcState, repoPath, ao2Path, liveMode)
+		}
+
+		if err == nil {
+			err = checkRubric(wcState)
+		}
+
+		if err == nil {
+			return nil
+		}
+
+		// Self-healing / repair check
+		if wcState.MaxRepairs > 0 && wcState.RepairsAttempted < wcState.MaxRepairs {
+			wcState.RepairsAttempted++
+			repairErr := runRepairSwarm(ctx, plan, wcState, repoPath, err, liveMode)
+			if repairErr != nil {
+				return fmt.Errorf("repair attempt %d failed: %v; original error: %w", wcState.RepairsAttempted, repairErr, err)
 			}
-			defer os.Remove(tempTask.Name())
-
-			if _, err := tempTask.Write(taskData); err != nil {
-				tempTask.Close()
-				return fmt.Errorf("failed to write temp task for %s: %v", wcState.ID, err)
-			}
-			tempTask.Close()
-
-			tempReport, err := os.CreateTemp("", "agy-report-"+wcState.ID+"-*.json")
-			if err != nil {
-				return fmt.Errorf("failed to create temp report for %s: %v", wcState.ID, err)
-			}
-			tempReport.Close()
-			defer os.Remove(tempReport.Name())
-
-			args := append(cmdArgs[1:], "run", "--task", tempTask.Name(), "--report", tempReport.Name(), "--allow-local-commands")
-			if liveMode {
-				args = append(args, "--reviewer", "agy", "--closer", "agy")
-			} else {
-				args = append(args, "--dry-run")
-			}
-
-			cmdName := cmdArgs[0]
-			cmd := exec.CommandContext(ctx, cmdName, args...)
-			cmd.Dir = repoPath
-
-			cmd.Stdout = &realTimeWriter{appendFunc: wcState.AppendStdout}
-			cmd.Stderr = &realTimeWriter{appendFunc: wcState.AppendStderr}
-
-			runErr := cmd.Run()
-
-			if reportData, err := os.ReadFile(tempReport.Name()); err == nil {
-				var report map[string]interface{}
-				if err := json.Unmarshal(reportData, &report); err == nil {
-					_ = os.WriteFile(fmt.Sprintf("agy-swarms-report-%s.json", wcState.ID), reportData, 0644)
-					statusStr, _ := report["status"].(string)
-					spentTokens := 0.0
-					if st, ok := report["spent_tokens"].(float64); ok {
-						spentTokens = st
-					}
-					spentUSD := 0.0
-					if su, ok := report["spent_usd"].(float64); ok {
-						spentUSD = su
-					}
-					if statusStr == "succeeded" {
-						wcState.SetSummary(fmt.Sprintf("Swarm execution succeeded (Tokens: %.0f, Cost: $%.2f)", spentTokens, spentUSD))
-					} else {
-						wcState.SetSummary(fmt.Sprintf("Swarm execution failed (Tokens: %.0f, Cost: $%.2f)", spentTokens, spentUSD))
-					}
-				}
-			}
-
-			if runErr != nil {
-				return fmt.Errorf("agy-swarms execution failed for %s: %v (stderr: %q)", wcState.ID, runErr, wcState.GetStderr())
-			}
-		}
-	} else {
-		specTask := runTask{
-			ID:        wcState.ID,
-			Kind:      mapWorkcellKind(wcState.Kind),
-			Deps:      nil,
-			Rationale: "ao-forge workcell " + wcState.ID,
+			continue
 		}
 
-		runSpec := ao2RunSpec{
-			APIVersion: "ao2.run/v1",
-			Kind:       "Run",
-			Metadata: runMetadata{
-				Name:        plan.PlanID,
-				Description: plan.Objective.Text,
-			},
-			Spec: runSpecDetails{
-				Source: runSource{
-					SchemaVersion: "ao2.sdd-plan.v1",
-					PlanID:        plan.PlanID,
-				},
-				PlanKind: "build",
-				Goal:     plan.Objective.Text,
-				Target: runTarget{
-					RepoPath: repoPath,
-				},
-				TrustBoundary: trustBoundary{
-					ControlPlaneRole:   "read_only_observer",
-					MutatesAoArtifacts: false,
-				},
-				Tasks: []runTask{specTask},
-			},
-		}
+		return err
+	}
+}
 
-		specData, err := json.MarshalIndent(runSpec, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal ao2 run spec for %s: %v", wcState.ID, err)
-		}
+func (w *workcellRunState) ResetOutputs() {
+	if w.stateMu != nil {
+		w.stateMu.Lock()
+		defer w.stateMu.Unlock()
+	}
+	w.Stdout = ""
+	w.Stderr = ""
+	w.Summary = ""
+	w.SpecSHA256 = ""
+}
 
-		specSum := sha256.Sum256(specData)
-		wcState.SpecSHA256 = hex.EncodeToString(specSum[:])
-
-		tempSpec, err := os.CreateTemp("", "ao2-runspec-"+wcState.ID+"-*.json")
-		if err != nil {
-			return fmt.Errorf("failed to create temp spec for %s: %v", wcState.ID, err)
-		}
-		defer os.Remove(tempSpec.Name())
-
-		if _, err := tempSpec.Write(specData); err != nil {
-			tempSpec.Close()
-			return fmt.Errorf("failed to write temp spec for %s: %v", wcState.ID, err)
-		}
-		tempSpec.Close()
-
-		var cmd *exec.Cmd
-		if liveMode {
-			cmd = exec.CommandContext(ctx, ao2Path, "run", "--spec", tempSpec.Name())
-		} else {
-			cmd = exec.CommandContext(ctx, ao2Path, "run", "--dry-run", "--spec", tempSpec.Name())
-		}
-		cmd.Stdout = &realTimeWriter{appendFunc: wcState.AppendStdout}
-		cmd.Stderr = &realTimeWriter{appendFunc: wcState.AppendStderr}
-
-		runErr := cmd.Run()
-
-		if runErr != nil {
-			return fmt.Errorf("ao2 run failed for %s: %v (stderr: %q)", wcState.ID, runErr, wcState.GetStderr())
-		}
-
-		if liveMode {
-			if !strings.Contains(wcState.GetStdout(), "status=governed_run_started") &&
-				!strings.Contains(wcState.GetStdout(), "status=governed_provider_run_started") &&
-				!strings.Contains(wcState.GetStdout(), "status=Accepted") &&
-				!strings.Contains(wcState.GetStdout(), "status=accepted") {
-				return fmt.Errorf("ao2 run output for %s did not confirm acceptance: %q (stderr: %q)", wcState.ID, wcState.GetStdout(), wcState.GetStderr())
-			}
-		} else {
-			if !strings.Contains(wcState.GetStdout(), "status=dry_run_accepted") {
-				return fmt.Errorf("ao2 run output for %s did not confirm acceptance: %q (stderr: %q)", wcState.ID, wcState.GetStdout(), wcState.GetStderr())
-			}
-		}
+func runAgySwarmsWorkcell(ctx context.Context, plan factoryPlan, wcState *workcellRunState, repoPath string, liveMode bool) error {
+	cmdArgs, err := resolveAgySwarmsCommand()
+	if err != nil {
+		return fmt.Errorf("failed to resolve agy-swarms command: %v", err)
 	}
 
-	if wcState.Rubric != nil {
-		combined := wcState.GetStdout() + "\n" + wcState.GetStderr()
-		for _, pattern := range wcState.Rubric.RequiredPatterns {
-			if !strings.Contains(combined, pattern) {
-				return fmt.Errorf("rubric validation failed for %s: required pattern %q not found in output", wcState.ID, pattern)
+	taskPrompt := wcState.Task
+	if taskPrompt == "" {
+		taskPrompt = plan.Objective.Text
+	}
+	taskSpec := map[string]interface{}{
+		"task": taskPrompt,
+		"model_pins": map[string]string{
+			"default": "gemini-3.5-flash",
+		},
+	}
+	taskData, err := json.MarshalIndent(taskSpec, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal agy-swarms task for %s: %v", wcState.ID, err)
+	}
+
+	specSum := sha256.Sum256(taskData)
+	wcState.SpecSHA256 = hex.EncodeToString(specSum[:])
+
+	if wcState.Peers > 1 {
+		// CONCURRENT PEER EXECUTION
+		wcState.PeerStates = make([]*peerRunState, wcState.Peers)
+		for i := 0; i < wcState.Peers; i++ {
+			wcState.PeerStates[i] = &peerRunState{
+				stateMu: &sync.Mutex{},
+				Index:   i,
+				Status:  "pending",
 			}
 		}
-		for _, pattern := range wcState.Rubric.ForbiddenPatterns {
-			if strings.Contains(combined, pattern) {
-				return fmt.Errorf("rubric validation failed for %s: forbidden pattern %q found in output", wcState.ID, pattern)
-			}
+
+		var wg sync.WaitGroup
+		peerErrs := make([]error, wcState.Peers)
+
+		for idx := 0; idx < wcState.Peers; idx++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+
+				pState := wcState.PeerStates[i]
+				pState.stateMu.Lock()
+				pState.Status = "running"
+				pState.stateMu.Unlock()
+
+				tempTask, err := os.CreateTemp("", fmt.Sprintf("agy-task-%s-peer-%d-*.json", wcState.ID, i))
+				if err != nil {
+					peerErrs[i] = fmt.Errorf("failed to create temp task: %w", err)
+					pState.stateMu.Lock()
+					pState.Status = "failed"
+					pState.stateMu.Unlock()
+					return
+				}
+				defer os.Remove(tempTask.Name())
+
+				if _, err := tempTask.Write(taskData); err != nil {
+					tempTask.Close()
+					peerErrs[i] = fmt.Errorf("failed to write temp task: %w", err)
+					pState.stateMu.Lock()
+					pState.Status = "failed"
+					pState.stateMu.Unlock()
+					return
+				}
+				tempTask.Close()
+
+				tempReport, err := os.CreateTemp("", fmt.Sprintf("agy-report-%s-peer-%d-*.json", wcState.ID, i))
+				if err != nil {
+					peerErrs[i] = fmt.Errorf("failed to create temp report: %w", err)
+					pState.stateMu.Lock()
+					pState.Status = "failed"
+					pState.stateMu.Unlock()
+					return
+				}
+				tempReport.Close()
+				defer os.Remove(tempReport.Name())
+
+				args := append(cmdArgs[1:], "run", "--task", tempTask.Name(), "--report", tempReport.Name(), "--allow-local-commands")
+				if liveMode {
+					args = append(args, "--reviewer", "agy", "--closer", "agy")
+				} else {
+					args = append(args, "--dry-run")
+				}
+
+				cmdName := cmdArgs[0]
+				cmd := exec.CommandContext(ctx, cmdName, args...)
+				cmd.Dir = repoPath
+				cmd.Env = append(os.Environ(), fmt.Sprintf("AO_FORGE_PEER_INDEX=%d", i))
+
+				cmd.Stdout = &realTimeWriter{appendFunc: func(data string) {
+					pState.stateMu.Lock()
+					pState.Stdout += data
+					pState.stateMu.Unlock()
+				}}
+				cmd.Stderr = &realTimeWriter{appendFunc: func(data string) {
+					pState.stateMu.Lock()
+					pState.Stderr += data
+					pState.stateMu.Unlock()
+				}}
+
+				runErr := cmd.Run()
+
+				if reportData, err := os.ReadFile(tempReport.Name()); err == nil {
+					var report map[string]interface{}
+					if err := json.Unmarshal(reportData, &report); err == nil {
+						_ = os.WriteFile(fmt.Sprintf("agy-swarms-report-%s-peer-%d.json", wcState.ID, i), reportData, 0644)
+						statusStr, _ := report["status"].(string)
+						spentTokens := 0.0
+						if st, ok := report["spent_tokens"].(float64); ok {
+							spentTokens = st
+						}
+						spentUSD := 0.0
+						if su, ok := report["spent_usd"].(float64); ok {
+							spentUSD = su
+						}
+
+						pState.stateMu.Lock()
+						pState.Tokens = spentTokens
+						pState.Cost = spentUSD
+						if statusStr == "succeeded" {
+							pState.Summary = fmt.Sprintf("Swarm execution succeeded (Tokens: %.0f, Cost: $%.2f)", spentTokens, spentUSD)
+						} else {
+							pState.Summary = fmt.Sprintf("Swarm execution failed (Tokens: %.0f, Cost: $%.2f)", spentTokens, spentUSD)
+						}
+						pState.stateMu.Unlock()
+					}
+				}
+
+				pState.stateMu.Lock()
+				if runErr != nil {
+					peerErrs[i] = fmt.Errorf("agy-swarms execution failed for peer %d: %v", i, runErr)
+					pState.Status = "failed"
+				} else {
+					pState.Status = "passed"
+				}
+				pState.stateMu.Unlock()
+			}(idx)
 		}
-		if wcState.Rubric.MinCoverage != nil {
+
+		wg.Wait()
+
+		// ADVERSARIAL EVALUATION
+		type candidateGrade struct {
+			Index    int
+			IsValid  bool
+			Coverage float64
+		}
+		grades := make([]candidateGrade, wcState.Peers)
+		for i := 0; i < wcState.Peers; i++ {
+			pState := wcState.PeerStates[i]
+			pState.stateMu.Lock()
+			pStdout := pState.Stdout
+			pStderr := pState.Stderr
+			pStatus := pState.Status
+			pState.stateMu.Unlock()
+
+			grades[i] = candidateGrade{
+				Index:   i,
+				IsValid: true,
+			}
+
+			if peerErrs[i] != nil || pStatus != "passed" {
+				grades[i].IsValid = false
+				continue
+			}
+
+			combined := pStdout + "\n" + pStderr
+
+			// Verify rubric patterns
+			if wcState.Rubric != nil {
+				for _, pattern := range wcState.Rubric.RequiredPatterns {
+					if !strings.Contains(combined, pattern) {
+						grades[i].IsValid = false
+						break
+					}
+				}
+				if !grades[i].IsValid {
+					continue
+				}
+
+				for _, pattern := range wcState.Rubric.ForbiddenPatterns {
+					if strings.Contains(combined, pattern) {
+						grades[i].IsValid = false
+						break
+					}
+				}
+				if !grades[i].IsValid {
+					continue
+				}
+			}
+
+			// Parse coverage
 			var parsedCoverage *float64
 			prefixRegex := regexp.MustCompile(`(?i)(?:coverage\s*:\s*|coverage\s+is\s+|coverage\s+of\s+)([0-9.]+)\s*%`)
 			matches := prefixRegex.FindStringSubmatch(combined)
@@ -3690,13 +3711,337 @@ func executeSingleWorkcell(ctx context.Context, plan factoryPlan, wcState *workc
 					}
 				}
 			}
-			if parsedCoverage == nil {
-				return fmt.Errorf("rubric validation failed for %s: coverage metric not found in output", wcState.ID)
+
+			// Check min coverage
+			if wcState.Rubric != nil && wcState.Rubric.MinCoverage != nil {
+				if parsedCoverage == nil {
+					grades[i].IsValid = false
+					continue
+				}
+				if *parsedCoverage < *wcState.Rubric.MinCoverage {
+					grades[i].IsValid = false
+					continue
+				}
 			}
-			if *parsedCoverage < *wcState.Rubric.MinCoverage {
-				return fmt.Errorf("rubric validation failed for %s: coverage %0.1f%% is below minimum %0.1f%%", wcState.ID, *parsedCoverage, *wcState.Rubric.MinCoverage)
+
+			if parsedCoverage != nil {
+				grades[i].Coverage = *parsedCoverage
 			}
 		}
+
+		// Select winner
+		winnerIdx := -1
+		maxCoverage := -1.0
+		for _, g := range grades {
+			if !g.IsValid {
+				continue
+			}
+			if winnerIdx == -1 || g.Coverage > maxCoverage {
+				winnerIdx = g.Index
+				maxCoverage = g.Coverage
+			}
+		}
+
+		if winnerIdx == -1 {
+			var errMsgs []string
+			for i, err := range peerErrs {
+				if err != nil {
+					errMsgs = append(errMsgs, fmt.Sprintf("peer %d: %v", i, err))
+				} else {
+					errMsgs = append(errMsgs, fmt.Sprintf("peer %d: rubric failed", i))
+				}
+			}
+			return fmt.Errorf("all %d peer candidates failed: %s", wcState.Peers, strings.Join(errMsgs, "; "))
+		}
+
+		// Promote winner to main workcell result
+		winnerState := wcState.PeerStates[winnerIdx]
+		winnerState.stateMu.Lock()
+		wcState.Stdout = winnerState.Stdout
+		wcState.Stderr = winnerState.Stderr
+		winnerSummary := winnerState.Summary
+		winnerState.stateMu.Unlock()
+
+		wcState.Summary = fmt.Sprintf("%s (Winner: Peer %d)", winnerSummary, winnerIdx)
+
+		winnerReportPath := fmt.Sprintf("agy-swarms-report-%s-peer-%d.json", wcState.ID, winnerIdx)
+		if reportData, err := os.ReadFile(winnerReportPath); err == nil {
+			_ = os.WriteFile(fmt.Sprintf("agy-swarms-report-%s.json", wcState.ID), reportData, 0644)
+		}
+	} else {
+		// SINGLE EXECUTION
+		tempTask, err := os.CreateTemp("", "agy-task-"+wcState.ID+"-*.json")
+		if err != nil {
+			return fmt.Errorf("failed to create temp task for %s: %v", wcState.ID, err)
+		}
+		defer os.Remove(tempTask.Name())
+
+		if _, err := tempTask.Write(taskData); err != nil {
+			tempTask.Close()
+			return fmt.Errorf("failed to write temp task for %s: %v", wcState.ID, err)
+		}
+		tempTask.Close()
+
+		tempReport, err := os.CreateTemp("", "agy-report-"+wcState.ID+"-*.json")
+		if err != nil {
+			return fmt.Errorf("failed to create temp report for %s: %v", wcState.ID, err)
+		}
+		tempReport.Close()
+		defer os.Remove(tempReport.Name())
+
+		args := append(cmdArgs[1:], "run", "--task", tempTask.Name(), "--report", tempReport.Name(), "--allow-local-commands")
+		if liveMode {
+			args = append(args, "--reviewer", "agy", "--closer", "agy")
+		} else {
+			args = append(args, "--dry-run")
+		}
+
+		cmdName := cmdArgs[0]
+		cmd := exec.CommandContext(ctx, cmdName, args...)
+		cmd.Dir = repoPath
+
+		cmd.Stdout = &realTimeWriter{appendFunc: wcState.AppendStdout}
+		cmd.Stderr = &realTimeWriter{appendFunc: wcState.AppendStderr}
+
+		runErr := cmd.Run()
+
+		if reportData, err := os.ReadFile(tempReport.Name()); err == nil {
+			var report map[string]interface{}
+			if err := json.Unmarshal(reportData, &report); err == nil {
+				_ = os.WriteFile(fmt.Sprintf("agy-swarms-report-%s.json", wcState.ID), reportData, 0644)
+				statusStr, _ := report["status"].(string)
+				spentTokens := 0.0
+				if st, ok := report["spent_tokens"].(float64); ok {
+					spentTokens = st
+				}
+				spentUSD := 0.0
+				if su, ok := report["spent_usd"].(float64); ok {
+					spentUSD = su
+				}
+				if statusStr == "succeeded" {
+					wcState.SetSummary(fmt.Sprintf("Swarm execution succeeded (Tokens: %.0f, Cost: $%.2f)", spentTokens, spentUSD))
+				} else {
+					wcState.SetSummary(fmt.Sprintf("Swarm execution failed (Tokens: %.0f, Cost: $%.2f)", spentTokens, spentUSD))
+				}
+			}
+		}
+
+		if runErr != nil {
+			return fmt.Errorf("agy-swarms execution failed for %s: %v (stderr: %q)", wcState.ID, runErr, wcState.GetStderr())
+		}
+	}
+	return nil
+}
+
+func runAo2Workcell(ctx context.Context, plan factoryPlan, wcState *workcellRunState, repoPath, ao2Path string, liveMode bool) error {
+	specTask := runTask{
+		ID:        wcState.ID,
+		Kind:      mapWorkcellKind(wcState.Kind),
+		Deps:      nil,
+		Rationale: "ao-forge workcell " + wcState.ID,
+	}
+
+	runSpec := ao2RunSpec{
+		APIVersion: "ao2.run/v1",
+		Kind:       "Run",
+		Metadata: runMetadata{
+			Name:        plan.PlanID,
+			Description: plan.Objective.Text,
+		},
+		Spec: runSpecDetails{
+			Source: runSource{
+				SchemaVersion: "ao2.sdd-plan.v1",
+				PlanID:        plan.PlanID,
+			},
+			PlanKind: "build",
+			Goal:     plan.Objective.Text,
+			Target: runTarget{
+				RepoPath: repoPath,
+			},
+			TrustBoundary: trustBoundary{
+				ControlPlaneRole:   "read_only_observer",
+				MutatesAoArtifacts: false,
+			},
+			Tasks: []runTask{specTask},
+		},
+	}
+
+	specData, err := json.MarshalIndent(runSpec, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal ao2 run spec for %s: %v", wcState.ID, err)
+	}
+
+	specSum := sha256.Sum256(specData)
+	wcState.SpecSHA256 = hex.EncodeToString(specSum[:])
+
+	tempSpec, err := os.CreateTemp("", "ao2-runspec-"+wcState.ID+"-*.json")
+	if err != nil {
+		return fmt.Errorf("failed to create temp spec for %s: %v", wcState.ID, err)
+	}
+	defer os.Remove(tempSpec.Name())
+
+	if _, err := tempSpec.Write(specData); err != nil {
+		tempSpec.Close()
+		return fmt.Errorf("failed to write temp spec for %s: %v", wcState.ID, err)
+	}
+	tempSpec.Close()
+
+	var cmd *exec.Cmd
+	if liveMode {
+		cmd = exec.CommandContext(ctx, ao2Path, "run", "--spec", tempSpec.Name())
+	} else {
+		cmd = exec.CommandContext(ctx, ao2Path, "run", "--dry-run", "--spec", tempSpec.Name())
+	}
+	cmd.Stdout = &realTimeWriter{appendFunc: wcState.AppendStdout}
+	cmd.Stderr = &realTimeWriter{appendFunc: wcState.AppendStderr}
+
+	runErr := cmd.Run()
+
+	if runErr != nil {
+		return fmt.Errorf("ao2 run failed for %s: %v (stderr: %q)", wcState.ID, runErr, wcState.GetStderr())
+	}
+
+	if liveMode {
+		if !strings.Contains(wcState.GetStdout(), "status=governed_run_started") &&
+			!strings.Contains(wcState.GetStdout(), "status=governed_provider_run_started") &&
+			!strings.Contains(wcState.GetStdout(), "status=Accepted") &&
+			!strings.Contains(wcState.GetStdout(), "status=accepted") {
+			return fmt.Errorf("ao2 run output for %s did not confirm acceptance: %q (stderr: %q)", wcState.ID, wcState.GetStdout(), wcState.GetStderr())
+		}
+	} else {
+		if !strings.Contains(wcState.GetStdout(), "status=dry_run_accepted") {
+			return fmt.Errorf("ao2 run output for %s did not confirm acceptance: %q (stderr: %q)", wcState.ID, wcState.GetStdout(), wcState.GetStderr())
+		}
+	}
+
+	return nil
+}
+
+func checkRubric(wcState *workcellRunState) error {
+	if wcState.Rubric == nil {
+		return nil
+	}
+	combined := wcState.GetStdout() + "\n" + wcState.GetStderr()
+	for _, pattern := range wcState.Rubric.RequiredPatterns {
+		if !strings.Contains(combined, pattern) {
+			return fmt.Errorf("rubric validation failed for %s: required pattern %q not found in output", wcState.ID, pattern)
+		}
+	}
+	for _, pattern := range wcState.Rubric.ForbiddenPatterns {
+		if strings.Contains(combined, pattern) {
+			return fmt.Errorf("rubric validation failed for %s: forbidden pattern %q found in output", wcState.ID, pattern)
+		}
+	}
+	if wcState.Rubric.MinCoverage != nil {
+		var parsedCoverage *float64
+		prefixRegex := regexp.MustCompile(`(?i)(?:coverage\s*:\s*|coverage\s+is\s+|coverage\s+of\s+)([0-9.]+)\s*%`)
+		matches := prefixRegex.FindStringSubmatch(combined)
+		if len(matches) >= 2 {
+			val, err := strconv.ParseFloat(matches[1], 64)
+			if err == nil {
+				parsedCoverage = &val
+			}
+		}
+		if parsedCoverage == nil {
+			fallbackRegex := regexp.MustCompile(`([0-9.]+)\s*%`)
+			lines := strings.Split(combined, "\n")
+			for _, line := range lines {
+				if strings.Contains(strings.ToLower(line), "coverage") {
+					m := fallbackRegex.FindStringSubmatch(line)
+					if len(m) >= 2 {
+						val, err := strconv.ParseFloat(m[1], 64)
+						if err == nil {
+							parsedCoverage = &val
+							break
+						}
+					}
+				}
+			}
+		}
+		if parsedCoverage == nil {
+			return fmt.Errorf("rubric validation failed for %s: coverage metric not found in output", wcState.ID)
+		}
+		if *parsedCoverage < *wcState.Rubric.MinCoverage {
+			return fmt.Errorf("rubric validation failed for %s: coverage %0.1f%% is below minimum %0.1f%%", wcState.ID, *parsedCoverage, *wcState.Rubric.MinCoverage)
+		}
+	}
+	return nil
+}
+
+func runRepairSwarm(ctx context.Context, plan factoryPlan, wcState *workcellRunState, repoPath string, execErr error, liveMode bool) error {
+	cmdArgs, err := resolveAgySwarmsCommand()
+	if err != nil {
+		return fmt.Errorf("failed to resolve agy-swarms command: %v", err)
+	}
+
+	taskPrompt := wcState.Task
+	if taskPrompt == "" {
+		taskPrompt = plan.Objective.Text
+	}
+
+	diagnosticPrompt := fmt.Sprintf(
+		"You are in self-healing/repair mode. The previous execution of the workcell failed.\n\n"+
+			"Original Task:\n%s\n\n"+
+			"Stdout Log:\n%s\n\n"+
+			"Stderr Log:\n%s\n\n"+
+			"Failure Detail:\n%s\n\n"+
+			"Please inspect the workspace files and make necessary modifications to repair the codebase so that execution and rubric checks pass on the next attempt.",
+		taskPrompt, wcState.GetStdout(), wcState.GetStderr(), execErr.Error(),
+	)
+
+	taskSpec := map[string]interface{}{
+		"task": diagnosticPrompt,
+		"model_pins": map[string]string{
+			"default": "gemini-3.5-flash",
+		},
+	}
+	taskData, err := json.MarshalIndent(taskSpec, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal agy-swarms repair task: %v", err)
+	}
+
+	tempTask, err := os.CreateTemp("", "agy-repair-task-"+wcState.ID+"-*.json")
+	if err != nil {
+		return fmt.Errorf("failed to create temp repair task: %v", err)
+	}
+	defer os.Remove(tempTask.Name())
+
+	if _, err := tempTask.Write(taskData); err != nil {
+		tempTask.Close()
+		return fmt.Errorf("failed to write temp repair task: %v", err)
+	}
+	tempTask.Close()
+
+	tempReport, err := os.CreateTemp("", "agy-repair-report-"+wcState.ID+"-*.json")
+	if err != nil {
+		return fmt.Errorf("failed to create temp repair report: %v", err)
+	}
+	tempReport.Close()
+	defer os.Remove(tempReport.Name())
+
+	args := append(cmdArgs[1:], "run", "--task", tempTask.Name(), "--report", tempReport.Name(), "--allow-local-commands")
+	if liveMode {
+		args = append(args, "--reviewer", "agy", "--closer", "agy")
+	} else {
+		args = append(args, "--dry-run")
+	}
+
+	cmdName := cmdArgs[0]
+	cmd := exec.CommandContext(ctx, cmdName, args...)
+	cmd.Dir = repoPath
+
+	var repairStdout, repairStderr bytes.Buffer
+	cmd.Stdout = &repairStdout
+	cmd.Stderr = &repairStderr
+
+	runErr := cmd.Run()
+
+	if reportData, err := os.ReadFile(tempReport.Name()); err == nil {
+		_ = os.WriteFile(fmt.Sprintf("agy-swarms-report-%s-repair-attempt-%d.json", wcState.ID, wcState.RepairsAttempted), reportData, 0644)
+	}
+
+	if runErr != nil {
+		return fmt.Errorf("repair swarm execution failed: %w (stderr: %q)", runErr, repairStderr.String())
 	}
 
 	return nil
@@ -3865,4 +4210,271 @@ func readStdinLine(r io.Reader) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(line), nil
+}
+
+func resolveGitPath() string {
+	if gitBin := os.Getenv("GIT_PATH"); gitBin != "" {
+		return gitBin
+	}
+	return "git"
+}
+
+func extractReleaseTag(objectiveText string, workspacePath string) (string, error) {
+	if tag := os.Getenv("AO_FORGE_RELEASE_TAG"); tag != "" {
+		return tag, nil
+	}
+
+	re := regexp.MustCompile(`v[0-9]+(?:\.[0-9]+)+(?:-[a-zA-Z0-9.]+)?`)
+	if match := re.FindString(objectiveText); match != "" {
+		return match, nil
+	}
+
+	versionFile := filepath.Join(workspacePath, "VERSION")
+	if data, err := os.ReadFile(versionFile); err == nil {
+		version := strings.TrimSpace(string(data))
+		if version != "" {
+			if strings.HasPrefix(version, "v") {
+				return version, nil
+			}
+			return "v" + version, nil
+		}
+	}
+
+	return "", fmt.Errorf("could not resolve version tag name from objective, environment, or VERSION file")
+}
+
+func getGitHubRepo(workspacePath string) (string, error) {
+	gitBin := resolveGitPath()
+	cmd := exec.Command(gitBin, "-C", workspacePath, "remote", "get-url", "origin")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("failed to get git remote url: %w", err)
+	}
+	urlStr := strings.TrimSpace(out.String())
+	if strings.Contains(urlStr, "github.com") {
+		parts := strings.SplitN(urlStr, "github.com", 2)
+		if len(parts) == 2 {
+			path := parts[1]
+			path = strings.TrimPrefix(path, ":")
+			path = strings.TrimPrefix(path, "/")
+			path = strings.TrimSuffix(path, ".git")
+			return path, nil
+		}
+	}
+	return "", fmt.Errorf("git remote URL does not contain github.com: %s", urlStr)
+}
+
+func publishReleaseViaAPI(repo, token, tagName, commitHash, notesBody string) error {
+	apiURL := "https://api.github.com"
+	if mockURL := os.Getenv("AO_FORGE_MOCK_GITHUB_API"); mockURL != "" {
+		apiURL = mockURL
+	}
+	url := fmt.Sprintf("%s/repos/%s/releases", apiURL, repo)
+
+	reqBody, err := json.Marshal(map[string]any{
+		"tag_name":         tagName,
+		"target_commitish": commitHash,
+		"name":             "Release " + tagName,
+		"body":             notesBody,
+		"draft":            true,
+		"prerelease":       false,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal release request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
+	if err != nil {
+		return fmt.Errorf("failed to create http request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("http request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("github api returned status %s: %s", resp.Status, string(bodyBytes))
+	}
+
+	return nil
+}
+
+func performReleaseMutation(
+	plan factoryPlan,
+	outPath string,
+	evidence []struct {
+		Label         string `json:"label"`
+		SchemaVersion string `json:"schema_version"`
+		Status        string `json:"status"`
+		Path          string `json:"path"`
+		SHA256        string `json:"sha256"`
+	},
+	stdout, stderr io.Writer,
+) error {
+	workspacePath := plan.Objective.Workspace
+	tagName, err := extractReleaseTag(plan.Objective.Text, workspacePath)
+	if err != nil {
+		return fmt.Errorf("failed to determine release tag: %w", err)
+	}
+
+	repo, err := getGitHubRepo(workspacePath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve GitHub repository path: %w", err)
+	}
+
+	gitBin := resolveGitPath()
+
+	// Get current HEAD commit hash
+	headCmd := exec.Command(gitBin, "-C", workspacePath, "rev-parse", "HEAD")
+	headOut, err := headCmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to get HEAD commit: %w", err)
+	}
+	commitHash := strings.TrimSpace(string(headOut))
+
+	// Check if the tag already exists
+	tagExists := false
+	tagCheckCmd := exec.Command(gitBin, "-C", workspacePath, "rev-parse", tagName+"^{commit}")
+	tagCheckOut, err := tagCheckCmd.Output()
+	if err == nil {
+		tagExists = true
+		existingCommit := strings.TrimSpace(string(tagCheckOut))
+		if existingCommit != commitHash {
+			return fmt.Errorf("release tag %q already exists locally but points to a different commit (%s) than HEAD (%s)", tagName, existingCommit, commitHash)
+		}
+		fmt.Fprintf(stdout, "Release tag %q already exists locally and points to HEAD commit\n", tagName)
+	}
+
+	// Create tag if it doesn't exist
+	if !tagExists {
+		tagCreateCmd := exec.Command(gitBin, "-C", workspacePath, "tag", "-a", tagName, "-m", "Release "+tagName+" via AO Forge")
+		if out, err := tagCreateCmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to create local git tag %q: %v (output: %q)", tagName, err, string(out))
+		}
+		fmt.Fprintf(stdout, "Created local git tag %q\n", tagName)
+	}
+
+	// Push must succeed before any public release publishing can proceed.
+	pushCmd := exec.Command(gitBin, "-C", workspacePath, "push", "origin", tagName)
+	if out, err := pushCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to push git tag %q to remote origin: %v (output: %q)", tagName, err, string(out))
+	}
+	fmt.Fprintf(stdout, "Successfully pushed git tag %s to remote origin\n", tagName)
+
+	// Compile changelog
+	var changelog string
+	prevTagCmd := exec.Command(gitBin, "-C", workspacePath, "describe", "--tags", "--abbrev=0", tagName+"^")
+	prevTagOut, err := prevTagCmd.Output()
+	if err == nil {
+		prevTag := strings.TrimSpace(string(prevTagOut))
+		logCmd := exec.Command(gitBin, "-C", workspacePath, "log", prevTag+".."+tagName, "--oneline")
+		logOut, err := logCmd.Output()
+		if err == nil {
+			changelog = strings.TrimSpace(string(logOut))
+		}
+	}
+	if changelog == "" {
+		logCmd := exec.Command(gitBin, "-C", workspacePath, "log", "--oneline", "-n", "50")
+		logOut, err := logCmd.Output()
+		if err == nil {
+			changelog = strings.TrimSpace(string(logOut))
+		}
+	}
+
+	// Compile notes
+	var notes strings.Builder
+	notes.WriteString("## Objective\n")
+	notes.WriteString(plan.Objective.Text + "\n\n")
+
+	notes.WriteString("## Summary\n")
+	notes.WriteString("Release succeeded and verified via AO Forge.\n\n")
+
+	notes.WriteString("## Changelog\n")
+	if changelog != "" {
+		notes.WriteString("```text\n" + changelog + "\n```\n\n")
+	} else {
+		notes.WriteString("No git commit history found.\n\n")
+	}
+
+	notes.WriteString("## Verified Evidence\n")
+	notes.WriteString("| Label | File Path | SHA-256 Digest |\n")
+	notes.WriteString("| --- | --- | --- |\n")
+	for _, ev := range evidence {
+		notes.WriteString(fmt.Sprintf("| %s | `%s` | `%s` |\n", ev.Label, ev.Path, ev.SHA256))
+	}
+
+	// Try to publish draft release
+	githubToken := os.Getenv("AO_FORGE_GITHUB_TOKEN")
+	if githubToken == "" {
+		githubToken = os.Getenv("GITHUB_TOKEN")
+	}
+
+	ghBin := os.Getenv("GH_PATH")
+	if ghBin == "" {
+		var err error
+		ghBin, err = exec.LookPath("gh")
+		if err != nil {
+			ghBin = ""
+		}
+	}
+
+	releasePublished := false
+	var ghErr error
+
+	if ghBin != "" {
+		tempNotes, err := os.CreateTemp("", "gh-release-notes-*.md")
+		if err == nil {
+			defer os.Remove(tempNotes.Name())
+			if _, err := tempNotes.Write([]byte(notes.String())); err == nil {
+				tempNotes.Close()
+				cmd := exec.Command(ghBin, "release", "create", tagName,
+					"--repo", repo,
+					"--title", "Release "+tagName,
+					"--notes-file", tempNotes.Name(),
+					"--draft",
+				)
+				cmd.Dir = workspacePath
+				cmd.Env = os.Environ()
+				if out, err := cmd.CombinedOutput(); err != nil {
+					ghErr = fmt.Errorf("gh release create failed: %v (output: %q)", err, string(out))
+				} else {
+					fmt.Fprintf(stdout, "Successfully created GitHub draft release %s via gh CLI\n", tagName)
+					releasePublished = true
+				}
+			} else {
+				tempNotes.Close()
+				ghErr = fmt.Errorf("failed to write temp notes: %w", err)
+			}
+		} else {
+			ghErr = fmt.Errorf("failed to create temp notes file: %w", err)
+		}
+	}
+
+	if !releasePublished {
+		if githubToken != "" {
+			fmt.Fprintln(stdout, "Attempting fallback to GitHub API for release creation...")
+			if err := publishReleaseViaAPI(repo, githubToken, tagName, commitHash, notes.String()); err != nil {
+				return fmt.Errorf("GitHub release creation failed (gh CLI err: %v, API err: %v)", ghErr, err)
+			}
+			fmt.Fprintf(stdout, "Successfully created GitHub draft release %s via HTTP API\n", tagName)
+			releasePublished = true
+		} else {
+			if ghErr != nil {
+				return fmt.Errorf("GitHub release creation failed (gh CLI err: %v, and GITHUB_TOKEN is missing)", ghErr)
+			}
+			return fmt.Errorf("GitHub release creation failed: gh CLI is not available and GITHUB_TOKEN is missing")
+		}
+	}
+
+	return nil
 }

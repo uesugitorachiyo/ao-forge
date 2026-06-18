@@ -60,6 +60,9 @@ func TestHelpExplainsFactoryTermsWithoutMarketingCopy(t *testing.T) {
 		"forge plan --brief",
 		"forge inspect --packet",
 		"dry-run execution",
+		"Slice 2.3 status:",
+		"release mutation",
+		"GitHub publishing",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("help missing %q\n%s", want, stdout)
@@ -1645,7 +1648,7 @@ fixtures/discount-service
 		t.Fatalf("failed to write md brief: %v", err)
 	}
 
-	brief, canonical, err := readBrief(mdPath)
+	brief, canonical, err := readBrief(mdPath, false)
 	if err != nil {
 		t.Fatalf("failed to read md brief: %v", err)
 	}
@@ -1700,7 +1703,7 @@ fixtures/discount-service
 		t.Fatalf("failed to write json brief: %v", err)
 	}
 
-	_, jsonCanonical, err := readBrief(jsonPath)
+	_, jsonCanonical, err := readBrief(jsonPath, false)
 	if err != nil {
 		t.Fatalf("failed to read json brief: %v", err)
 	}
@@ -2696,7 +2699,17 @@ func main() {
 }
 
 func TestGateLiveExecutionMode(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte(`{"id": 123456, "tag_name": "v1.0.0"}`))
+	}))
+	defer ts.Close()
+	t.Setenv("AO_FORGE_MOCK_GITHUB_API", ts.URL)
+	t.Setenv("AO_FORGE_RELEASE_TAG", "v1.0.0")
+	t.Setenv("GITHUB_TOKEN", "mock-github-token")
+
 	tmpDir := t.TempDir()
+	t.Setenv("GIT_PATH", buildGitPushWrapper(t, tmpDir))
 
 	// Compile a dummy binary that acts as covenant
 	dummyCovSrc := filepath.Join(tmpDir, "dummy_covenant.go")
@@ -2837,6 +2850,7 @@ func main() {
 	runGit(cleanGitDir, "config", "user.email", "test@example.com")
 	runGit(cleanGitDir, "config", "user.name", "Test")
 	runGit(cleanGitDir, "config", "commit.gpgSign", "false")
+	runGit(cleanGitDir, "remote", "add", "origin", "git@github.com:test-owner/test-repo.git")
 	_ = os.WriteFile(filepath.Join(cleanGitDir, "clean.txt"), []byte("clean"), 0644)
 	runGit(cleanGitDir, "add", "clean.txt")
 	runGit(cleanGitDir, "commit", "-m", "init")
@@ -5761,6 +5775,836 @@ func TestParallelSwarmsAllFail(t *testing.T) {
 	}
 }
 
+func compileTestRepairAgySwarms(t *testing.T, tmpDir string, tracePath string) string {
+	t.Helper()
+	dummySrc := filepath.Join(tmpDir, "dummy_repair_agy.go")
+	dummyBin := filepath.Join(tmpDir, "dummy_repair_agy")
+	if os.PathSeparator == '\\' {
+		dummyBin += ".exe"
+	}
+	srcContent := fmt.Sprintf(`package main
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"strings"
+)
+
+func main() {
+	var taskPath, reportPath string
+	for i, arg := range os.Args {
+		if arg == "--task" && i+1 < len(os.Args) {
+			taskPath = os.Args[i+1]
+		}
+		if arg == "--report" && i+1 < len(os.Args) {
+			reportPath = os.Args[i+1]
+		}
+	}
+
+	if %q != "" {
+		traceData := strings.Join(os.Args, " ") + "\n"
+		f, err := os.OpenFile(%q, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err == nil {
+			f.WriteString(traceData)
+			f.Close()
+		}
+	}
+
+	var taskData map[string]interface{}
+	if taskPath != "" {
+		data, _ := os.ReadFile(taskPath)
+		_ = json.Unmarshal(data, &taskData)
+	}
+	taskText, _ := taskData["task"].(string)
+
+	isRepair := strings.Contains(taskText, "self-healing/repair mode")
+	hasRepairedFile := false
+	if _, err := os.Stat("repaired.txt"); err == nil {
+		hasRepairedFile = true
+	}
+
+	if isRepair {
+		// Perform the repair
+		_ = os.WriteFile("repaired.txt", []byte("success"), 0644)
+		if reportPath != "" {
+			report := map[string]interface{}{
+				"status": "succeeded",
+				"results": map[string]interface{}{
+					"worker_0": map[string]interface{}{
+						"status": "succeeded",
+						"exit_code": 0,
+					},
+				},
+			}
+			data, _ := json.Marshal(report)
+			_ = os.WriteFile(reportPath, data, 0644)
+		}
+		fmt.Println("Repair run completed successfully")
+		os.Exit(0)
+	}
+
+	if hasRepairedFile {
+		if reportPath != "" {
+			report := map[string]interface{}{
+				"status": "succeeded",
+				"results": map[string]interface{}{
+					"worker_0": map[string]interface{}{
+						"status": "succeeded",
+						"stdout": "success pattern present\ncoverage is 90.0%%\n",
+						"exit_code": 0,
+					},
+				},
+			}
+			data, _ := json.Marshal(report)
+			_ = os.WriteFile(reportPath, data, 0644)
+		}
+		fmt.Println("success pattern present")
+		fmt.Println("coverage is 90.0%%")
+		os.Exit(0)
+	} else {
+		// First run: fail
+		if reportPath != "" {
+			report := map[string]interface{}{
+				"status": "failed",
+				"results": map[string]interface{}{
+					"worker_0": map[string]interface{}{
+						"status": "failed",
+						"stdout": "failed execution\n",
+						"exit_code": 1,
+					},
+				},
+			}
+			data, _ := json.Marshal(report)
+			_ = os.WriteFile(reportPath, data, 0644)
+		}
+		fmt.Fprintln(os.Stderr, "failed execution")
+		os.Exit(1)
+	}
+}`, tracePath, tracePath)
+
+	if err := os.WriteFile(dummySrc, []byte(srcContent), 0644); err != nil {
+		t.Fatalf("write dummy src: %v", err)
+	}
+
+	cmd := exec.Command("go", "build", "-o", dummyBin, dummySrc)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy bin: %v (output: %q)", err, string(out))
+	}
+	return dummyBin
+}
+
+func TestSelfHealingRepair(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	dummyAo2 := compileTestAo2(t, tmpDir, filepath.Join(tmpDir, "ao2-trace.log"))
+	t.Setenv("AO2_PATH", dummyAo2)
+
+	traceFile := filepath.Join(tmpDir, "trace.log")
+	dummyAgy := compileTestRepairAgySwarms(t, tmpDir, traceFile)
+	t.Setenv("AGY_SWARMS_PATH", dummyAgy)
+
+	defaultWS := filepath.Join(tmpDir, "default-ws")
+	if err := os.MkdirAll(defaultWS, 0755); err != nil {
+		t.Fatalf("mkdir default-ws: %v", err)
+	}
+
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(defaultWS); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer func() {
+		_ = os.Chdir(oldWd)
+	}()
+
+	if code, _, stderr := runCLI("init"); code != 0 {
+		t.Fatalf("init failed: %s", stderr)
+	}
+
+	// Construct plan with wc1 using agy-swarms with max_repairs: 2
+	planContent := fmt.Sprintf(`{
+		"schema_version": "ao.forge.factory-plan.v0.1",
+		"plan_id": "forge-plan-9876543210ab",
+		"objective": {
+			"text": "test self healing repair",
+			"workspace": %q,
+			"release_mode": false
+		},
+		"constraints": {
+			"local_first": true,
+			"allow_network": false,
+			"allow_release_mutation": false,
+			"require_control_plane_readback": false
+		},
+		"execution_enabled": false,
+		"policy_gate": {
+			"required": true,
+			"status": "allowed",
+			"explanation": "gate allowed"
+		},
+		"workcells": [
+			{
+				"workcell_id": "wc1",
+				"kind": "prepare",
+				"executor": "agy-swarms",
+				"max_repairs": 2,
+				"task": "Fix the bug",
+				"status": "planned",
+				"depends_on": [],
+				"rubric": {
+					"required_patterns": ["success pattern present"],
+					"min_coverage": 80.0
+				}
+			}
+		],
+		"expected_evidence": ["test"],
+		"next_actions": [
+			{"action_id": "test", "description": "test", "required": true}
+		]
+	}`, defaultWS)
+
+	planPath := filepath.Join(tmpDir, "plan.json")
+	if err := os.WriteFile(planPath, []byte(planContent), 0644); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+
+	gatePath := filepath.Join(tmpDir, "gate_result.json")
+	gateContent := `{
+		"status": "allowed",
+		"plan_id": "forge-plan-9876543210ab",
+		"decision": {
+			"decision_id": "covenant-allow-local-safe",
+			"target": "factory-plan",
+			"decision": "allow",
+			"explanation": "Covenant policy verification passed locally",
+			"source": "covenant-gate"
+		}
+	}`
+	if err := os.WriteFile(gatePath, []byte(gateContent), 0644); err != nil {
+		t.Fatalf("write gate_result: %v", err)
+	}
+
+	outPath := filepath.Join(tmpDir, "packet-out.json")
+	code, stdout, stderr := runCLI("run", "--plan", planPath, "--gate-result", gatePath, "--out", outPath, "--no-dashboard", "--non-interactive")
+	if code != 0 {
+		packetData, readErr := os.ReadFile(outPath)
+		t.Fatalf("run failed: %d\nStdout: %s\nStderr: %s\nPacket Data (err=%v): %s", code, stdout, stderr, readErr, string(packetData))
+	}
+
+	// Read packet to verify that wc1 succeeded and repairs_attempted was recorded as 1
+	packetData, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read packet: %v", err)
+	}
+	var packet map[string]interface{}
+	if err := json.Unmarshal(packetData, &packet); err != nil {
+		t.Fatalf("unmarshal packet: %v", err)
+	}
+
+	workcells, ok := packet["workcells"].([]interface{})
+	if !ok || len(workcells) == 0 {
+		t.Fatalf("expected workcells in packet, got: %v", packet)
+	}
+
+	wc1 := workcells[0].(map[string]interface{})
+	status, _ := wc1["status"].(string)
+	repairsAttempted, _ := wc1["repairs_attempted"].(float64)
+
+	if status != "passed" {
+		t.Fatalf("expected wc1 status to be passed after self-healing, got: %q", status)
+	}
+
+	if repairsAttempted != 1 {
+		t.Fatalf("expected repairs_attempted to be 1, got: %f", repairsAttempted)
+	}
+
+	// Verify that the repair swarm report file was written
+	repairReportPath := filepath.Join(defaultWS, "agy-swarms-report-wc1-repair-attempt-1.json")
+	if _, err := os.Stat(repairReportPath); os.IsNotExist(err) {
+		t.Fatalf("expected repair swarm report to exist: %s", repairReportPath)
+	}
+}
+
+func compileTestDynamicAgySwarms(t *testing.T, tmpDir string) string {
+	t.Helper()
+	dummySrc := filepath.Join(tmpDir, "dummy_dynamic_agy.go")
+	dummyBin := filepath.Join(tmpDir, "dummy_dynamic_agy")
+	if os.PathSeparator == '\\' {
+		dummyBin += ".exe"
+	}
+	srcContent := `package main
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"strings"
+)
+
+func main() {
+	var taskPath, reportPath string
+	for i, arg := range os.Args {
+		if arg == "--task" && i+1 < len(os.Args) {
+			taskPath = os.Args[i+1]
+		}
+		if arg == "--report" && i+1 < len(os.Args) {
+			reportPath = os.Args[i+1]
+		}
+	}
+
+	var taskData map[string]interface{}
+	if taskPath != "" {
+		data, _ := os.ReadFile(taskPath)
+		_ = json.Unmarshal(data, &taskData)
+	}
+	taskText, _ := taskData["task"].(string)
+
+	isDynamic := strings.Contains(taskText, "dynamic-plan-workcells.json")
+	if isDynamic {
+		// Output the mock workcells to dynamic-plan-workcells.json in current directory
+		workcells := []map[string]interface{}{
+			{
+				"workcell_id": "wc-prep",
+				"kind":        "prepare",
+				"executor":    "agy-swarms",
+				"task":        "Perform prepare steps",
+				"depends_on":  []string{},
+			},
+			{
+				"workcell_id": "wc-exec",
+				"kind":        "execute",
+				"executor":    "agy-swarms",
+				"task":        "Execute tests",
+				"depends_on":  []string{"wc-prep"},
+			},
+		}
+		data, _ := json.Marshal(workcells)
+		_ = os.WriteFile("dynamic-plan-workcells.json", data, 0644)
+
+		if reportPath != "" {
+			report := map[string]interface{}{
+				"status": "succeeded",
+			}
+			rData, _ := json.Marshal(report)
+			_ = os.WriteFile(reportPath, rData, 0644)
+		}
+		fmt.Println("Dynamic planning completed successfully")
+		os.Exit(0)
+	}
+
+	fmt.Println("Mock execution success")
+	os.Exit(0)
+}`
+
+	if err := os.WriteFile(dummySrc, []byte(srcContent), 0644); err != nil {
+		t.Fatalf("write dummy dynamic agy src: %v", err)
+	}
+
+	cmd := exec.Command("go", "build", "-o", dummyBin, dummySrc)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy dynamic agy: %v (output: %q)", err, string(out))
+	}
+	return dummyBin
+}
+
+func TestDynamicPlanGeneration(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	dummyAgy := compileTestDynamicAgySwarms(t, tmpDir)
+	t.Setenv("AGY_SWARMS_PATH", dummyAgy)
+
+	defaultWS := filepath.Join(tmpDir, "default-ws")
+	if err := os.MkdirAll(defaultWS, 0755); err != nil {
+		t.Fatalf("mkdir default-ws: %v", err)
+	}
+
+	// Create a brief JSON that does NOT have expected_workcells (relaxing requirement)
+	briefContent := fmt.Sprintf(`{
+		"schema_version": "ao.forge.factory-brief.v0.1",
+		"objective": {
+			"text": "Decompose this dynamically",
+			"workspace": %q,
+			"release_mode": false
+		},
+		"constraints": {
+			"local_first": true,
+			"allow_network": false,
+			"allow_release_mutation": false,
+			"require_control_plane_readback": false
+		},
+		"expected_evidence": ["factory packet"]
+	}`, defaultWS)
+
+	briefPath := filepath.Join(tmpDir, "brief.json")
+	if err := os.WriteFile(briefPath, []byte(briefContent), 0644); err != nil {
+		t.Fatalf("write brief: %v", err)
+	}
+
+	// Change wd to defaultWS to support init
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(defaultWS); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer func() {
+		_ = os.Chdir(oldWd)
+	}()
+
+	if code, _, stderr := runCLI("init"); code != 0 {
+		t.Fatalf("init failed: %s", stderr)
+	}
+
+	outPath := filepath.Join(tmpDir, "plan-out.json")
+	code, stdout, stderr := runCLI("plan", "--brief", briefPath, "--dynamic", "--out", outPath)
+	if code != 0 {
+		t.Fatalf("plan failed: %d\nStdout: %s\nStderr: %s", code, stdout, stderr)
+	}
+
+	// Verify that the output plan has the dynamic workcells
+	planData, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read generated plan: %v", err)
+	}
+
+	var plan map[string]interface{}
+	if err := json.Unmarshal(planData, &plan); err != nil {
+		t.Fatalf("unmarshal generated plan: %v", err)
+	}
+
+	workcells, ok := plan["workcells"].([]interface{})
+	if !ok || len(workcells) != 2 {
+		t.Fatalf("expected 2 workcells in generated plan, got: %v", plan)
+	}
+
+	wc0 := workcells[0].(map[string]interface{})
+	wc1 := workcells[1].(map[string]interface{})
+
+	if wc0["workcell_id"].(string) != "wc-prep" || wc0["status"].(string) != "planned" {
+		t.Fatalf("unexpected first workcell: %+v", wc0)
+	}
+	if wc1["workcell_id"].(string) != "wc-exec" || wc1["status"].(string) != "planned" {
+		t.Fatalf("unexpected second workcell: %+v", wc1)
+	}
+
+	// Verify temporary file is cleaned up
+	tempPlanPath := filepath.Join(defaultWS, "dynamic-plan-workcells.json")
+	if _, err := os.Stat(tempPlanPath); err == nil {
+		t.Fatalf("expected dynamic-plan-workcells.json to be cleaned up, but it still exists")
+	}
+}
+
+func buildGitPushWrapper(t *testing.T, tmpDir string) string {
+	t.Helper()
+
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatalf("find git: %v", err)
+	}
+
+	wrapperSrc := filepath.Join(tmpDir, "dummy_git.go")
+	wrapperBin := filepath.Join(tmpDir, "dummy_git")
+	if os.PathSeparator == '\\' {
+		wrapperBin += ".exe"
+	}
+	source := fmt.Sprintf(`package main
+import (
+	"fmt"
+	"os"
+	"os/exec"
+)
+func main() {
+	for _, arg := range os.Args[1:] {
+		if arg == "push" {
+			if os.Getenv("AO_FORGE_TEST_GIT_PUSH_FAIL") == "1" {
+				fmt.Fprintln(os.Stderr, "simulated git push failure")
+				os.Exit(1)
+			}
+			fmt.Fprintln(os.Stdout, "simulated git push ok")
+			os.Exit(0)
+		}
+	}
+	cmd := exec.Command(%q, os.Args[1:]...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			os.Exit(exitErr.ExitCode())
+		}
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+`, realGit)
+	if err := os.WriteFile(wrapperSrc, []byte(source), 0644); err != nil {
+		t.Fatalf("write dummy git: %v", err)
+	}
+	cmdBuild := exec.Command("go", "build", "-o", wrapperBin, wrapperSrc)
+	if out, err := cmdBuild.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy git: %v (output: %q)", err, string(out))
+	}
+	return wrapperBin
+}
+
+func TestReleaseMutationDraftPublishing(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// 1. Set up mock git repository
+	workspaceDir := filepath.Join(tmpDir, "workspace")
+	if err := os.MkdirAll(workspaceDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = workspaceDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v (output: %q)", args, err, string(out))
+		}
+	}
+
+	runGit("init")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	runGit("config", "commit.gpgSign", "false")
+	runGit("remote", "add", "origin", "git@github.com:test-owner/test-repo.git")
+
+	// Write VERSION file
+	versionPath := filepath.Join(workspaceDir, "VERSION")
+	if err := os.WriteFile(versionPath, []byte("1.2.3"), 0644); err != nil {
+		t.Fatalf("write VERSION: %v", err)
+	}
+
+	runGit("add", "VERSION")
+	runGit("commit", "-m", "initial version")
+
+	// 2. Set up mock HTTP server for GitHub API fallback
+	var apiCalled bool
+	var receivedBody map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && r.URL.Path == "/repos/test-owner/test-repo/releases" {
+			apiCalled = true
+			decoder := json.NewDecoder(r.Body)
+			_ = decoder.Decode(&receivedBody)
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"id": 123, "tag_name": "v1.2.3"}`))
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer ts.Close()
+
+	// Compile a dummy gh CLI that always fails (to force fallback)
+	dummyGhSrc := filepath.Join(tmpDir, "dummy_gh.go")
+	dummyGhBin := filepath.Join(tmpDir, "dummy_gh")
+	if os.PathSeparator == '\\' {
+		dummyGhBin += ".exe"
+	}
+	ghSrcContent := `package main
+import "os"
+func main() {
+	// Exit 1 to simulate gh CLI failure or lack of authentication
+	os.Exit(1)
+}`
+	if err := os.WriteFile(dummyGhSrc, []byte(ghSrcContent), 0644); err != nil {
+		t.Fatalf("write dummy gh: %v", err)
+	}
+	cmdBuild := exec.Command("go", "build", "-o", dummyGhBin, dummyGhSrc)
+	if out, err := cmdBuild.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy gh: %v (output: %q)", err, string(out))
+	}
+
+	t.Setenv("GH_PATH", dummyGhBin)
+	t.Setenv("AO_FORGE_MOCK_GITHUB_API", ts.URL)
+	t.Setenv("GITHUB_TOKEN", "mock-token")
+	t.Setenv("GIT_PATH", buildGitPushWrapper(t, tmpDir))
+
+	// Compile a dummy ao2
+	dummyAo2Src := filepath.Join(tmpDir, "dummy_ao2.go")
+	dummyAo2Bin := filepath.Join(tmpDir, "dummy_ao2")
+	if os.PathSeparator == '\\' {
+		dummyAo2Bin += ".exe"
+	}
+	ao2SrcContent := `package main
+import (
+	"fmt"
+	"os"
+)
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "run" {
+		fmt.Println("status=governed_run_started")
+		os.Exit(0)
+	}
+	os.Exit(1)
+}`
+	if err := os.WriteFile(dummyAo2Src, []byte(ao2SrcContent), 0644); err != nil {
+		t.Fatalf("write dummy ao2: %v", err)
+	}
+	cmdBuildAo2 := exec.Command("go", "build", "-o", dummyAo2Bin, dummyAo2Src)
+	if out, err := cmdBuildAo2.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy ao2: %v (output: %q)", err, string(out))
+	}
+	t.Setenv("AO2_PATH", dummyAo2Bin)
+
+	// Set up factory plan
+	plan := factoryPlan{
+		SchemaVersion: "ao.forge.factory-plan.v0.1",
+		PlanID:        "forge-plan-1234567890ab",
+		Objective: factoryObjective{
+			Text:        "Deploy release version",
+			Workspace:   workspaceDir,
+			ReleaseMode: true,
+		},
+		Constraints: factoryConstraints{
+			LocalFirst:           true,
+			AllowNetwork:         false,
+			AllowReleaseMutation: true,
+		},
+		PolicyGate: policyGate{
+			Required:    true,
+			Status:      "allowed",
+			Explanation: "approved",
+		},
+		Workcells: []planWorkcell{
+			{WorkcellID: "wc1", Kind: "prepare", Status: "planned", DependsOn: []string{}},
+		},
+		ExpectedEvidence: []string{"test"},
+		NextActions: []nextAction{
+			{ActionID: "test", Description: "test", Required: true},
+		},
+	}
+	planData, _ := json.Marshal(plan)
+	planPath := filepath.Join(tmpDir, "plan.json")
+	_ = os.WriteFile(planPath, planData, 0644)
+
+	gateResult := covenantGateResult{
+		SchemaVersion:    "ao.forge.covenant-gate-result.v0.1",
+		Status:           "allowed",
+		PlanID:           "forge-plan-1234567890ab",
+		ExecutionEnabled: true,
+		Decision: covenantDecisionFixture{
+			SchemaVersion: "ao.forge.covenant-decision-fixture.v0.1",
+			TargetPlanID:  "plan-id-12345",
+			Decision:      "allow",
+			DecisionID:    "allow-safe",
+			Explanation:   "Approved",
+			Source:        "test",
+		},
+	}
+	gateData, _ := json.Marshal(gateResult)
+	gatePath := filepath.Join(tmpDir, "gate.json")
+	_ = os.WriteFile(gatePath, gateData, 0644)
+
+	outPath := filepath.Join(tmpDir, "packet.json")
+	code, stdout, stderr := runCLI("run", "--plan", planPath, "--gate-result", gatePath, "--out", outPath, "--live", "--confirm-release")
+	if code != 0 {
+		t.Fatalf("run failed with code %d\nStdout: %s\nStderr: %s", code, stdout, stderr)
+	}
+
+	if !apiCalled {
+		t.Fatalf("expected GitHub API fallback to be called")
+	}
+
+	if receivedBody["tag_name"] != "v1.2.3" || receivedBody["name"] != "Release v1.2.3" {
+		t.Fatalf("unexpected API body received: %+v", receivedBody)
+	}
+
+	// Verify local tag was created pointing to HEAD
+	tagCheck := exec.Command("git", "rev-parse", "v1.2.3^{commit}")
+	tagCheck.Dir = workspaceDir
+	out, err := tagCheck.Output()
+	if err != nil {
+		t.Fatalf("git tag check failed: %v", err)
+	}
+	tagCommit := strings.TrimSpace(string(out))
+
+	headCheck := exec.Command("git", "rev-parse", "HEAD")
+	headCheck.Dir = workspaceDir
+	outHead, err := headCheck.Output()
+	if err != nil {
+		t.Fatalf("git HEAD check failed: %v", err)
+	}
+	headCommit := strings.TrimSpace(string(outHead))
+
+	if tagCommit != headCommit {
+		t.Fatalf("expected tag commit %s to match HEAD commit %s", tagCommit, headCommit)
+	}
+}
+
+func TestReleaseMutationFailsClosedWhenTagPushFails(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	workspaceDir := filepath.Join(tmpDir, "workspace")
+	if err := os.MkdirAll(workspaceDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = workspaceDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v (output: %q)", args, err, string(out))
+		}
+	}
+
+	runGit("init")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	runGit("config", "commit.gpgSign", "false")
+	runGit("remote", "add", "origin", "git@github.com:test-owner/test-repo.git")
+
+	versionPath := filepath.Join(workspaceDir, "VERSION")
+	if err := os.WriteFile(versionPath, []byte("1.2.4"), 0644); err != nil {
+		t.Fatalf("write VERSION: %v", err)
+	}
+
+	runGit("add", "VERSION")
+	runGit("commit", "-m", "version 1.2.4")
+
+	t.Setenv("GIT_PATH", buildGitPushWrapper(t, tmpDir))
+	t.Setenv("AO_FORGE_TEST_GIT_PUSH_FAIL", "1")
+
+	plan := factoryPlan{
+		SchemaVersion: "ao.forge.factory-plan.v0.1",
+		PlanID:        "forge-plan-1234567890ab",
+		Objective: factoryObjective{
+			Text:        "Deploy release version",
+			Workspace:   workspaceDir,
+			ReleaseMode: true,
+		},
+		Constraints: factoryConstraints{
+			LocalFirst:           true,
+			AllowNetwork:         false,
+			AllowReleaseMutation: true,
+		},
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := performReleaseMutation(plan, filepath.Join(tmpDir, "packet.json"), nil, &stdout, &stderr)
+	if err == nil {
+		t.Fatalf("expected release mutation to fail closed when git tag push fails")
+	}
+	if !strings.Contains(err.Error(), "failed to push git tag") {
+		t.Fatalf("expected git tag push failure, got: %v", err)
+	}
+	if strings.Contains(stdout.String(), "Published GitHub release") {
+		t.Fatalf("release publishing should not continue after tag push failure; stdout: %s", stdout.String())
+	}
+}
+
+func TestReleaseMutationMissingTokenFailsClosed(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	workspaceDir := filepath.Join(tmpDir, "workspace")
+	if err := os.MkdirAll(workspaceDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = workspaceDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v (output: %q)", args, err, string(out))
+		}
+	}
+
+	runGit("init")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	runGit("config", "commit.gpgSign", "false")
+	runGit("remote", "add", "origin", "git@github.com:test-owner/test-repo.git")
+
+	versionPath := filepath.Join(workspaceDir, "VERSION")
+	_ = os.WriteFile(versionPath, []byte("2.0.0"), 0644)
+	runGit("add", "VERSION")
+	runGit("commit", "-m", "version 2.0.0")
+
+	// Hide gh CLI and GITHUB_TOKEN to force authentication failure
+	t.Setenv("GH_PATH", "/non-existent/gh")
+	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("AO_FORGE_GITHUB_TOKEN", "")
+	t.Setenv("GIT_PATH", buildGitPushWrapper(t, tmpDir))
+
+	// Compile a dummy ao2
+	dummyAo2Src := filepath.Join(tmpDir, "dummy_ao2.go")
+	dummyAo2Bin := filepath.Join(tmpDir, "dummy_ao2")
+	if os.PathSeparator == '\\' {
+		dummyAo2Bin += ".exe"
+	}
+	ao2SrcContent := `package main
+import (
+	"fmt"
+	"os"
+)
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "run" {
+		fmt.Println("status=governed_run_started")
+		os.Exit(0)
+	}
+	os.Exit(1)
+}`
+	_ = os.WriteFile(dummyAo2Src, []byte(ao2SrcContent), 0644)
+	cmdBuildAo2 := exec.Command("go", "build", "-o", dummyAo2Bin, dummyAo2Src)
+	_ = cmdBuildAo2.Run()
+	t.Setenv("AO2_PATH", dummyAo2Bin)
+
+	plan := factoryPlan{
+		SchemaVersion: "ao.forge.factory-plan.v0.1",
+		PlanID:        "forge-plan-1234567890ab",
+		Objective: factoryObjective{
+			Text:        "Release v2.0.0",
+			Workspace:   workspaceDir,
+			ReleaseMode: true,
+		},
+		Constraints: factoryConstraints{
+			LocalFirst:           true,
+			AllowNetwork:         false,
+			AllowReleaseMutation: true,
+		},
+		PolicyGate: policyGate{
+			Required:    true,
+			Status:      "allowed",
+			Explanation: "approved",
+		},
+		Workcells: []planWorkcell{
+			{WorkcellID: "wc1", Kind: "prepare", Status: "planned", DependsOn: []string{}},
+		},
+		ExpectedEvidence: []string{"test"},
+		NextActions: []nextAction{
+			{ActionID: "test", Description: "test", Required: true},
+		},
+	}
+	planData, _ := json.Marshal(plan)
+	planPath := filepath.Join(tmpDir, "plan.json")
+	_ = os.WriteFile(planPath, planData, 0644)
+
+	gateResult := covenantGateResult{
+		SchemaVersion:    "ao.forge.covenant-gate-result.v0.1",
+		Status:           "allowed",
+		PlanID:           "forge-plan-1234567890ab",
+		ExecutionEnabled: true,
+		Decision: covenantDecisionFixture{
+			SchemaVersion: "ao.forge.covenant-decision-fixture.v0.1",
+			TargetPlanID:  "forge-plan-1234567890ab",
+			Decision:      "allow",
+			DecisionID:    "allow-safe",
+			Explanation:   "Approved",
+			Source:        "test",
+		},
+	}
+	gateData, _ := json.Marshal(gateResult)
+	gatePath := filepath.Join(tmpDir, "gate.json")
+	_ = os.WriteFile(gatePath, gateData, 0644)
+
+	outPath := filepath.Join(tmpDir, "packet.json")
+	code, _, _ := runCLI("run", "--plan", planPath, "--gate-result", gatePath, "--out", outPath, "--live", "--confirm-release")
+	if code == 0 {
+		t.Fatalf("expected run to fail closed due to missing github authentication, but it exited 0")
+	}
+}
 
 
 

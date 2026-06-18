@@ -83,6 +83,14 @@
             "type": "string",
             "minLength": 1
           },
+          "max_repairs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "repairs_attempted": {
+            "type": "integer",
+            "minimum": 0
+          },
           "status": {
             "type": "string",
             "enum": ["passed", "failed", "blocked", "skipped", "denied"]

@@ -141,12 +141,13 @@ The `Release Attestation` workflow builds the expected preview release
 archives, generates and verifies `dist/checksums.txt`, runs release preview
 against those artifacts, validates the release evidence contracts, and then uses
 GitHub Artifact Attestations to sign the subjects listed in the checksum
-manifest.
+manifest. Before uploading evidence, it verifies each generated GitHub Artifact Attestation
+against the expected repository, workflow ref, commit, and artifact digest.
 
 This workflow is intentionally non-publishing. It has `contents: read`,
 `id-token: write`, and `attestations: write`, but it must not create releases,
 push refs, or run live release flags. Review the uploaded
-`release-attestation-evidence` artifact and the GitHub attestation records
+`release-attestation-evidence` artifact, including `dist/*.attestation.json`,
 before any public release mutation.
 
 ## Operator Rule

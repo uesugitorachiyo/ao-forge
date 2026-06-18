@@ -81,6 +81,7 @@ jobs:
           with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
               zf.write(binary, arcname="ao-forge.exe")
           PY
+          rm -rf build
 
       - name: Build verification CLI
         run: go build -o "${RUNNER_TEMP}/forge" ./cmd/forge

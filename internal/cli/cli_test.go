@@ -819,6 +819,7 @@ func TestReleaseAttestationWorkflowProducesSignedEvidenceWithoutPublishing(t *te
 	}
 
 	workflow := readText(".github", "workflows", "release-attestation.yml")
+	gitignore := readText(".gitignore")
 	previewRunbook := readText("docs", "release", "PREVIEW-RELEASE.md")
 	releaseNotes := readText("docs", "release", "V0.1.0-RELEASE-NOTES.md")
 	readme := readText("README.md")
@@ -840,6 +841,8 @@ func TestReleaseAttestationWorkflowProducesSignedEvidenceWithoutPublishing(t *te
 		{name: "windows artifact", doc: workflow, want: "ao-forge_Windows_x86_64.zip"},
 		{name: "forge checksums", doc: workflow, want: "artifact checksums"},
 		{name: "forge checksum verification", doc: workflow, want: "artifact verify-checksums"},
+		{name: "build workspace cleanup", doc: workflow, want: "rm -rf build"},
+		{name: "ignored build workspace", doc: gitignore, want: "/build/"},
 		{name: "release preview", doc: workflow, want: "release-preview"},
 		{name: "contract audit", doc: workflow, want: "release-preview-audit-v0.1.schema.json"},
 		{name: "contract inspect", doc: workflow, want: "release-preview-inspect-v0.1.schema.json"},

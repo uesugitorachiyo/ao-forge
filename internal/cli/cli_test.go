@@ -4722,5 +4722,507 @@ func TestAgySwarmsExecutionLive(t *testing.T) {
 	}
 }
 
+func TestInteractiveGateOverrideApprove(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	plan := factoryPlan{
+		PlanID: "override-plan-id",
+		Objective: factoryObjective{
+			Text:      "test override",
+			Workspace: tmpDir,
+		},
+		Constraints: factoryConstraints{
+			LocalFirst: true,
+		},
+		Workcells: []planWorkcell{
+			{
+				WorkcellID: "wc1",
+				Kind:       "prepare",
+				Status:     "planned",
+			},
+		},
+	}
+
+	planPath := filepath.Join(tmpDir, "plan.json")
+	planData, _ := json.Marshal(plan)
+	_ = os.WriteFile(planPath, planData, 0644)
+
+	gate := covenantGateResult{
+		SchemaVersion: "covenant.gate-result.v0.1",
+		Status:        "blocked", // representing indeterminate
+		PlanID:        "override-plan-id",
+		Decision: covenantDecisionFixture{
+			DecisionID:  "indeterminate-network-access",
+			Decision:    "indeterminate",
+			Explanation: "Plan requires network access, requiring override",
+		},
+	}
+	gatePath := filepath.Join(tmpDir, "gate.json")
+	gateData, _ := json.Marshal(gate)
+	_ = os.WriteFile(gatePath, gateData, 0644)
+
+	dummyAo2 := compileTestAo2(t, tmpDir, filepath.Join(tmpDir, "ao2-trace.log"))
+	t.Setenv("AO2_PATH", dummyAo2)
+
+	outPath := filepath.Join(tmpDir, "packet.json")
+
+	stdinMock := strings.NewReader("y\n")
+	var stdoutBuf, stderrBuf bytes.Buffer
+
+	code := executePlanRun(plan, planPath, gatePath, outPath, "", false, false, false, stdinMock, nil, &stdoutBuf, &stderrBuf)
+	if code != 0 {
+		t.Fatalf("expected executePlanRun to succeed (exit code 0), got %d. stderr: %s", code, stderrBuf.String())
+	}
+
+	// Verify operator override evidence is in the packet
+	packetData, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("failed to read packet: %v", err)
+	}
+	var packet factoryPacket
+	if err := json.Unmarshal(packetData, &packet); err != nil {
+		t.Fatalf("failed to unmarshal packet: %v", err)
+	}
+
+	if packet.Status != "passed" {
+		t.Fatalf("expected packet status to be passed, got %q", packet.Status)
+	}
+
+	foundOverride := false
+	for _, ev := range packet.Evidence {
+		if ev.Label == "operator override approval evidence" {
+			foundOverride = true
+			if ev.SchemaVersion != "ao2.operator-override-evidence.v1" {
+				t.Errorf("unexpected schema version: %q", ev.SchemaVersion)
+			}
+			// Verify override JSON file exists and contains correct content
+			overrideFilePath := filepath.Join(tmpDir, "operator-override.json")
+			overrideData, err := os.ReadFile(overrideFilePath)
+			if err != nil {
+				t.Fatalf("override file not found: %v", err)
+			}
+			var overrideObj map[string]any
+			if err := json.Unmarshal(overrideData, &overrideObj); err != nil {
+				t.Fatalf("failed to unmarshal override JSON: %v", err)
+			}
+			if overrideObj["approved"] != true {
+				t.Errorf("expected approved to be true, got %v", overrideObj["approved"])
+			}
+			if overrideObj["gate_decision_id"] != "indeterminate-network-access" {
+				t.Errorf("expected decision ID to be 'indeterminate-network-access', got %v", overrideObj["gate_decision_id"])
+			}
+		}
+	}
+	if !foundOverride {
+		t.Fatal("expected operator override evidence to be present in packet")
+	}
+}
+
+func TestInteractiveGateOverrideDeny(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	plan := factoryPlan{
+		PlanID: "override-plan-id",
+		Objective: factoryObjective{
+			Text:      "test override deny",
+			Workspace: tmpDir,
+		},
+		Constraints: factoryConstraints{
+			LocalFirst: true,
+		},
+		Workcells: []planWorkcell{
+			{
+				WorkcellID: "wc1",
+				Kind:       "prepare",
+				Status:     "planned",
+			},
+		},
+	}
+	planPath := filepath.Join(tmpDir, "plan.json")
+	planData, _ := json.Marshal(plan)
+	_ = os.WriteFile(planPath, planData, 0644)
+
+	gate := covenantGateResult{
+		SchemaVersion: "covenant.gate-result.v0.1",
+		Status:        "blocked",
+		PlanID:        "override-plan-id",
+		Decision: covenantDecisionFixture{
+			DecisionID:  "indeterminate-network-access",
+			Decision:    "indeterminate",
+			Explanation: "Plan requires network access, requiring override",
+		},
+	}
+	gatePath := filepath.Join(tmpDir, "gate.json")
+	gateData, _ := json.Marshal(gate)
+	_ = os.WriteFile(gatePath, gateData, 0644)
+
+	outPath := filepath.Join(tmpDir, "packet.json")
+
+	stdinMock := strings.NewReader("n\n")
+	var stdoutBuf, stderrBuf bytes.Buffer
+
+	code := executePlanRun(plan, planPath, gatePath, outPath, "", false, false, false, stdinMock, nil, &stdoutBuf, &stderrBuf)
+	if code != 1 {
+		t.Fatalf("expected executePlanRun to fail with exit code 1, got %d", code)
+	}
+
+	packetData, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("failed to read packet: %v", err)
+	}
+	var packet factoryPacket
+	if err := json.Unmarshal(packetData, &packet); err != nil {
+		t.Fatalf("failed to unmarshal packet: %v", err)
+	}
+	if packet.Status != "blocked" {
+		t.Fatalf("expected packet status to be blocked, got %q", packet.Status)
+	}
+}
+
+func compileStatefulTestAo2(t *testing.T, tmpDir string, stateFile string) string {
+	t.Helper()
+	dummySrc := filepath.Join(tmpDir, "dummy_ao2_stateful.go")
+	dummyBin := filepath.Join(tmpDir, "dummy_ao2_stateful")
+	if os.PathSeparator == '\\' {
+		dummyBin += ".exe"
+	}
+	srcContent := fmt.Sprintf(`package main
+import (
+	"fmt"
+	"os"
+)
+
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "run" {
+		count := 0
+		if data, err := os.ReadFile(%q); err == nil {
+			fmt.Sscanf(string(data), "%%d", &count)
+		}
+		count++
+		_ = os.WriteFile(%q, []byte(fmt.Sprintf("%%d", count)), 0644)
+
+		if count == 1 {
+			fmt.Fprintln(os.Stderr, "Execution failed first attempt")
+			os.Exit(1)
+		}
+
+		fmt.Println("status=dry_run_accepted")
+		fmt.Println("schema_version=ao2.run/v1")
+		fmt.Println("plan_id=forge-plan-efedbfb309b1")
+		fmt.Println("task_count=1")
+		fmt.Println("target_repo=fixtures/discount-service")
+		fmt.Println("control_plane_role=read_only_observer")
+		fmt.Println("mutates_ao_artifacts=false")
+		fmt.Println("factory_v3_drives_workflow=false")
+		fmt.Println("spec_sha256=abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd")
+		os.Exit(0)
+	}
+	os.Exit(1)
+}`, stateFile, stateFile)
+	if err := os.WriteFile(dummySrc, []byte(srcContent), 0644); err != nil {
+		t.Fatalf("write dummy src: %v", err)
+	}
+	cmd := exec.Command("go", "build", "-o", dummyBin, dummySrc)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy bin: %v (output: %q)", err, string(out))
+	}
+	return dummyBin
+}
+
+func TestInteractiveWorkcellFailureRetry(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	plan := factoryPlan{
+		PlanID: "retry-plan-id",
+		Objective: factoryObjective{
+			Text:      "test retry flow",
+			Workspace: tmpDir,
+		},
+		Constraints: factoryConstraints{
+			LocalFirst: true,
+		},
+		Workcells: []planWorkcell{
+			{
+				WorkcellID: "wc1",
+				Kind:       "prepare",
+				Status:     "planned",
+			},
+		},
+	}
+	planPath := filepath.Join(tmpDir, "plan.json")
+	planData, _ := json.Marshal(plan)
+	_ = os.WriteFile(planPath, planData, 0644)
+
+	gate := covenantGateResult{
+		SchemaVersion: "covenant.gate-result.v0.1",
+		Status:        "allowed",
+		PlanID:        "retry-plan-id",
+		Decision: covenantDecisionFixture{
+			DecisionID:  "allow-local",
+			Decision:    "allow",
+			Explanation: "local allowed",
+		},
+	}
+	gatePath := filepath.Join(tmpDir, "gate.json")
+	gateData, _ := json.Marshal(gate)
+	_ = os.WriteFile(gatePath, gateData, 0644)
+
+	stateFile := filepath.Join(tmpDir, "wc1-run.count")
+	dummyAo2 := compileStatefulTestAo2(t, tmpDir, stateFile)
+	t.Setenv("AO2_PATH", dummyAo2)
+
+	outPath := filepath.Join(tmpDir, "packet.json")
+
+	stdinMock := strings.NewReader("r\n")
+	var stdoutBuf, stderrBuf bytes.Buffer
+
+	code := executePlanRun(plan, planPath, gatePath, outPath, "", false, false, false, stdinMock, nil, &stdoutBuf, &stderrBuf)
+	if code != 0 {
+		t.Fatalf("expected executePlanRun to succeed (exit code 0), got %d. stderr: %s", code, stderrBuf.String())
+	}
+
+	packetData, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("failed to read packet: %v", err)
+	}
+	var packet factoryPacket
+	if err := json.Unmarshal(packetData, &packet); err != nil {
+		t.Fatalf("failed to unmarshal packet: %v", err)
+	}
+	if packet.Status != "passed" {
+		t.Fatalf("expected packet status to be passed, got %q", packet.Status)
+	}
+	if packet.Workcells[0].Status != "passed" {
+		t.Fatalf("expected wc1 status to be passed, got %q", packet.Workcells[0].Status)
+	}
+}
+
+func compileSelectiveTestAo2(t *testing.T, tmpDir string) string {
+	t.Helper()
+	dummySrc := filepath.Join(tmpDir, "dummy_ao2_selective.go")
+	dummyBin := filepath.Join(tmpDir, "dummy_ao2_selective")
+	if os.PathSeparator == '\\' {
+		dummyBin += ".exe"
+	}
+	srcContent := `package main
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+)
+
+type runTarget struct {
+	RepoPath string "json:\"repo_path\""
+}
+
+type runSpecDetails struct {
+	Target runTarget "json:\"target\""
+	Tasks []struct {
+		ID string "json:\"id\""
+	} "json:\"tasks\""
+}
+
+type ao2RunSpec struct {
+	Spec runSpecDetails "json:\"spec\""
+}
+
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "run" {
+		var specPath string
+		for i, arg := range os.Args {
+			if arg == "--spec" && i+1 < len(os.Args) {
+				specPath = os.Args[i+1]
+			}
+		}
+		if specPath != "" {
+			data, err := os.ReadFile(specPath)
+			if err == nil {
+				var spec ao2RunSpec
+				if err := json.Unmarshal(data, &spec); err == nil && len(spec.Spec.Tasks) > 0 {
+					taskID := spec.Spec.Tasks[0].ID
+					if taskID == "wc1" {
+						fmt.Fprintln(os.Stderr, "wc1 failed selectively")
+						os.Exit(1)
+					}
+				}
+			}
+		}
+		fmt.Println("status=dry_run_accepted")
+		fmt.Println("schema_version=ao2.run/v1")
+		fmt.Println("plan_id=forge-plan-efedbfb309b1")
+		fmt.Println("task_count=1")
+		fmt.Println("target_repo=fixtures/discount-service")
+		fmt.Println("control_plane_role=read_only_observer")
+		fmt.Println("mutates_ao_artifacts=false")
+		fmt.Println("factory_v3_drives_workflow=false")
+		fmt.Println("spec_sha256=abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd")
+		os.Exit(0)
+	}
+	os.Exit(1)
+}`
+	if err := os.WriteFile(dummySrc, []byte(srcContent), 0644); err != nil {
+		t.Fatalf("write dummy src: %v", err)
+	}
+	cmd := exec.Command("go", "build", "-o", dummyBin, dummySrc)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy bin: %v (output: %q)", err, string(out))
+	}
+	return dummyBin
+}
+
+func TestInteractiveWorkcellFailureSkip(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	plan := factoryPlan{
+		PlanID: "skip-plan-id",
+		Objective: factoryObjective{
+			Text:      "test skip flow",
+			Workspace: tmpDir,
+		},
+		Constraints: factoryConstraints{
+			LocalFirst: true,
+		},
+		Workcells: []planWorkcell{
+			{
+				WorkcellID: "wc1",
+				Kind:       "prepare",
+				Status:     "planned",
+			},
+			{
+				WorkcellID: "wc2",
+				Kind:       "prepare",
+				Status:     "planned",
+			},
+		},
+	}
+	planPath := filepath.Join(tmpDir, "plan.json")
+	planData, _ := json.Marshal(plan)
+	_ = os.WriteFile(planPath, planData, 0644)
+
+	gate := covenantGateResult{
+		SchemaVersion: "covenant.gate-result.v0.1",
+		Status:        "allowed",
+		PlanID:        "skip-plan-id",
+		Decision: covenantDecisionFixture{
+			DecisionID:  "allow-local",
+			Decision:    "allow",
+			Explanation: "local allowed",
+		},
+	}
+	gatePath := filepath.Join(tmpDir, "gate.json")
+	gateData, _ := json.Marshal(gate)
+	_ = os.WriteFile(gatePath, gateData, 0644)
+
+	dummyAo2 := compileSelectiveTestAo2(t, tmpDir)
+	t.Setenv("AO2_PATH", dummyAo2)
+
+	outPath := filepath.Join(tmpDir, "packet.json")
+
+	stdinMock := strings.NewReader("s\n")
+	var stdoutBuf, stderrBuf bytes.Buffer
+
+	code := executePlanRun(plan, planPath, gatePath, outPath, "", false, false, false, stdinMock, nil, &stdoutBuf, &stderrBuf)
+	if code != 0 {
+		t.Fatalf("expected executePlanRun to succeed (exit code 0) after skip, got %d. stderr: %s", code, stderrBuf.String())
+	}
+
+	packetData, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("failed to read packet: %v", err)
+	}
+	var packet factoryPacket
+	if err := json.Unmarshal(packetData, &packet); err != nil {
+		t.Fatalf("failed to unmarshal packet: %v", err)
+	}
+
+	if packet.Status != "passed" {
+		t.Fatalf("expected packet status to be passed, got %q", packet.Status)
+	}
+
+	var wc1Status, wc2Status string
+	for _, wc := range packet.Workcells {
+		if wc.WorkcellID == "wc1" {
+			wc1Status = wc.Status
+		}
+		if wc.WorkcellID == "wc2" {
+			wc2Status = wc.Status
+		}
+	}
+	if wc1Status != "skipped" {
+		t.Errorf("expected wc1 status to be 'skipped', got %q", wc1Status)
+	}
+	if wc2Status != "passed" {
+		t.Errorf("expected wc2 status to be 'passed', got %q", wc2Status)
+	}
+}
+
+func TestInteractiveWorkcellFailureAbort(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	plan := factoryPlan{
+		PlanID: "abort-plan-id",
+		Objective: factoryObjective{
+			Text:      "test abort flow",
+			Workspace: tmpDir,
+		},
+		Constraints: factoryConstraints{
+			LocalFirst: true,
+		},
+		Workcells: []planWorkcell{
+			{
+				WorkcellID: "wc1",
+				Kind:       "prepare",
+				Status:     "planned",
+			},
+		},
+	}
+	planPath := filepath.Join(tmpDir, "plan.json")
+	planData, _ := json.Marshal(plan)
+	_ = os.WriteFile(planPath, planData, 0644)
+
+	gate := covenantGateResult{
+		SchemaVersion: "covenant.gate-result.v0.1",
+		Status:        "allowed",
+		PlanID:        "abort-plan-id",
+		Decision: covenantDecisionFixture{
+			DecisionID:  "allow-local",
+			Decision:    "allow",
+			Explanation: "local allowed",
+		},
+	}
+	gatePath := filepath.Join(tmpDir, "gate.json")
+	gateData, _ := json.Marshal(gate)
+	_ = os.WriteFile(gatePath, gateData, 0644)
+
+	dummyAo2 := compileSelectiveTestAo2(t, tmpDir)
+	t.Setenv("AO2_PATH", dummyAo2)
+
+	outPath := filepath.Join(tmpDir, "packet.json")
+
+	stdinMock := strings.NewReader("a\n")
+	var stdoutBuf, stderrBuf bytes.Buffer
+
+	code := executePlanRun(plan, planPath, gatePath, outPath, "", false, false, false, stdinMock, nil, &stdoutBuf, &stderrBuf)
+	if code != 1 {
+		t.Fatalf("expected executePlanRun to fail (exit code 1), got %d. stderr: %s", code, stderrBuf.String())
+	}
+
+	packetData, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("failed to read packet: %v", err)
+	}
+	var packet factoryPacket
+	if err := json.Unmarshal(packetData, &packet); err != nil {
+		t.Fatalf("failed to unmarshal packet: %v", err)
+	}
+
+	if packet.Status != "failed" {
+		t.Fatalf("expected packet status to be failed, got %q", packet.Status)
+	}
+	if packet.Workcells[0].Status != "failed" {
+		t.Fatalf("expected wc1 status to be failed, got %q", packet.Workcells[0].Status)
+	}
+}
+
 
 

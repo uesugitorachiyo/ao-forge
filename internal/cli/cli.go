@@ -28,6 +28,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/uesugitorachiyo/ao-forge/internal/foundation"
 )
 
@@ -218,6 +219,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runArtifact(args[1:], stdout, stderr)
 	case "release-preview":
 		return runReleasePreview(args[1:], stdout, stderr)
+	case "contract":
+		return runContract(args[1:], stdout, stderr)
 	case "run":
 		return runRun(args[1:], stdout, stderr)
 	case "once":
@@ -250,14 +253,15 @@ Usage:
   forge artifact checksums --artifact <path> [--artifact <path> ...] [--out <checksums.txt>]
   forge release-preview --workspace <git-workspace> [--tag <vX.Y.Z>] [--artifact <path> ...] [--out <release-preview-audit.json>]
   forge release-preview inspect --audit <release-preview-audit.json> [--json]
+  forge contract validate --schema <schema.json> --document <document.json> [--json]
 
 Factory terms:
   factory brief   normalized operator objective and constraints
   workcell        bounded unit of factory work with dependencies and evidence
   factory packet  operator-ready JSON summary of plan, gates, evidence, and next actions
 
-Slice 2.7 status:
-  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, release preview audits, release preview enforcement, release preview audit inspection, and artifact checksums are enabled.
+Slice 2.8 status:
+  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, release preview audits, release preview enforcement, release preview audit inspection, artifact checksums, and contract schema validation are enabled.
 `)
 }
 
@@ -4268,6 +4272,162 @@ func resolveGitPath() string {
 		return gitBin
 	}
 	return "git"
+}
+
+type contractValidateFlags struct {
+	schemaPath   string
+	documentPath string
+	json         bool
+}
+
+type contractValidationSummary struct {
+	Schema   string   `json:"schema"`
+	Document string   `json:"document"`
+	Status   string   `json:"status"`
+	Errors   []string `json:"errors"`
+}
+
+func runContract(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "forge contract: missing subcommand")
+		return 2
+	}
+	switch args[0] {
+	case "validate":
+		return runContractValidate(args[1:], stdout, stderr)
+	case "--help", "-h":
+		fmt.Fprintln(stderr, "forge contract: use `forge contract validate --schema <schema.json> --document <document.json> [--json]`")
+		return 0
+	default:
+		fmt.Fprintf(stderr, "forge contract: unknown subcommand %q\n", args[0])
+		return 2
+	}
+}
+
+func parseContractValidateFlags(args []string) (contractValidateFlags, error) {
+	var flags contractValidateFlags
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--schema":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return contractValidateFlags{}, fmt.Errorf("--schema requires a value")
+			}
+			flags.schemaPath = args[i+1]
+			i++
+		case "--document":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return contractValidateFlags{}, fmt.Errorf("--document requires a value")
+			}
+			flags.documentPath = args[i+1]
+			i++
+		case "--json":
+			flags.json = true
+		case "--help", "-h":
+			return contractValidateFlags{}, fmt.Errorf("help is available with `forge --help`")
+		default:
+			if strings.HasPrefix(args[i], "--") {
+				return contractValidateFlags{}, fmt.Errorf("unknown flag %s", args[i])
+			}
+			return contractValidateFlags{}, fmt.Errorf("unexpected argument %s", args[i])
+		}
+	}
+	if flags.schemaPath == "" {
+		return contractValidateFlags{}, fmt.Errorf("missing required --schema")
+	}
+	if flags.documentPath == "" {
+		return contractValidateFlags{}, fmt.Errorf("missing required --document")
+	}
+	return flags, nil
+}
+
+func runContractValidate(args []string, stdout, stderr io.Writer) int {
+	flags, err := parseContractValidateFlags(args)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge contract validate: %v\n", err)
+		return 2
+	}
+
+	summary := contractValidationSummary{
+		Schema:   displayPath(flags.schemaPath),
+		Document: displayPath(flags.documentPath),
+		Status:   "passed",
+		Errors:   []string{},
+	}
+	if err := validateJSONSchemaDocument(flags.schemaPath, flags.documentPath); err != nil {
+		summary.Status = "failed"
+		summary.Errors = []string{err.Error()}
+		writeContractValidationSummary(stdout, summary, flags.json)
+		fmt.Fprintf(stderr, "forge contract validate: schema validation failed: %v\n", err)
+		return 1
+	}
+
+	writeContractValidationSummary(stdout, summary, flags.json)
+	return 0
+}
+
+func writeContractValidationSummary(stdout io.Writer, summary contractValidationSummary, asJSON bool) {
+	if asJSON {
+		data, err := marshalIndented(summary)
+		if err != nil {
+			fmt.Fprintf(stdout, "{\"status\":\"failed\",\"errors\":[%q]}\n", err.Error())
+			return
+		}
+		_, _ = stdout.Write(data)
+		return
+	}
+	fmt.Fprintf(stdout, "contract_validation=%s\n", summary.Status)
+	fmt.Fprintf(stdout, "schema=%s\n", summary.Schema)
+	fmt.Fprintf(stdout, "document=%s\n", summary.Document)
+	for _, validationErr := range summary.Errors {
+		fmt.Fprintf(stdout, "error=%s\n", validationErr)
+	}
+}
+
+func validateJSONSchemaDocument(schemaPath, documentPath string) error {
+	schemaDoc, err := readJSONAny(schemaPath)
+	if err != nil {
+		return fmt.Errorf("read schema: %w", err)
+	}
+	document, err := readJSONAny(documentPath)
+	if err != nil {
+		return fmt.Errorf("read document: %w", err)
+	}
+
+	compiler := jsonschema.NewCompiler()
+	if err := compiler.AddResource("schema.json", schemaDoc); err != nil {
+		return fmt.Errorf("load schema: %w", err)
+	}
+	schema, err := compiler.Compile("schema.json")
+	if err != nil {
+		return fmt.Errorf("compile schema: %w", err)
+	}
+	if err := schema.Validate(document); err != nil {
+		return err
+	}
+	return nil
+}
+
+func readJSONAny(path string) (any, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	decoder := json.NewDecoder(file)
+	decoder.UseNumber()
+	var decoded any
+	if err := decoder.Decode(&decoded); err != nil {
+		return nil, err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("multiple JSON values")
+	}
+	return decoded, nil
 }
 
 type artifactChecksumFlags struct {

@@ -101,6 +101,24 @@ Inspect the example operator packet:
 ./bin/forge inspect --packet examples/packets/risky-pr-factory-packet.json
 ```
 
+Validate a machine-readable contract document against its JSON Schema:
+`forge contract validate --schema docs/contracts/release-preview-audit-v0.1.schema.json`
+
+```sh
+./bin/forge contract validate \
+  --schema docs/contracts/release-preview-audit-v0.1.schema.json \
+  --document examples/release-preview/dirty-workspace-blocked.audit.json
+```
+
+For automation, emit the validation result as JSON:
+
+```sh
+./bin/forge contract validate \
+  --schema docs/contracts/release-preview-inspect-v0.1.schema.json \
+  --document examples/release-preview/dirty-workspace-blocked.inspect.expected.json \
+  --json
+```
+
 Verify that the local workspace matches the verified baseline:
 
 ```sh

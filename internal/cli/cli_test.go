@@ -184,7 +184,7 @@ func TestReleasePreviewWorkflowPublishesDryRunAuditArtifacts(t *testing.T) {
 		"push:",
 		"scripts/release-preview-dry-run.sh",
 		"release-preview inspect --audit",
-		"actions/upload-artifact",
+		"actions/upload-artifact@v7",
 		"release-preview-audit",
 		"release-preview-inspect",
 	} {
@@ -197,6 +197,8 @@ func TestReleasePreviewWorkflowPublishesDryRunAuditArtifacts(t *testing.T) {
 		"--live",
 		"GITHUB_TOKEN:",
 		"contents: write",
+		"actions/upload-artifact@v4",
+		"actions/upload-artifact@v5",
 	} {
 		if strings.Contains(workflow, forbidden) {
 			t.Fatalf("release preview workflow must not contain %q\n%s", forbidden, workflow)

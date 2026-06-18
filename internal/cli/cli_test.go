@@ -60,10 +60,11 @@ func TestHelpExplainsFactoryTermsWithoutMarketingCopy(t *testing.T) {
 		"forge plan --brief",
 		"forge inspect --packet",
 		"dry-run execution",
-		"Slice 2.4 status:",
+		"Slice 2.5 status:",
 		"release mutation",
 		"GitHub publishing",
 		"release preview audits",
+		"release preview enforcement",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("help missing %q\n%s", want, stdout)
@@ -78,6 +79,29 @@ func TestHelpExplainsFactoryTermsWithoutMarketingCopy(t *testing.T) {
 		if strings.Contains(strings.ToLower(stdout), forbidden) {
 			t.Fatalf("help contains marketing copy %q\n%s", forbidden, stdout)
 		}
+	}
+}
+
+func TestReleasePreviewAuditFlagRequiresValue(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "run", args: []string{"run", "--release-preview-audit"}, want: "forge run: --release-preview-audit requires a value"},
+		{name: "resume", args: []string{"resume", "--release-preview-audit"}, want: "forge resume: --release-preview-audit requires a value"},
+		{name: "once", args: []string{"once", "--release-preview-audit"}, want: "forge once: --release-preview-audit requires a value"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			code, _, stderr := runCLI(tc.args...)
+			if code != 2 {
+				t.Fatalf("expected usage error code 2, got %d", code)
+			}
+			if !strings.Contains(stderr, tc.want) {
+				t.Fatalf("stderr missing %q: %s", tc.want, stderr)
+			}
+		})
 	}
 }
 
@@ -902,14 +926,14 @@ func main() {
 
 	// Setup mock plans and gate results
 	planPath := filepath.Join(root, "examples", "plans", "risky-pr-factory-plan.json")
-	
+
 	// 1. Fails closed with missing gate result
 	code, stdout, stderr := runCLI("run", "--plan", planPath, "--gate-result", "nonexistent-gate-result.json")
 	if code == 0 {
 		t.Fatalf("expected failure exit code for missing gate result")
 	}
 	var packet struct {
-		Status string `json:"status"`
+		Status    string `json:"status"`
 		Workcells []struct {
 			Status string `json:"status"`
 		} `json:"workcells"`
@@ -968,13 +992,13 @@ func main() {
 	if code != 0 {
 		t.Fatalf("expected success exit code for run, got %d (stderr: %s)", code, stderr)
 	}
-	
+
 	packetBytes, err := os.ReadFile(outPacketPath)
 	if err != nil {
 		t.Fatalf("failed to read out packet: %v", err)
 	}
 	var passedPacket struct {
-		Status string `json:"status"`
+		Status    string `json:"status"`
 		Workcells []struct {
 			Status string `json:"status"`
 			AO2Run string `json:"ao2_run"`
@@ -1347,7 +1371,7 @@ func TestRunSucceedsWithControlPlaneReadback(t *testing.T) {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
-			
+
 			// Decode and store the operator packet (decoded from base64 string or packet)
 			b64Str, ok := body["operator_packet_b64"].(string)
 			if !ok {
@@ -1488,7 +1512,7 @@ func TestRunFailsClosedWhenControlPlaneTokenMissing(t *testing.T) {
 	tmpDir := t.TempDir()
 	dummyBin := compileDummyAo2(t, tmpDir)
 	t.Setenv("AO2_PATH", dummyBin)
-	
+
 	// Unset token
 	t.Setenv("AO2_CP_API_TOKEN", "")
 	t.Setenv("AO_FORGE_CP_API_TOKEN", "")
@@ -2856,6 +2880,12 @@ func main() {
 	runGit(cleanGitDir, "add", "clean.txt")
 	runGit(cleanGitDir, "commit", "-m", "init")
 
+	releasePreviewAuditPath := filepath.Join(tmpDir, "release-preview-live-mode.json")
+	previewCode, previewStdout, previewStderr := runCLI("release-preview", "--workspace", cleanGitDir, "--tag", "v1.0.0", "--out", releasePreviewAuditPath)
+	if previewCode != 0 {
+		t.Fatalf("release-preview failed with code %d\nstdout: %s\nstderr: %s", previewCode, previewStdout, previewStderr)
+	}
+
 	// 1. Safe Plan, --live mode (not release mode) -> succeeds
 	plan1 := makePlan(cleanGitDir, false, false)
 	gate1 := makeGateResult("forge-plan-efedbfb309b1", "allowed", "allow-local-plan")
@@ -2898,7 +2928,7 @@ func main() {
 
 	// 3. Release Mode Plan, --live mode, WITH --confirm-release -> succeeds
 	outPath3 := filepath.Join(tmpDir, "packet3.json")
-	code3, _, stderr3 := runCLI("run", "--plan", plan2, "--gate-result", gate2, "--out", outPath3, "--live", "--confirm-release")
+	code3, _, stderr3 := runCLI("run", "--plan", plan2, "--gate-result", gate2, "--out", outPath3, "--live", "--confirm-release", "--release-preview-audit", releasePreviewAuditPath)
 	if code3 != 0 {
 		t.Fatalf("expected code 0, got %d (stderr: %q)", code3, stderr3)
 	}
@@ -2917,7 +2947,7 @@ func main() {
 	// 4. Gate Result is indeterminate-release-mutation, WITH --confirm-release -> succeeds (operator override)
 	gate4 := makeGateResult("forge-plan-efedbfb309b1", "blocked", "indeterminate-release-mutation")
 	outPath4 := filepath.Join(tmpDir, "packet4.json")
-	code4, _, stderr4 := runCLI("run", "--plan", plan2, "--gate-result", gate4, "--out", outPath4, "--live", "--confirm-release")
+	code4, _, stderr4 := runCLI("run", "--plan", plan2, "--gate-result", gate4, "--out", outPath4, "--live", "--confirm-release", "--release-preview-audit", releasePreviewAuditPath)
 	if code4 != 0 {
 		t.Fatalf("expected code 0, got %d (stderr: %q)", code4, stderr4)
 	}
@@ -4785,7 +4815,7 @@ func TestInteractiveGateOverrideApprove(t *testing.T) {
 	stdinMock := strings.NewReader("y\n")
 	var stdoutBuf, stderrBuf bytes.Buffer
 
-	code := executePlanRun(plan, planPath, gatePath, outPath, "", false, false, false, true, stdinMock, nil, &stdoutBuf, &stderrBuf)
+	code := executePlanRun(plan, planPath, gatePath, outPath, "", "", false, false, false, true, stdinMock, nil, &stdoutBuf, &stderrBuf)
 	if code != 0 {
 		t.Fatalf("expected executePlanRun to succeed (exit code 0), got %d. stderr: %s", code, stderrBuf.String())
 	}
@@ -4877,7 +4907,7 @@ func TestInteractiveGateOverrideDeny(t *testing.T) {
 	stdinMock := strings.NewReader("n\n")
 	var stdoutBuf, stderrBuf bytes.Buffer
 
-	code := executePlanRun(plan, planPath, gatePath, outPath, "", false, false, false, true, stdinMock, nil, &stdoutBuf, &stderrBuf)
+	code := executePlanRun(plan, planPath, gatePath, outPath, "", "", false, false, false, true, stdinMock, nil, &stdoutBuf, &stderrBuf)
 	if code != 1 {
 		t.Fatalf("expected executePlanRun to fail with exit code 1, got %d", code)
 	}
@@ -4992,7 +5022,7 @@ func TestInteractiveWorkcellFailureRetry(t *testing.T) {
 	stdinMock := strings.NewReader("r\n")
 	var stdoutBuf, stderrBuf bytes.Buffer
 
-	code := executePlanRun(plan, planPath, gatePath, outPath, "", false, false, false, true, stdinMock, nil, &stdoutBuf, &stderrBuf)
+	code := executePlanRun(plan, planPath, gatePath, outPath, "", "", false, false, false, true, stdinMock, nil, &stdoutBuf, &stderrBuf)
 	if code != 0 {
 		t.Fatalf("expected executePlanRun to succeed (exit code 0), got %d. stderr: %s", code, stderrBuf.String())
 	}
@@ -5137,7 +5167,7 @@ func TestInteractiveWorkcellFailureSkip(t *testing.T) {
 	stdinMock := strings.NewReader("s\n")
 	var stdoutBuf, stderrBuf bytes.Buffer
 
-	code := executePlanRun(plan, planPath, gatePath, outPath, "", false, false, false, true, stdinMock, nil, &stdoutBuf, &stderrBuf)
+	code := executePlanRun(plan, planPath, gatePath, outPath, "", "", false, false, false, true, stdinMock, nil, &stdoutBuf, &stderrBuf)
 	if code != 0 {
 		t.Fatalf("expected executePlanRun to succeed (exit code 0) after skip, got %d. stderr: %s", code, stderrBuf.String())
 	}
@@ -5218,7 +5248,7 @@ func TestInteractiveWorkcellFailureAbort(t *testing.T) {
 	stdinMock := strings.NewReader("a\n")
 	var stdoutBuf, stderrBuf bytes.Buffer
 
-	code := executePlanRun(plan, planPath, gatePath, outPath, "", false, false, false, true, stdinMock, nil, &stdoutBuf, &stderrBuf)
+	code := executePlanRun(plan, planPath, gatePath, outPath, "", "", false, false, false, true, stdinMock, nil, &stdoutBuf, &stderrBuf)
 	if code != 1 {
 		t.Fatalf("expected executePlanRun to fail (exit code 1), got %d. stderr: %s", code, stderrBuf.String())
 	}
@@ -5282,7 +5312,7 @@ func TestDashboardDisabledInNonInteractive(t *testing.T) {
 	var stdoutBuf, stderrBuf bytes.Buffer
 
 	// executePlanRun with noDashboard = true
-	code := executePlanRun(plan, planPath, gatePath, outPath, "", false, false, false, true, strings.NewReader(""), nil, &stdoutBuf, &stderrBuf)
+	code := executePlanRun(plan, planPath, gatePath, outPath, "", "", false, false, false, true, strings.NewReader(""), nil, &stdoutBuf, &stderrBuf)
 	if code != 0 {
 		t.Fatalf("run failed: %d", code)
 	}
@@ -6250,6 +6280,103 @@ func main() {
 	return wrapperBin
 }
 
+func TestReleaseMutationRequiresPreviewAudit(t *testing.T) {
+	tmpDir := t.TempDir()
+	workspaceDir := filepath.Join(tmpDir, "workspace")
+	if err := os.MkdirAll(workspaceDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = workspaceDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v (output: %q)", args, err, string(out))
+		}
+	}
+	runGit("init")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	runGit("config", "commit.gpgSign", "false")
+	runGit("remote", "add", "origin", "git@github.com:test-owner/test-repo.git")
+	if err := os.WriteFile(filepath.Join(workspaceDir, "VERSION"), []byte("1.2.7"), 0644); err != nil {
+		t.Fatalf("write VERSION: %v", err)
+	}
+	runGit("add", "VERSION")
+	runGit("commit", "-m", "version 1.2.7")
+
+	dummyAo2 := compileTestAo2(t, tmpDir, filepath.Join(tmpDir, "ao2-trace.log"))
+	t.Setenv("AO2_PATH", dummyAo2)
+	t.Setenv("GIT_PATH", buildGitPushWrapper(t, tmpDir))
+
+	plan := factoryPlan{
+		SchemaVersion: "ao.forge.factory-plan.v0.1",
+		PlanID:        "forge-plan-1234567890ab",
+		Objective: factoryObjective{
+			Text:        "Deploy release version",
+			Workspace:   workspaceDir,
+			ReleaseMode: true,
+		},
+		Constraints: factoryConstraints{
+			LocalFirst:           true,
+			AllowNetwork:         false,
+			AllowReleaseMutation: true,
+		},
+		PolicyGate: policyGate{
+			Required:    true,
+			Status:      "allowed",
+			Explanation: "approved",
+		},
+		Workcells: []planWorkcell{
+			{WorkcellID: "wc1", Kind: "prepare", Status: "planned", DependsOn: []string{}},
+		},
+		ExpectedEvidence: []string{"test"},
+		NextActions:      []nextAction{{ActionID: "test", Description: "test", Required: true}},
+	}
+	planData, _ := json.Marshal(plan)
+	planPath := filepath.Join(tmpDir, "plan.json")
+	_ = os.WriteFile(planPath, planData, 0644)
+
+	gateResult := covenantGateResult{
+		SchemaVersion:    "ao.forge.covenant-gate-result.v0.1",
+		Status:           "allowed",
+		PlanID:           plan.PlanID,
+		ExecutionEnabled: true,
+		Decision: covenantDecisionFixture{
+			SchemaVersion: "ao.forge.covenant-decision-fixture.v0.1",
+			TargetPlanID:  plan.PlanID,
+			Decision:      "allow",
+			DecisionID:    "allow-safe",
+			Explanation:   "Approved",
+			Source:        "test",
+		},
+	}
+	gateData, _ := json.Marshal(gateResult)
+	gatePath := filepath.Join(tmpDir, "gate.json")
+	_ = os.WriteFile(gatePath, gateData, 0644)
+
+	outPath := filepath.Join(tmpDir, "packet.json")
+	code, _, stderr := runCLI("run", "--plan", planPath, "--gate-result", gatePath, "--out", outPath, "--live", "--confirm-release")
+	if code == 0 {
+		t.Fatalf("expected confirmed release run without preview audit to fail closed")
+	}
+	if !strings.Contains(stderr, "release preview audit is required") {
+		t.Fatalf("stderr missing preview audit requirement: %s", stderr)
+	}
+
+	var packet factoryPacket
+	packetData, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read packet: %v", err)
+	}
+	if err := json.Unmarshal(packetData, &packet); err != nil {
+		t.Fatalf("unmarshal packet: %v", err)
+	}
+	if packet.Status != "blocked" || len(packet.PolicyDecisions) == 0 || packet.PolicyDecisions[0].DecisionID != "release-preview-audit-required" {
+		t.Fatalf("expected release-preview-audit-required blocked packet, got: %+v", packet)
+	}
+}
+
 func TestReleaseMutationDraftPublishing(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -6281,6 +6408,12 @@ func TestReleaseMutationDraftPublishing(t *testing.T) {
 
 	runGit("add", "VERSION")
 	runGit("commit", "-m", "initial version")
+
+	previewAuditPath := filepath.Join(tmpDir, "release-preview.json")
+	previewCode, previewStdout, previewStderr := runCLI("release-preview", "--workspace", workspaceDir, "--artifact", versionPath, "--out", previewAuditPath)
+	if previewCode != 0 {
+		t.Fatalf("release-preview failed with code %d\nStdout: %s\nStderr: %s", previewCode, previewStdout, previewStderr)
+	}
 
 	// 2. Set up mock HTTP server for GitHub API fallback
 	var apiCalled bool
@@ -6400,7 +6533,7 @@ func main() {
 	_ = os.WriteFile(gatePath, gateData, 0644)
 
 	outPath := filepath.Join(tmpDir, "packet.json")
-	code, stdout, stderr := runCLI("run", "--plan", planPath, "--gate-result", gatePath, "--out", outPath, "--live", "--confirm-release")
+	code, stdout, stderr := runCLI("run", "--plan", planPath, "--gate-result", gatePath, "--out", outPath, "--live", "--confirm-release", "--release-preview-audit", previewAuditPath)
 	if code != 0 {
 		t.Fatalf("run failed with code %d\nStdout: %s\nStderr: %s", code, stdout, stderr)
 	}

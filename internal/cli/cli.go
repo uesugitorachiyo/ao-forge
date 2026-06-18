@@ -237,10 +237,10 @@ Usage:
   forge init
   forge plan --brief <factory-brief.json> [--out <factory-plan.json>] [--dynamic]
   forge gate --plan <factory-plan.json> --covenant <path-to-covenant-or-config> [--out <gate-result.json>]
-  forge run --plan <factory-plan.json> --gate-result <gate-result.json> [--out <factory-packet.json>] [--live] [--confirm-release]
-  forge once --brief <factory-brief.json> --covenant <path-to-covenant-or-config> [--out <factory-packet.json>] [--live] [--confirm-release]
+  forge run --plan <factory-plan.json> --gate-result <gate-result.json> [--out <factory-packet.json>] [--live] [--confirm-release] [--release-preview-audit <release-preview-audit.json>]
+  forge once --brief <factory-brief.json> --covenant <path-to-covenant-or-config> [--out <factory-packet.json>] [--live] [--confirm-release] [--release-preview-audit <release-preview-audit.json>]
   forge packet --run <run-id> [--out <factory-packet.json>]
-  forge resume --run <run-id> [--out <factory-packet.json>] [--live] [--confirm-release]
+  forge resume --run <run-id> [--out <factory-packet.json>] [--live] [--confirm-release] [--release-preview-audit <release-preview-audit.json>]
   forge inspect --packet <factory-packet.json>
   forge doctor --foundation <foundation-baseline.json> [--json]
   forge release-preview --workspace <git-workspace> [--tag <vX.Y.Z>] [--artifact <path> ...] [--out <release-preview-audit.json>]
@@ -250,8 +250,8 @@ Factory terms:
   workcell        bounded unit of factory work with dependencies and evidence
   factory packet  operator-ready JSON summary of plan, gates, evidence, and next actions
 
-Slice 2.4 status:
-  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, and release preview audits are enabled.
+Slice 2.5 status:
+  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, release preview audits, and release preview enforcement are enabled.
 `)
 }
 
@@ -1447,6 +1447,7 @@ func resolveAgySwarmsCommand() ([]string, error) {
 func runRun(args []string, stdout, stderr io.Writer) int {
 	var planPath, gateResultPath, outPath string
 	var controlPlaneURL string
+	var releasePreviewAuditPath string
 	var liveMode bool
 	var confirmRelease bool
 	var nonInteractive bool
@@ -1481,6 +1482,13 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 			}
 			controlPlaneURL = args[i+1]
 			i++
+		case "--release-preview-audit":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				fmt.Fprintln(stderr, "forge run: --release-preview-audit requires a value")
+				return 2
+			}
+			releasePreviewAuditPath = args[i+1]
+			i++
 		case "--live":
 			liveMode = true
 		case "--confirm-release":
@@ -1510,7 +1518,7 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	return executePlanRun(plan, planPath, gateResultPath, outPath, controlPlaneURL, liveMode, confirmRelease, nonInteractive, noDashboard, os.Stdin, nil, stdout, stderr)
+	return executePlanRun(plan, planPath, gateResultPath, outPath, controlPlaneURL, releasePreviewAuditPath, liveMode, confirmRelease, nonInteractive, noDashboard, os.Stdin, nil, stdout, stderr)
 }
 
 func executePlanRun(
@@ -1519,6 +1527,7 @@ func executePlanRun(
 	gateResultPath string,
 	outPath string,
 	controlPlaneURL string,
+	releasePreviewAuditPath string,
 	liveMode bool,
 	confirmRelease bool,
 	nonInteractive bool,
@@ -1688,6 +1697,21 @@ func executePlanRun(
 	if liveMode && (plan.Objective.ReleaseMode || plan.Constraints.AllowReleaseMutation) && !confirmRelease {
 		explanation := "forge run: release mode live execution requires explicit operator confirmation (--confirm-release)"
 		return failClosedWithPacket("blocked", "blocked", explanation, "release-confirmation-required", "ao-forge", true, nil)
+	}
+
+	if liveMode && plan.Objective.ReleaseMode && confirmRelease {
+		if strings.TrimSpace(releasePreviewAuditPath) == "" {
+			explanation := "forge run: release preview audit is required for confirmed release mutation (--release-preview-audit)"
+			fmt.Fprintln(stderr, explanation)
+			return failClosedWithPacket("blocked", "blocked", explanation, "release-preview-audit-required", "ao-forge", true, nil)
+		}
+		evidence, err := validateReleasePreviewAuditForPlan(releasePreviewAuditPath, plan)
+		if err != nil {
+			explanation := fmt.Sprintf("forge run: release preview audit validation failed: %v", err)
+			fmt.Fprintln(stderr, explanation)
+			return failClosedWithPacket("blocked", "blocked", explanation, "release-preview-audit-invalid", "ao-forge", true, nil)
+		}
+		extraEvidence = append(extraEvidence, evidence)
 	}
 
 	gateData, err := os.ReadFile(gateResultPath)
@@ -2193,6 +2217,7 @@ func executePlanRun(
 func runResume(args []string, stdout, stderr io.Writer) int {
 	var runID, outPath string
 	var controlPlaneURL string
+	var releasePreviewAuditPath string
 	var liveMode bool
 	var confirmRelease bool
 	var nonInteractive bool
@@ -2219,6 +2244,13 @@ func runResume(args []string, stdout, stderr io.Writer) int {
 				return 2
 			}
 			controlPlaneURL = args[i+1]
+			i++
+		case "--release-preview-audit":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				fmt.Fprintln(stderr, "forge resume: --release-preview-audit requires a value")
+				return 2
+			}
+			releasePreviewAuditPath = args[i+1]
 			i++
 		case "--live":
 			liveMode = true
@@ -2343,12 +2375,13 @@ func runResume(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	return executePlanRun(plan, planPath, gateResultPath, outPath, controlPlaneURL, liveMode, confirmRelease, nonInteractive, noDashboard, os.Stdin, prevStates, stdout, stderr)
+	return executePlanRun(plan, planPath, gateResultPath, outPath, controlPlaneURL, releasePreviewAuditPath, liveMode, confirmRelease, nonInteractive, noDashboard, os.Stdin, prevStates, stdout, stderr)
 }
 
 func runOnce(args []string, stdout, stderr io.Writer) int {
 	var briefPath, covenantPath, outPath string
 	var controlPlaneURL string
+	var releasePreviewAuditPath string
 	var workspacePath string
 	var liveMode bool
 	var confirmRelease bool
@@ -2383,6 +2416,13 @@ func runOnce(args []string, stdout, stderr io.Writer) int {
 				return 2
 			}
 			controlPlaneURL = args[i+1]
+			i++
+		case "--release-preview-audit":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				fmt.Fprintln(stderr, "forge once: --release-preview-audit requires a value")
+				return 2
+			}
+			releasePreviewAuditPath = args[i+1]
 			i++
 		case "--workspace":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
@@ -2495,6 +2535,9 @@ func runOnce(args []string, stdout, stderr io.Writer) int {
 	}
 	if confirmRelease {
 		runArgs = append(runArgs, "--confirm-release")
+	}
+	if releasePreviewAuditPath != "" {
+		runArgs = append(runArgs, "--release-preview-audit", releasePreviewAuditPath)
 	}
 	if nonInteractive {
 		runArgs = append(runArgs, "--non-interactive")
@@ -3117,7 +3160,6 @@ func (w *realTimeWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-
 func runWorkcellsConcurrent(
 	ctx context.Context,
 	plan factoryPlan,
@@ -3309,7 +3351,7 @@ func runWorkcellsConcurrent(
 				if err != nil {
 					if !nonInteractive {
 						promptMu.Lock()
-						
+
 						// Check if context has been cancelled by another goroutine's abort action
 						if ctx.Err() != nil {
 							mu.Lock()
@@ -3328,7 +3370,7 @@ func runWorkcellsConcurrent(
 							fmt.Fprintf(stderr, "Stderr: %s\n", t.Stderr)
 						}
 						fmt.Fprintf(stderr, "Choose action: (r)etry, (s)kip and continue, or (a)bort? [r/s/A]: ")
-						
+
 						response, scanErr := readStdinLine(stdin)
 						promptMu.Unlock()
 
@@ -3354,7 +3396,7 @@ func runWorkcellsConcurrent(
 										mu.Unlock()
 										return
 									}
-									
+
 									// If it fails again, lock promptMu to prompt again
 									promptMu.Lock()
 									if ctx.Err() != nil {
@@ -3375,7 +3417,7 @@ func runWorkcellsConcurrent(
 									fmt.Fprintf(stderr, "Choose action: (r)etry, (s)kip and continue, or (a)bort? [r/s/A]: ")
 									response, scanErr = readStdinLine(stdin)
 									promptMu.Unlock()
-									
+
 									if scanErr != nil {
 										break
 									}
@@ -3384,7 +3426,7 @@ func runWorkcellsConcurrent(
 										break
 									}
 								}
-								
+
 								// Process post-retry response (either skip or abort)
 								respLower = strings.ToLower(strings.TrimSpace(response))
 								if respLower == "s" || respLower == "skip" {
@@ -3403,7 +3445,7 @@ func runWorkcellsConcurrent(
 							}
 						}
 					}
-					
+
 					mu.Lock()
 					t.Status = "failed"
 					t.Summary = err.Error()
@@ -4499,6 +4541,88 @@ func releasePreviewFailureSummary(audit releasePreviewAudit) string {
 		}
 	}
 	return "release preview audit blocked"
+}
+
+func validateReleasePreviewAuditForPlan(path string, plan factoryPlan) (struct {
+	Label         string `json:"label"`
+	SchemaVersion string `json:"schema_version"`
+	Status        string `json:"status"`
+	Path          string `json:"path"`
+	SHA256        string `json:"sha256"`
+}, error) {
+	var evidence struct {
+		Label         string `json:"label"`
+		SchemaVersion string `json:"schema_version"`
+		Status        string `json:"status"`
+		Path          string `json:"path"`
+		SHA256        string `json:"sha256"`
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return evidence, fmt.Errorf("read audit: %w", err)
+	}
+	var audit releasePreviewAudit
+	if err := decodeJSONStrict(data, &audit); err != nil {
+		return evidence, fmt.Errorf("parse audit JSON: %w", err)
+	}
+	if audit.SchemaVersion != "ao.forge.release-preview-audit.v0.1" {
+		return evidence, fmt.Errorf("unsupported audit schema_version %q", audit.SchemaVersion)
+	}
+	if audit.Status != "passed" {
+		return evidence, fmt.Errorf("audit status must be passed, got %q", audit.Status)
+	}
+	if audit.MutatesReleases {
+		return evidence, fmt.Errorf("audit must be non-mutating")
+	}
+	if audit.NetworkRequired {
+		return evidence, fmt.Errorf("audit must not require network access")
+	}
+
+	expectedWorkspace := displayPath(plan.Objective.Workspace)
+	if audit.Workspace != expectedWorkspace {
+		return evidence, fmt.Errorf("audit workspace %q does not match plan workspace %q", audit.Workspace, expectedWorkspace)
+	}
+
+	expectedTag, err := extractReleaseTag(plan.Objective.Text, plan.Objective.Workspace)
+	if err != nil {
+		return evidence, fmt.Errorf("resolve expected release tag: %w", err)
+	}
+	if audit.Tag != expectedTag {
+		return evidence, fmt.Errorf("audit tag %q does not match expected tag %q", audit.Tag, expectedTag)
+	}
+
+	gitBin := resolveGitPath()
+	headOut, err := exec.Command(gitBin, "-C", plan.Objective.Workspace, "rev-parse", "HEAD").Output()
+	if err != nil {
+		return evidence, fmt.Errorf("resolve current HEAD: %w", err)
+	}
+	currentHead := strings.TrimSpace(string(headOut))
+	if audit.HeadCommit != currentHead {
+		return evidence, fmt.Errorf("audit head_commit %q does not match current HEAD %q", audit.HeadCommit, currentHead)
+	}
+
+	for _, check := range audit.Checks {
+		if check.Status != "passed" {
+			return evidence, fmt.Errorf("audit check %q is %q: %s", check.CheckID, check.Status, check.Summary)
+		}
+	}
+
+	sum := sha256.Sum256(data)
+	evidence = struct {
+		Label         string `json:"label"`
+		SchemaVersion string `json:"schema_version"`
+		Status        string `json:"status"`
+		Path          string `json:"path"`
+		SHA256        string `json:"sha256"`
+	}{
+		Label:         "release preview audit",
+		SchemaVersion: audit.SchemaVersion,
+		Status:        "passed",
+		Path:          displayPath(path),
+		SHA256:        hex.EncodeToString(sum[:]),
+	}
+	return evidence, nil
 }
 
 func extractReleaseTag(objectiveText string, workspacePath string) (string, error) {

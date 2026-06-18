@@ -1,0 +1,54 @@
+# AO Forge Release Preview
+
+`forge release-preview` rehearses a release without mutating local or remote
+release state. It is intended to run before `forge run --live --confirm-release`
+or any manual GitHub release operation.
+
+## What It Checks
+
+- workspace path exists and is a git repository;
+- worktree is clean;
+- HEAD commit resolves;
+- `origin` resolves to a GitHub repository;
+- release tag is either available for creation or already points to HEAD;
+- declared artifacts exist and have SHA-256 checksums;
+- the preview itself does not create tags, push refs, publish releases, or
+  require network access.
+
+## Example
+
+```sh
+forge release-preview \
+  --workspace . \
+  --artifact ./dist/ao-forge_Linux_x86_64.tar.gz \
+  --artifact ./dist/checksums.txt \
+  --out release-preview-audit.json
+```
+
+If `--tag` is omitted, AO Forge resolves it from `AO_FORGE_RELEASE_TAG` or the
+workspace `VERSION` file. The command exits `0` when every check passes. It exits
+`1` and still writes the audit when release preview checks are blocked.
+
+## Audit Contract
+
+The audit uses schema version `ao.forge.release-preview-audit.v0.1` and includes:
+
+- `status`: `passed` or `blocked`;
+- `workspace`, `github_repo`, `tag`, and `head_commit`;
+- `mutates_releases: false` and `network_required: false`;
+- structured `checks`;
+- artifact `path`, `size_bytes`, `sha256`, `status`, and `provenance`;
+- `release_notes_preview`;
+- `next_actions`.
+
+## Operator Rule
+
+Do not run a live confirmed release if the preview audit is `blocked`. Fix the
+failed checks, regenerate artifacts if needed, rerun the preview, and only then
+proceed to release mutation.
+
+## Privacy
+
+The preview audit can include local workspace and artifact paths. Keep ad hoc
+operator audits out of public commits unless the paths are intentionally public
+and safe to disclose.

@@ -60,9 +60,10 @@ func TestHelpExplainsFactoryTermsWithoutMarketingCopy(t *testing.T) {
 		"forge plan --brief",
 		"forge inspect --packet",
 		"dry-run execution",
-		"Slice 2.3 status:",
+		"Slice 2.4 status:",
 		"release mutation",
 		"GitHub publishing",
+		"release preview audits",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("help missing %q\n%s", want, stdout)
@@ -6606,6 +6607,154 @@ func main() {
 	}
 }
 
+func TestReleasePreviewAuditWritesMachineReadableBundle(t *testing.T) {
+	tmpDir := t.TempDir()
+	workspaceDir := filepath.Join(tmpDir, "workspace")
+	if err := os.MkdirAll(workspaceDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
 
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = workspaceDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v (output: %q)", args, err, string(out))
+		}
+	}
+	runGit("init")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	runGit("config", "commit.gpgSign", "false")
+	runGit("remote", "add", "origin", "git@github.com:test-owner/test-repo.git")
 
+	versionPath := filepath.Join(workspaceDir, "VERSION")
+	artifactPath := filepath.Join(workspaceDir, "dist.txt")
+	if err := os.WriteFile(versionPath, []byte("1.2.5"), 0644); err != nil {
+		t.Fatalf("write VERSION: %v", err)
+	}
+	if err := os.WriteFile(artifactPath, []byte("release artifact"), 0644); err != nil {
+		t.Fatalf("write artifact: %v", err)
+	}
+	runGit("add", "VERSION", "dist.txt")
+	runGit("commit", "-m", "version 1.2.5")
 
+	outPath := filepath.Join(tmpDir, "release-preview.json")
+	code, stdout, stderr := runCLI("release-preview", "--workspace", workspaceDir, "--artifact", artifactPath, "--out", outPath)
+	if code != 0 {
+		t.Fatalf("release-preview failed with code %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "release_preview_audit=") {
+		t.Fatalf("stdout missing audit path: %s", stdout)
+	}
+
+	var audit struct {
+		SchemaVersion   string `json:"schema_version"`
+		Status          string `json:"status"`
+		Workspace       string `json:"workspace"`
+		GitHubRepo      string `json:"github_repo"`
+		Tag             string `json:"tag"`
+		HeadCommit      string `json:"head_commit"`
+		MutatesReleases bool   `json:"mutates_releases"`
+		NetworkRequired bool   `json:"network_required"`
+		Checks          []struct {
+			CheckID string `json:"check_id"`
+			Status  string `json:"status"`
+			Summary string `json:"summary"`
+		} `json:"checks"`
+		Artifacts []struct {
+			Path       string `json:"path"`
+			SHA256     string `json:"sha256"`
+			SizeBytes  int64  `json:"size_bytes"`
+			Status     string `json:"status"`
+			Provenance string `json:"provenance"`
+		} `json:"artifacts"`
+		NextActions []nextAction `json:"next_actions"`
+	}
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read audit: %v", err)
+	}
+	if err := json.Unmarshal(data, &audit); err != nil {
+		t.Fatalf("unmarshal audit: %v", err)
+	}
+	if audit.SchemaVersion != "ao.forge.release-preview-audit.v0.1" {
+		t.Fatalf("unexpected schema: %q", audit.SchemaVersion)
+	}
+	if audit.Status != "passed" || audit.Tag != "v1.2.5" || audit.GitHubRepo != "test-owner/test-repo" {
+		t.Fatalf("unexpected audit identity: %+v", audit)
+	}
+	if audit.MutatesReleases || audit.NetworkRequired {
+		t.Fatalf("preview audit must be non-mutating/local-only: %+v", audit)
+	}
+	if len(audit.Artifacts) != 1 || audit.Artifacts[0].SHA256 == "" || audit.Artifacts[0].SizeBytes == 0 || audit.Artifacts[0].Status != "present" {
+		t.Fatalf("artifact audit missing checksum/size/status: %+v", audit.Artifacts)
+	}
+	if len(audit.Checks) < 5 {
+		t.Fatalf("expected release preview checks, got: %+v", audit.Checks)
+	}
+}
+
+func TestReleasePreviewAuditFailsClosedOnDirtyWorkspace(t *testing.T) {
+	tmpDir := t.TempDir()
+	workspaceDir := filepath.Join(tmpDir, "workspace")
+	if err := os.MkdirAll(workspaceDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = workspaceDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v (output: %q)", args, err, string(out))
+		}
+	}
+	runGit("init")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	runGit("config", "commit.gpgSign", "false")
+	runGit("remote", "add", "origin", "git@github.com:test-owner/test-repo.git")
+	if err := os.WriteFile(filepath.Join(workspaceDir, "VERSION"), []byte("1.2.6"), 0644); err != nil {
+		t.Fatalf("write VERSION: %v", err)
+	}
+	runGit("add", "VERSION")
+	runGit("commit", "-m", "version 1.2.6")
+	if err := os.WriteFile(filepath.Join(workspaceDir, "dirty.txt"), []byte("not committed"), 0644); err != nil {
+		t.Fatalf("write dirty file: %v", err)
+	}
+
+	outPath := filepath.Join(tmpDir, "release-preview.json")
+	code, _, stderr := runCLI("release-preview", "--workspace", workspaceDir, "--out", outPath)
+	if code == 0 {
+		t.Fatalf("expected dirty workspace to fail closed")
+	}
+	if !strings.Contains(stderr, "dirty release workspace") {
+		t.Fatalf("stderr missing dirty workspace explanation: %s", stderr)
+	}
+
+	var audit struct {
+		Status string `json:"status"`
+		Checks []struct {
+			CheckID string `json:"check_id"`
+			Status  string `json:"status"`
+		} `json:"checks"`
+	}
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read audit: %v", err)
+	}
+	if err := json.Unmarshal(data, &audit); err != nil {
+		t.Fatalf("unmarshal audit: %v", err)
+	}
+	if audit.Status != "blocked" {
+		t.Fatalf("expected blocked audit, got: %+v", audit)
+	}
+	var foundDirty bool
+	for _, check := range audit.Checks {
+		if check.CheckID == "clean-worktree" && check.Status == "failed" {
+			foundDirty = true
+		}
+	}
+	if !foundDirty {
+		t.Fatalf("expected failed clean-worktree check, got: %+v", audit.Checks)
+	}
+}

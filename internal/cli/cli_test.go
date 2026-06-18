@@ -7388,6 +7388,90 @@ func TestReleasePreviewFixtureArtifactsDriveInspectJSON(t *testing.T) {
 	assertJSONOutputEqual(t, "release preview fixture artifact details", expectedArtifacts, string(actualArtifacts))
 }
 
+func TestReleasePreviewBlockedDirtyFixtureDrivesInspectJSON(t *testing.T) {
+	root := repoRoot(t)
+	readText := func(path ...string) string {
+		t.Helper()
+		bytes, err := os.ReadFile(filepath.Join(append([]string{root}, path...)...))
+		if err != nil {
+			t.Fatalf("read %s: %v", filepath.Join(path...), err)
+		}
+		return string(bytes)
+	}
+
+	fixtureDir := filepath.Join(root, "examples", "release-preview")
+	auditPath := filepath.Join(fixtureDir, "dirty-workspace-blocked.audit.json")
+	expectedInspectPath := filepath.Join(fixtureDir, "dirty-workspace-blocked.inspect.expected.json")
+
+	for _, check := range []struct {
+		name string
+		doc  string
+		want string
+	}{
+		{name: "runbook documents blocked fixture", doc: readText("docs", "release", "PREVIEW-RELEASE.md"), want: "dirty-workspace-blocked.audit.json"},
+		{name: "runbook documents blocked fixture purpose", doc: readText("docs", "release", "PREVIEW-RELEASE.md"), want: "fail-closed dirty-workspace preview"},
+		{name: "README release preview fixture link", doc: readText("README.md"), want: "[Release Preview Fixtures](examples/release-preview/)"},
+	} {
+		if !strings.Contains(check.doc, check.want) {
+			t.Fatalf("%s missing %q", check.name, check.want)
+		}
+	}
+
+	var audit releasePreviewAudit
+	auditData, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatalf("read blocked audit fixture: %v", err)
+	}
+	if err := json.Unmarshal(auditData, &audit); err != nil {
+		t.Fatalf("unmarshal blocked audit fixture: %v", err)
+	}
+	if audit.SchemaVersion != releasePreviewAuditVersion || audit.Status != "blocked" {
+		t.Fatalf("unexpected blocked audit identity: %+v", audit)
+	}
+	if audit.MutatesReleases || audit.NetworkRequired {
+		t.Fatalf("blocked audit fixture must remain non-mutating/local-only: %+v", audit)
+	}
+	var foundDirtyCheck bool
+	for _, check := range audit.Checks {
+		if check.CheckID == "clean-worktree" && check.Status == "failed" && strings.Contains(check.Summary, "dirty release workspace") {
+			foundDirtyCheck = true
+		}
+	}
+	if !foundDirtyCheck {
+		t.Fatalf("blocked fixture missing failed dirty clean-worktree check: %+v", audit.Checks)
+	}
+	if len(audit.NextActions) != 1 || audit.NextActions[0].ActionID != "fix-release-preview-blockers" || !audit.NextActions[0].Required {
+		t.Fatalf("blocked fixture has unexpected next actions: %+v", audit.NextActions)
+	}
+
+	code, stdout, stderr := runCLI("release-preview", "inspect", "--audit", auditPath, "--json")
+	if code != 0 {
+		t.Fatalf("inspect blocked fixture failed with code %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if stderr != "" {
+		t.Fatalf("inspect blocked fixture wrote stderr: %s", stderr)
+	}
+
+	var summary releasePreviewInspectSummary
+	if err := json.Unmarshal([]byte(stdout), &summary); err != nil {
+		t.Fatalf("unmarshal blocked inspect JSON: %v\n%s", err, stdout)
+	}
+	if summary.Status != "blocked" || summary.FailedChecks != 1 || summary.Artifacts != 0 || summary.MutatesReleases || summary.NetworkRequired {
+		t.Fatalf("unexpected blocked inspect summary: %+v", summary)
+	}
+
+	expectedInspect, err := os.ReadFile(expectedInspectPath)
+	if err != nil {
+		t.Fatalf("read expected blocked inspect fixture: %v", err)
+	}
+	actualInspect, err := marshalIndented(summary)
+	if err != nil {
+		t.Fatalf("marshal blocked inspect summary: %v", err)
+	}
+	expected := strings.ReplaceAll(string(expectedInspect), "examples/release-preview/dirty-workspace-blocked.audit.json", displayPath(auditPath))
+	assertJSONOutputEqual(t, "blocked dirty release preview inspect", []byte(expected), string(actualInspect))
+}
+
 func TestReleasePreviewAuditValidationRejectsEmptyChecks(t *testing.T) {
 	tmpDir := t.TempDir()
 	workspaceDir := filepath.Join(tmpDir, "workspace")

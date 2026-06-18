@@ -121,19 +121,22 @@ production-stable adoption.
 
 After publishing:
 
-1. Confirm the public tag points at the intended commit.
-2. Confirm every expected artifact from the inventory is attached.
-3. Confirm `checksums.txt` matches every attached artifact.
-4. Confirm attestation evidence is attached or linked according to the
+1. Run the `Release Verify` workflow for the published `<tag>`.
+2. Confirm the public tag points at the intended commit.
+3. Confirm every expected artifact from the inventory is attached.
+4. Confirm `checksums.txt` matches every attached artifact.
+5. Confirm attestation evidence is attached or linked according to the
    attestation plan.
-5. Confirm `release-evidence-bundle.json` validates and its GitHub Artifact
-   Attestation verifies against the release commit.
-6. Confirm public release notes mention the supported platforms and preview
+6. Confirm `release-evidence-bundle.json` validates and its GitHub Artifact
+   Attestation verifies against the release commit. For `v0.1.0` only, the
+   workflow may be run with `require_evidence_bundle=false` because that release
+   predates the bundle asset; future releases must keep the default `true`.
+7. Confirm public release notes mention the supported platforms and preview
    status.
-7. Run a fresh install or binary smoke test from the published artifact.
-8. Record the GitHub Actions run URLs for CI, Release Preview, and Release
+8. Run a fresh install or binary smoke test from the published artifact.
+9. Record the GitHub Actions run URLs for CI, Release Preview, and Release
    Rehearsal in maintainer notes.
-9. Record the `Release Publish` run URL and confirm it produced a draft release
+10. Record the `Release Publish` run URL and confirm it produced a draft release
    before any public release publication.
 
 ## Rollback Plan

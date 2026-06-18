@@ -1079,6 +1079,79 @@ func TestReleasePublishWorkflowCreatesDraftReleaseOnlyAfterEvidenceGates(t *test
 	}
 }
 
+func TestReleaseVerifyWorkflowChecksPublishedReleaseEvidence(t *testing.T) {
+	root := repoRoot(t)
+	readText := func(path ...string) string {
+		t.Helper()
+		bytes, err := os.ReadFile(filepath.Join(append([]string{root}, path...)...))
+		if err != nil {
+			t.Fatalf("read %s: %v", filepath.Join(path...), err)
+		}
+		return string(bytes)
+	}
+
+	workflow := readText(".github", "workflows", "release-verify.yml")
+	readme := readText("README.md")
+	firstRelease := readText("docs", "release", "FIRST-PUBLIC-RELEASE.md")
+	threatModel := readText("docs", "security", "RELEASE-THREAT-MODEL.md")
+
+	for _, check := range []struct {
+		name string
+		doc  string
+		want string
+	}{
+		{name: "workflow name", doc: workflow, want: "name: Release Verify"},
+		{name: "manual trigger", doc: workflow, want: "workflow_dispatch:"},
+		{name: "published trigger", doc: workflow, want: "types: [published]"},
+		{name: "tag input", doc: workflow, want: "tag:"},
+		{name: "bundle input", doc: workflow, want: "require_evidence_bundle:"},
+		{name: "bundle default", doc: workflow, want: "default: \"true\""},
+		{name: "read contents", doc: workflow, want: "contents: read"},
+		{name: "read attestations", doc: workflow, want: "attestations: read"},
+		{name: "setup go", doc: workflow, want: "actions/setup-go@v6"},
+		{name: "resolve release tag", doc: workflow, want: "Resolve release tag"},
+		{name: "release view", doc: workflow, want: "gh release view"},
+		{name: "release must be public", doc: workflow, want: "release must be published, not draft"},
+		{name: "download release", doc: workflow, want: "gh release download"},
+		{name: "expected linux asset", doc: workflow, want: "ao-forge_Linux_x86_64.tar.gz"},
+		{name: "expected darwin asset", doc: workflow, want: "ao-forge_Darwin_arm64.tar.gz"},
+		{name: "expected windows asset", doc: workflow, want: "ao-forge_Windows_x86_64.zip"},
+		{name: "checksum verification", doc: workflow, want: "artifact verify-checksums"},
+		{name: "inspect contract", doc: workflow, want: "release-preview-inspect-v0.1.schema.json"},
+		{name: "inspect passed", doc: workflow, want: "release preview inspect did not pass"},
+		{name: "bundle contract", doc: workflow, want: "release-evidence-bundle-v0.1.schema.json"},
+		{name: "legacy bundle override", doc: workflow, want: "require_evidence_bundle=false allows legacy releases only"},
+		{name: "archive attestations", doc: workflow, want: "Verify archive attestations"},
+		{name: "bundle attestation", doc: workflow, want: "Verify release evidence bundle attestation"},
+		{name: "attestation command", doc: workflow, want: "gh attestation verify"},
+		{name: "binary smoke", doc: workflow, want: "Smoke test Darwin artifact when host-compatible"},
+		{name: "summary", doc: workflow, want: "post_release_verification=passed"},
+		{name: "readme workflow", doc: readme, want: "`Release Verify`"},
+		{name: "first release workflow", doc: firstRelease, want: "`Release Verify` workflow"},
+		{name: "threat model workflow", doc: threatModel, want: "`Release Verify`"},
+	} {
+		if !strings.Contains(check.doc, check.want) {
+			t.Fatalf("%s missing %q", check.name, check.want)
+		}
+	}
+
+	for _, forbidden := range []string{
+		"contents: write",
+		"id-token: write",
+		"attestations: write",
+		"gh release create",
+		"gh release edit",
+		"gh release delete",
+		"softprops/action-gh-release",
+		"actions/upload-artifact@v4",
+		"actions/upload-artifact@v5",
+	} {
+		if strings.Contains(workflow, forbidden) {
+			t.Fatalf("release verify workflow must not contain %q\n%s", forbidden, workflow)
+		}
+	}
+}
+
 func TestArtifactChecksumsWritesStableSHA256Manifest(t *testing.T) {
 	tmpDir := t.TempDir()
 	firstPath := filepath.Join(tmpDir, "ao-forge_Darwin_arm64.tar.gz")

@@ -222,6 +222,14 @@ the release evidence bundle contract, signs it with a GitHub Artifact
 Attestation, verifies that attestation, and uploads both bundle files with the
 release assets.
 
+The `Release Verify` workflow is read-only post-release verification. It runs on
+published GitHub releases and can also be dispatched manually for a tag. It
+checks release metadata, expected assets, checksums, release preview evidence,
+archive attestations, the release evidence bundle, bundle attestation, and a
+host-compatible binary smoke test. Future releases require the evidence bundle
+by default; use the explicit legacy override only for releases published before
+that asset existed.
+
 ## Continuous Integration
 
 This repository is public. The GitHub Actions workflow runs automatically on every push to a branch and every pull request targeting `main`.

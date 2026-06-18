@@ -566,6 +566,62 @@ func TestFirstPublicReleaseChecklistDocumentsSafeOperatorFlow(t *testing.T) {
 	}
 }
 
+func TestV010ReleaseNotesDraftIsPublicSafeAndEvidenceBacked(t *testing.T) {
+	root := repoRoot(t)
+	readText := func(path ...string) string {
+		t.Helper()
+		bytes, err := os.ReadFile(filepath.Join(append([]string{root}, path...)...))
+		if err != nil {
+			t.Fatalf("read %s: %v", filepath.Join(path...), err)
+		}
+		return string(bytes)
+	}
+
+	readme := readText("README.md")
+	notesPath := filepath.Join(root, "docs", "release", "V0.1.0-RELEASE-NOTES.md")
+	notes := readText("docs", "release", "V0.1.0-RELEASE-NOTES.md")
+
+	if !strings.Contains(readme, "[v0.1.0 Release Notes Draft](docs/release/V0.1.0-RELEASE-NOTES.md)") {
+		t.Fatalf("README missing v0.1.0 release notes draft link")
+	}
+	if filepath.Base(notesPath) != "V0.1.0-RELEASE-NOTES.md" {
+		t.Fatalf("unexpected release notes path: %s", notesPath)
+	}
+
+	for _, want := range []string{
+		"# AO Forge v0.1.0 Release Notes",
+		"v0.1.0",
+		"861b91b7c0234117504b6e48bb6ef7c075770c3a",
+		"https://github.com/uesugitorachiyo/ao-forge/actions/runs/27791719719",
+		"linux-amd64",
+		"darwin-arm64",
+		"windows-amd64",
+		"controlled preview",
+		"not production-stable",
+		"Release Preview",
+		"Release Rehearsal",
+		"checksums.txt",
+		"release-attestation-plan.v0.1.example.json",
+	} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("release notes draft missing %q", want)
+		}
+	}
+
+	for _, forbidden := range []string{
+		"/Users/",
+		"/tmp/",
+		"gho_",
+		"Bearer ",
+		"Authorization:",
+		"excluded handoff",
+	} {
+		if strings.Contains(notes, forbidden) {
+			t.Fatalf("release notes draft contains public-unsafe text %q", forbidden)
+		}
+	}
+}
+
 func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 	root := repoRoot(t)
 	readText := func(path ...string) string {

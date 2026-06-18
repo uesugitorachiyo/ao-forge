@@ -169,12 +169,15 @@ jobs:
 
       - name: Generate and verify checksums
         run: |
-          "${RUNNER_TEMP}/forge" artifact checksums \
-            --artifact dist/ao-forge_Linux_x86_64.tar.gz \
-            --artifact dist/ao-forge_Darwin_arm64.tar.gz \
-            --artifact dist/ao-forge_Windows_x86_64.zip \
-            --out dist/checksums.txt
-          "${RUNNER_TEMP}/forge" artifact verify-checksums --manifest dist/checksums.txt
+          (
+            cd dist
+            "${RUNNER_TEMP}/forge" artifact checksums \
+              --artifact ao-forge_Linux_x86_64.tar.gz \
+              --artifact ao-forge_Darwin_arm64.tar.gz \
+              --artifact ao-forge_Windows_x86_64.zip \
+              --out checksums.txt
+            "${RUNNER_TEMP}/forge" artifact verify-checksums --manifest checksums.txt
+          )
 
       - name: Run release preview for draft publish
         run: |
@@ -236,8 +239,9 @@ jobs:
               manifest[name] = digest
 
           failures = []
-          for artifact, expected_digest in manifest.items():
-              records = json.loads(pathlib.Path(f"{artifact}.attestation.json").read_text())
+          for artifact_name, expected_digest in manifest.items():
+              artifact_path = pathlib.Path("dist") / artifact_name
+              records = json.loads(pathlib.Path(f"{artifact_path}.attestation.json").read_text())
               matched = False
 
               for record in records:
@@ -252,7 +256,7 @@ jobs:
                   )
                   subjects = statement.get("subject", [])
                   subject_matches = any(
-                      subject.get("name") == artifact
+                      subject.get("name") == artifact_name
                       and subject.get("digest", {}).get("sha256") == expected_digest
                       for subject in subjects
                   )
@@ -270,7 +274,7 @@ jobs:
                       break
 
               if not matched:
-                  failures.append(f"{artifact}: no verified attestation matched expected release publish identity")
+                  failures.append(f"{artifact_path}: no verified attestation matched expected release publish identity")
 
           if failures:
               print("\n".join(failures), file=sys.stderr)

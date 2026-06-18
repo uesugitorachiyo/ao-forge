@@ -109,6 +109,14 @@ To output the doctor result in machine-readable JSON:
 ./bin/forge doctor --foundation docs/foundation/foundation-baseline.v0.1.json --json
 ```
 
+Write a stable SHA-256 checksum manifest for release artifacts:
+
+```sh
+./bin/forge artifact checksums \
+  --artifact ./dist/ao-forge_Darwin_arm64.tar.gz \
+  --out ./dist/checksums.txt
+```
+
 Rehearse a release without creating tags, pushing refs, or publishing GitHub
 releases:
 

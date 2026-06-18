@@ -60,12 +60,14 @@ func TestHelpExplainsFactoryTermsWithoutMarketingCopy(t *testing.T) {
 		"forge plan --brief",
 		"forge inspect --packet",
 		"dry-run execution",
-		"Slice 2.6 status:",
+		"forge artifact checksums",
+		"Slice 2.7 status:",
 		"release mutation",
 		"GitHub publishing",
 		"release preview audits",
 		"release preview enforcement",
 		"release preview audit inspection",
+		"artifact checksums",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("help missing %q\n%s", want, stdout)
@@ -218,11 +220,87 @@ func TestReleasePreviewWorkflowPublishesDryRunAuditArtifacts(t *testing.T) {
 		"release-preview",
 		"--tag",
 		"--artifact",
+		"artifact checksums",
 		"release-preview-audit.json",
 		"release-preview-inspect.txt",
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("release preview script missing %q\n%s", want, script)
+		}
+	}
+	for _, forbidden := range []string{
+		"shasum -a 256",
+	} {
+		if strings.Contains(script, forbidden) {
+			t.Fatalf("release preview script must use forge artifact checksums, found %q\n%s", forbidden, script)
+		}
+	}
+}
+
+func TestArtifactChecksumsWritesStableSHA256Manifest(t *testing.T) {
+	tmpDir := t.TempDir()
+	firstPath := filepath.Join(tmpDir, "ao-forge_Darwin_arm64.tar.gz")
+	secondPath := filepath.Join(tmpDir, "ao-forge_Windows_x86_64.zip")
+	outPath := filepath.Join(tmpDir, "checksums.txt")
+	firstData := []byte("darwin artifact\n")
+	secondData := []byte("windows artifact\n")
+	if err := os.WriteFile(firstPath, firstData, 0644); err != nil {
+		t.Fatalf("write first artifact: %v", err)
+	}
+	if err := os.WriteFile(secondPath, secondData, 0644); err != nil {
+		t.Fatalf("write second artifact: %v", err)
+	}
+
+	code, stdout, stderr := runCLI("artifact", "checksums", "--artifact", firstPath, "--artifact", secondPath, "--out", outPath)
+	if code != 0 {
+		t.Fatalf("artifact checksums failed with code %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "artifact_checksums="+displayPath(outPath)) {
+		t.Fatalf("stdout missing checksums output path: %s", stdout)
+	}
+
+	firstSum := sha256.Sum256(firstData)
+	secondSum := sha256.Sum256(secondData)
+	wantManifest := fmt.Sprintf("%s  %s\n%s  %s\n",
+		hex.EncodeToString(firstSum[:]),
+		displayPath(firstPath),
+		hex.EncodeToString(secondSum[:]),
+		displayPath(secondPath),
+	)
+	gotManifest, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read checksum manifest: %v", err)
+	}
+	if string(gotManifest) != wantManifest {
+		t.Fatalf("checksum manifest drifted\nwant:\n%sgot:\n%s", wantManifest, string(gotManifest))
+	}
+
+	code, stdout, stderr = runCLI("artifact", "checksums", "--artifact", firstPath)
+	if code != 0 {
+		t.Fatalf("artifact checksums stdout mode failed with code %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if stdout != fmt.Sprintf("%s  %s\n", hex.EncodeToString(firstSum[:]), displayPath(firstPath)) {
+		t.Fatalf("stdout checksum manifest drifted: %s", stdout)
+	}
+}
+
+func TestArtifactChecksumsFailsClosedOnMissingArtifact(t *testing.T) {
+	missingPath := filepath.Join(t.TempDir(), "missing-artifact.tar.gz")
+
+	code, stdout, stderr := runCLI("artifact", "checksums", "--artifact", missingPath)
+	if code != 1 {
+		t.Fatalf("expected missing artifact to fail with code 1, got %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if stdout != "" {
+		t.Fatalf("missing artifact should not write stdout: %s", stdout)
+	}
+	for _, want := range []string{
+		"forge artifact checksums:",
+		"missing",
+		displayPath(missingPath),
+	} {
+		if !strings.Contains(stderr, want) {
+			t.Fatalf("stderr missing %q: %s", want, stderr)
 		}
 	}
 }

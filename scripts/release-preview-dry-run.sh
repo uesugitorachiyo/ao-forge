@@ -30,7 +30,7 @@ inspect="$out_dir/release-preview-inspect.txt"
   echo "tag=$tag"
 } > "$preview_artifact"
 
-shasum -a 256 "$preview_artifact" > "$checksums"
+"$forge_bin" artifact checksums --artifact "$preview_artifact" --out "$checksums"
 
 "$forge_bin" release-preview \
   --workspace "$root" \

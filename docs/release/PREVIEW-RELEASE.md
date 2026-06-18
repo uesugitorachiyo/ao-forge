@@ -74,6 +74,10 @@ Do not run a live confirmed release if the preview audit is `blocked`. Fix the
 failed checks, regenerate artifacts if needed, rerun the preview, and only then
 proceed to release mutation.
 
+Review the [Release Threat Model](../security/RELEASE-THREAT-MODEL.md) when
+changing release workflow permissions, artifact handling, or live release
+mutation gates.
+
 Confirmed release mutation through `forge run`, `forge once`, or `forge resume`
 requires the passed audit:
 

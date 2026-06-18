@@ -35,6 +35,11 @@ Inspect the audit summary before approving a confirmed release:
 forge release-preview inspect --audit release-preview-audit.json
 ```
 
+GitHub Actions runs the same non-mutating preview path on pull requests and
+pushes to `main`. The workflow uploads the machine-readable audit, an inspect
+summary, and artifact checksums for review without using write permissions or
+live release flags.
+
 ## Audit Contract
 
 The audit uses schema version `ao.forge.release-preview-audit.v0.1`. The formal

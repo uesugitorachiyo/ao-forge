@@ -37,6 +37,7 @@ const (
 	packetSchemaVersion          = "ao.forge.factory-packet.v0.1"
 	decisionFixtureSchemaVersion = "ao.forge.covenant-decision-fixture.v0.1"
 	gateResultSchemaVersion      = "ao.forge.covenant-gate-result.v0.1"
+	releasePreviewAuditVersion   = "ao.forge.release-preview-audit.v0.1"
 )
 
 var planIDPattern = regexp.MustCompile(`^forge-plan-[a-f0-9]{12}$`)
@@ -244,14 +245,15 @@ Usage:
   forge inspect --packet <factory-packet.json>
   forge doctor --foundation <foundation-baseline.json> [--json]
   forge release-preview --workspace <git-workspace> [--tag <vX.Y.Z>] [--artifact <path> ...] [--out <release-preview-audit.json>]
+  forge release-preview inspect --audit <release-preview-audit.json>
 
 Factory terms:
   factory brief   normalized operator objective and constraints
   workcell        bounded unit of factory work with dependencies and evidence
   factory packet  operator-ready JSON summary of plan, gates, evidence, and next actions
 
-Slice 2.5 status:
-  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, release preview audits, and release preview enforcement are enabled.
+Slice 2.6 status:
+  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, release preview audits, release preview enforcement, and release preview audit inspection are enabled.
 `)
 }
 
@@ -4345,6 +4347,10 @@ func parseReleasePreviewFlags(args []string) (releasePreviewFlags, error) {
 }
 
 func runReleasePreview(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "inspect" {
+		return runReleasePreviewInspect(args[1:], stdout, stderr)
+	}
+
 	flags, err := parseReleasePreviewFlags(args)
 	if err != nil {
 		fmt.Fprintf(stderr, "forge release-preview: %v\n", err)
@@ -4375,9 +4381,54 @@ func runReleasePreview(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func runReleasePreviewInspect(args []string, stdout, stderr io.Writer) int {
+	auditPath, _, err := parsePathFlags(args, "--audit", "")
+	if err != nil {
+		fmt.Fprintf(stderr, "forge release-preview inspect: %v\n", err)
+		return 2
+	}
+	if auditPath == "" {
+		fmt.Fprintln(stderr, "forge release-preview inspect: missing required --audit")
+		return 2
+	}
+
+	audit, err := readReleasePreviewAudit(auditPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge release-preview inspect: %v\n", err)
+		return 1
+	}
+
+	failedChecks := 0
+	for _, check := range audit.Checks {
+		if check.Status != "passed" {
+			failedChecks++
+		}
+	}
+
+	fmt.Fprintf(stdout, "release_preview_audit=%s\n", displayPath(auditPath))
+	fmt.Fprintf(stdout, "schema_version=%s\n", audit.SchemaVersion)
+	fmt.Fprintf(stdout, "status=%s\n", audit.Status)
+	fmt.Fprintf(stdout, "workspace=%s\n", audit.Workspace)
+	fmt.Fprintf(stdout, "github_repo=%s\n", audit.GitHubRepo)
+	fmt.Fprintf(stdout, "tag=%s\n", audit.Tag)
+	fmt.Fprintf(stdout, "head_commit=%s\n", audit.HeadCommit)
+	fmt.Fprintf(stdout, "mutates_releases=%t\n", audit.MutatesReleases)
+	fmt.Fprintf(stdout, "network_required=%t\n", audit.NetworkRequired)
+	fmt.Fprintf(stdout, "checks=%d\n", len(audit.Checks))
+	fmt.Fprintf(stdout, "failed_checks=%d\n", failedChecks)
+	fmt.Fprintf(stdout, "artifacts=%d\n", len(audit.Artifacts))
+	for _, artifact := range audit.Artifacts {
+		fmt.Fprintf(stdout, "artifact=%s status=%s size_bytes=%d sha256=%s provenance=%s\n", artifact.Path, artifact.Status, artifact.SizeBytes, artifact.SHA256, artifact.Provenance)
+	}
+	for _, action := range audit.NextActions {
+		fmt.Fprintf(stdout, "next_action=%s required=%t description=%s\n", action.ActionID, action.Required, action.Description)
+	}
+	return 0
+}
+
 func buildReleasePreviewAudit(flags releasePreviewFlags) releasePreviewAudit {
 	audit := releasePreviewAudit{
-		SchemaVersion:   "ao.forge.release-preview-audit.v0.1",
+		SchemaVersion:   releasePreviewAuditVersion,
 		Status:          "passed",
 		GeneratedAtUTC:  time.Now().UTC().Format(time.RFC3339),
 		Workspace:       displayPath(flags.workspacePath),
@@ -4558,15 +4609,11 @@ func validateReleasePreviewAuditForPlan(path string, plan factoryPlan) (struct {
 		SHA256        string `json:"sha256"`
 	}
 
-	data, err := os.ReadFile(path)
+	audit, data, err := readReleasePreviewAuditWithData(path)
 	if err != nil {
-		return evidence, fmt.Errorf("read audit: %w", err)
+		return evidence, err
 	}
-	var audit releasePreviewAudit
-	if err := decodeJSONStrict(data, &audit); err != nil {
-		return evidence, fmt.Errorf("parse audit JSON: %w", err)
-	}
-	if audit.SchemaVersion != "ao.forge.release-preview-audit.v0.1" {
+	if audit.SchemaVersion != releasePreviewAuditVersion {
 		return evidence, fmt.Errorf("unsupported audit schema_version %q", audit.SchemaVersion)
 	}
 	if audit.Status != "passed" {
@@ -4577,6 +4624,9 @@ func validateReleasePreviewAuditForPlan(path string, plan factoryPlan) (struct {
 	}
 	if audit.NetworkRequired {
 		return evidence, fmt.Errorf("audit must not require network access")
+	}
+	if len(audit.Checks) == 0 {
+		return evidence, fmt.Errorf("audit must include at least one check")
 	}
 
 	expectedWorkspace := displayPath(plan.Objective.Workspace)
@@ -4623,6 +4673,23 @@ func validateReleasePreviewAuditForPlan(path string, plan factoryPlan) (struct {
 		SHA256:        hex.EncodeToString(sum[:]),
 	}
 	return evidence, nil
+}
+
+func readReleasePreviewAudit(path string) (releasePreviewAudit, error) {
+	audit, _, err := readReleasePreviewAuditWithData(path)
+	return audit, err
+}
+
+func readReleasePreviewAuditWithData(path string) (releasePreviewAudit, []byte, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return releasePreviewAudit{}, nil, fmt.Errorf("read audit: %w", err)
+	}
+	var audit releasePreviewAudit
+	if err := decodeJSONStrict(data, &audit); err != nil {
+		return releasePreviewAudit{}, nil, fmt.Errorf("parse audit JSON: %w", err)
+	}
+	return audit, data, nil
 }
 
 func extractReleaseTag(objectiveText string, workspacePath string) (string, error) {

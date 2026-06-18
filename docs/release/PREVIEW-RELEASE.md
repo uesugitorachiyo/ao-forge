@@ -29,9 +29,17 @@ If `--tag` is omitted, AO Forge resolves it from `AO_FORGE_RELEASE_TAG` or the
 workspace `VERSION` file. The command exits `0` when every check passes. It exits
 `1` and still writes the audit when release preview checks are blocked.
 
+Inspect the audit summary before approving a confirmed release:
+
+```sh
+forge release-preview inspect --audit release-preview-audit.json
+```
+
 ## Audit Contract
 
-The audit uses schema version `ao.forge.release-preview-audit.v0.1` and includes:
+The audit uses schema version `ao.forge.release-preview-audit.v0.1`. The formal
+schema is published at `docs/contracts/release-preview-audit-v0.1.schema.json`
+and includes:
 
 - `status`: `passed` or `blocked`;
 - `workspace`, `github_repo`, `tag`, and `head_commit`;

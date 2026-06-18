@@ -1,0 +1,287 @@
+name: Release Verify
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Published release tag to verify"
+        required: true
+        default: "v0.1.0"
+      require_evidence_bundle:
+        description: "Require release-evidence-bundle.json and its attestation"
+        required: true
+        default: "true"
+
+permissions:
+  contents: read
+  attestations: read
+
+concurrency:
+  group: release-verify-${{ github.event.release.tag_name || github.event.inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  verify-release:
+    name: Verify published release
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_EVENT_TAG: ${{ github.event.release.tag_name }}
+      REQUESTED_VERIFY_TAG: ${{ github.event.inputs.tag }}
+      REQUIRE_EVIDENCE_BUNDLE_INPUT: ${{ github.event.inputs.require_evidence_bundle }}
+      AO_FORGE_RELEASE_VERIFY_DIR: ${{ runner.temp }}/ao-forge-release-verify
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build verification CLI
+        run: go build -o "${RUNNER_TEMP}/forge" ./cmd/forge
+
+      - name: Resolve release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${RELEASE_EVENT_TAG:-${REQUESTED_VERIFY_TAG:-}}"
+          if [[ -z "$tag" ]]; then
+            echo "release verify tag is required" >&2
+            exit 1
+          fi
+          if [[ "$tag" != v* ]]; then
+            echo "release verify tag must start with v" >&2
+            exit 1
+          fi
+
+          require_bundle="${REQUIRE_EVIDENCE_BUNDLE_INPUT:-true}"
+          if [[ "$require_bundle" != "true" && "$require_bundle" != "false" ]]; then
+            echo "require_evidence_bundle must be true or false" >&2
+            exit 1
+          fi
+          if [[ "$require_bundle" == "false" ]]; then
+            echo "require_evidence_bundle=false allows legacy releases only"
+          fi
+
+          echo "AO_FORGE_RELEASE_VERIFY_TAG=$tag" >> "$GITHUB_ENV"
+          echo "AO_FORGE_REQUIRE_EVIDENCE_BUNDLE=$require_bundle" >> "$GITHUB_ENV"
+          echo "tag=$tag" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Read published release metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${AO_FORGE_RELEASE_VERIFY_DIR}"
+          gh release view "${AO_FORGE_RELEASE_VERIFY_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --json isDraft,isPrerelease,tagName,targetCommitish,url,publishedAt,assets \
+            > "${AO_FORGE_RELEASE_VERIFY_DIR}/release.json"
+
+      - name: Validate published release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import subprocess
+          import sys
+
+          verify_dir = pathlib.Path(os.environ["AO_FORGE_RELEASE_VERIFY_DIR"])
+          release = json.loads((verify_dir / "release.json").read_text())
+          expected_tag = os.environ["AO_FORGE_RELEASE_VERIFY_TAG"]
+          require_bundle = os.environ["AO_FORGE_REQUIRE_EVIDENCE_BUNDLE"] == "true"
+
+          expected_assets = {
+              "ao-forge_Linux_x86_64.tar.gz",
+              "ao-forge_Darwin_arm64.tar.gz",
+              "ao-forge_Windows_x86_64.zip",
+              "checksums.txt",
+              "ao-forge_Linux_x86_64.tar.gz.attestation.json",
+              "ao-forge_Darwin_arm64.tar.gz.attestation.json",
+              "ao-forge_Windows_x86_64.zip.attestation.json",
+              "release-preview-audit.json",
+              "release-preview-inspect.txt",
+              "release-preview-inspect.json",
+              "release-artifact-inventory.v0.1.example.json",
+              "release-attestation-plan.v0.1.example.json",
+          }
+          if require_bundle:
+              expected_assets.update({
+                  "release-evidence-bundle.json",
+                  "release-evidence-bundle.attestation.json",
+              })
+
+          errors = []
+          if release.get("isDraft"):
+              errors.append("release must be published, not draft")
+          if release.get("tagName") != expected_tag:
+              errors.append(f"release tag mismatch: {release.get('tagName')} != {expected_tag}")
+          if not release.get("publishedAt"):
+              errors.append("release has no publishedAt timestamp")
+
+          assets = {asset.get("name") for asset in release.get("assets", [])}
+          missing = sorted(expected_assets - assets)
+          if missing:
+              errors.append(f"release assets missing: {missing}")
+
+          tag_ref = subprocess.check_output([
+              "git", "ls-remote", "--tags", "origin", f"refs/tags/{expected_tag}"
+          ], text=True).strip()
+          if not tag_ref:
+              errors.append(f"release tag ref not found: {expected_tag}")
+          else:
+              tag_sha = tag_ref.split()[0]
+              if tag_sha != release.get("targetCommitish"):
+                  errors.append(f"release tag target mismatch: {tag_sha} != {release.get('targetCommitish')}")
+
+          if errors:
+              for error in errors:
+                  print(f"::error::{error}")
+              sys.exit(1)
+
+          print(f"release_url={release.get('url')}")
+          print(f"release_target={release.get('targetCommitish')}")
+          PY
+
+      - name: Download published release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release download "${AO_FORGE_RELEASE_VERIFY_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --dir "${AO_FORGE_RELEASE_VERIFY_DIR}/assets"
+
+      - name: Verify checksums and release preview evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${AO_FORGE_RELEASE_VERIFY_DIR}/assets"
+          "${RUNNER_TEMP}/forge" artifact verify-checksums --manifest checksums.txt
+          "${RUNNER_TEMP}/forge" contract validate --schema "${GITHUB_WORKSPACE}/docs/contracts/release-preview-inspect-v0.1.schema.json" --document release-preview-inspect.json
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import sys
+
+          release = json.loads((pathlib.Path(os.environ["AO_FORGE_RELEASE_VERIFY_DIR"]) / "release.json").read_text())
+          inspect = json.loads(pathlib.Path("release-preview-inspect.json").read_text())
+          checks = {
+              "status": inspect.get("status") == "passed",
+              "tag": inspect.get("tag") == os.environ["AO_FORGE_RELEASE_VERIFY_TAG"],
+              "head_commit": inspect.get("head_commit") == release.get("targetCommitish"),
+              "failed_checks": inspect.get("failed_checks") == 0,
+              "mutates_releases": inspect.get("mutates_releases") is False,
+              "network_required": inspect.get("network_required") is False,
+          }
+          failed = [name for name, ok in checks.items() if not ok]
+          if failed:
+              print(f"release preview inspect did not pass: {failed}", file=sys.stderr)
+              sys.exit(1)
+          print("release_preview_inspect_verified=true")
+          PY
+
+      - name: Verify archive attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${AO_FORGE_RELEASE_VERIFY_DIR}/assets"
+          for artifact in \
+            ao-forge_Linux_x86_64.tar.gz \
+            ao-forge_Darwin_arm64.tar.gz \
+            ao-forge_Windows_x86_64.zip
+          do
+            gh attestation verify "$artifact" \
+              --owner "${GITHUB_REPOSITORY_OWNER}" \
+              --format json > "${artifact}.verified-attestation.json"
+            echo "archive_attestation_verified=$artifact"
+          done
+
+      - name: Verify release evidence bundle attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${AO_FORGE_RELEASE_VERIFY_DIR}/assets"
+          if [[ ! -f release-evidence-bundle.json || ! -f release-evidence-bundle.attestation.json ]]; then
+            if [[ "${AO_FORGE_REQUIRE_EVIDENCE_BUNDLE}" == "false" ]]; then
+              echo "require_evidence_bundle=false allows legacy releases only"
+              exit 0
+            fi
+            echo "release evidence bundle assets are required" >&2
+            exit 1
+          fi
+
+          "${RUNNER_TEMP}/forge" contract validate --schema "${GITHUB_WORKSPACE}/docs/contracts/release-evidence-bundle-v0.1.schema.json" --document release-evidence-bundle.json
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import sys
+
+          release = json.loads((pathlib.Path(os.environ["AO_FORGE_RELEASE_VERIFY_DIR"]) / "release.json").read_text())
+          bundle = json.loads(pathlib.Path("release-evidence-bundle.json").read_text())
+          checks = {
+              "schema_version": bundle.get("schema_version") == "ao.forge.release-evidence-bundle.v0.1",
+              "tag": bundle.get("tag") == os.environ["AO_FORGE_RELEASE_VERIFY_TAG"],
+              "head_commit": bundle.get("head_commit") == release.get("targetCommitish"),
+              "workflow_path": bundle.get("workflow", {}).get("path") == ".github/workflows/release-publish.yml",
+              "artifacts": len(bundle.get("artifacts", [])) == 3,
+          }
+          for evidence in bundle.get("evidence_files", []):
+              if evidence.get("path", "").startswith("/"):
+                  checks["public_relative_paths"] = False
+                  break
+          else:
+              checks["public_relative_paths"] = True
+
+          failed = [name for name, ok in checks.items() if not ok]
+          if failed:
+              print(f"release evidence bundle verification failed: {failed}", file=sys.stderr)
+              sys.exit(1)
+          print("release_evidence_bundle_verified=true")
+          PY
+          gh attestation verify release-evidence-bundle.json \
+            --owner "${GITHUB_REPOSITORY_OWNER}" \
+            --format json > release-evidence-bundle.verified-attestation.json
+          echo "release_evidence_bundle_attestation_verified=true"
+
+      - name: Smoke test Darwin artifact when host-compatible
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${AO_FORGE_RELEASE_VERIFY_DIR}/assets"
+          mkdir -p "${RUNNER_TEMP}/ao-forge-release-smoke"
+          if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+            tar -xzf ao-forge_Linux_x86_64.tar.gz -C "${RUNNER_TEMP}/ao-forge-release-smoke"
+            "${RUNNER_TEMP}/ao-forge-release-smoke/ao-forge" --help >/dev/null
+            echo "linux_x86_64_smoke=passed"
+          elif [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]]; then
+            tar -xzf ao-forge_Darwin_arm64.tar.gz -C "${RUNNER_TEMP}/ao-forge-release-smoke"
+            "${RUNNER_TEMP}/ao-forge-release-smoke/ao-forge" --help >/dev/null
+            echo "darwin_arm64_smoke=passed"
+          else
+            echo "binary_smoke_skipped_for_host=$(uname -s)-$(uname -m)"
+          fi
+
+      - name: Summarize post-release verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "post_release_verification=passed" | tee -a "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,137 @@
+name: Release Attestation
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to attest without publishing"
+        required: true
+        default: "v0.0.0-attestation"
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: release-attestation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  attest-release-artifacts:
+    name: Attest release artifacts
+    runs-on: ubuntu-latest
+    env:
+      REQUESTED_ATTESTATION_TAG: ${{ github.event.inputs.tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Resolve attestation tag
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+            tag="${GITHUB_REF_NAME}"
+          else
+            tag="${REQUESTED_ATTESTATION_TAG:-}"
+          fi
+
+          if [[ -z "$tag" ]]; then
+            echo "release attestation tag is required" >&2
+            exit 1
+          fi
+
+          echo "AO_FORGE_RELEASE_PREVIEW_TAG=$tag" >> "$GITHUB_ENV"
+          echo "AO_FORGE_RELEASE_PREVIEW_OUT=${RUNNER_TEMP}/ao-forge-release-attestation" >> "$GITHUB_ENV"
+          echo "tag=$tag" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build release archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist build
+
+          GOOS=linux GOARCH=amd64 go build -o build/ao-forge ./cmd/forge
+          tar -C build -czf dist/ao-forge_Linux_x86_64.tar.gz ao-forge
+          rm -f build/ao-forge
+
+          GOOS=darwin GOARCH=arm64 go build -o build/ao-forge ./cmd/forge
+          tar -C build -czf dist/ao-forge_Darwin_arm64.tar.gz ao-forge
+          rm -f build/ao-forge
+
+          GOOS=windows GOARCH=amd64 go build -o build/ao-forge.exe ./cmd/forge
+          python3 - <<'PY'
+          import zipfile
+          from pathlib import Path
+
+          archive = Path("dist/ao-forge_Windows_x86_64.zip")
+          binary = Path("build/ao-forge.exe")
+          with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+              zf.write(binary, arcname="ao-forge.exe")
+          PY
+
+      - name: Build verification CLI
+        run: go build -o "${RUNNER_TEMP}/forge" ./cmd/forge
+
+      - name: Generate and verify checksums
+        run: |
+          "${RUNNER_TEMP}/forge" artifact checksums \
+            --artifact dist/ao-forge_Linux_x86_64.tar.gz \
+            --artifact dist/ao-forge_Darwin_arm64.tar.gz \
+            --artifact dist/ao-forge_Windows_x86_64.zip \
+            --out dist/checksums.txt
+          "${RUNNER_TEMP}/forge" artifact verify-checksums --manifest dist/checksums.txt
+
+      - name: Run release preview for attested artifacts
+        run: |
+          "${RUNNER_TEMP}/forge" release-preview \
+            --workspace . \
+            --tag "${AO_FORGE_RELEASE_PREVIEW_TAG}" \
+            --artifact dist/ao-forge_Linux_x86_64.tar.gz \
+            --artifact dist/ao-forge_Darwin_arm64.tar.gz \
+            --artifact dist/ao-forge_Windows_x86_64.zip \
+            --artifact dist/checksums.txt \
+            --out "${AO_FORGE_RELEASE_PREVIEW_OUT}/release-preview-audit.json"
+          "${RUNNER_TEMP}/forge" release-preview inspect --audit "${AO_FORGE_RELEASE_PREVIEW_OUT}/release-preview-audit.json" > "${AO_FORGE_RELEASE_PREVIEW_OUT}/release-preview-inspect.txt"
+          "${RUNNER_TEMP}/forge" release-preview inspect --audit "${AO_FORGE_RELEASE_PREVIEW_OUT}/release-preview-audit.json" --json > "${AO_FORGE_RELEASE_PREVIEW_OUT}/release-preview-inspect.json"
+
+      - name: Validate release evidence contracts
+        run: |
+          "${RUNNER_TEMP}/forge" contract validate --schema docs/contracts/release-preview-audit-v0.1.schema.json --document "${AO_FORGE_RELEASE_PREVIEW_OUT}/release-preview-audit.json"
+          "${RUNNER_TEMP}/forge" contract validate --schema docs/contracts/release-preview-inspect-v0.1.schema.json --document "${AO_FORGE_RELEASE_PREVIEW_OUT}/release-preview-inspect.json"
+          "${RUNNER_TEMP}/forge" contract validate --schema docs/contracts/release-artifact-inventory-v0.1.schema.json --document examples/release-preview/release-artifact-inventory.v0.1.example.json
+          "${RUNNER_TEMP}/forge" contract validate --schema docs/contracts/release-attestation-plan-v0.1.schema.json --document examples/release-preview/release-attestation-plan.v0.1.example.json
+
+      - name: Generate artifact attestations
+        uses: actions/attest@v4
+        with:
+          subject-checksums: dist/checksums.txt
+
+      - name: Upload release attestation evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-attestation-evidence
+          path: |
+            dist/ao-forge_Linux_x86_64.tar.gz
+            dist/ao-forge_Darwin_arm64.tar.gz
+            dist/ao-forge_Windows_x86_64.zip
+            dist/checksums.txt
+            ${{ runner.temp }}/ao-forge-release-attestation/release-preview-audit.json
+            ${{ runner.temp }}/ao-forge-release-attestation/release-preview-inspect.txt
+            ${{ runner.temp }}/ao-forge-release-attestation/release-preview-inspect.json
+            examples/release-preview/release-artifact-inventory.v0.1.example.json
+            examples/release-preview/release-attestation-plan.v0.1.example.json
+          if-no-files-found: error
+          retention-days: 14

@@ -103,6 +103,12 @@ Only publish when all of these are true:
   material;
 - a maintainer explicitly approves the publish in the release notes or PR.
 
+Use the `Release Publish` workflow for the first draft GitHub release. Provide
+the passing `Release Rehearsal` run ID for `<tag>`, keep `confirm_publish` set
+to `false` until the final review is complete, then rerun with
+`confirm_publish=true`. The workflow creates a draft release only; review the
+uploaded `release-publish-evidence` artifact before making the release public.
+
 The first public release should be treated as controlled release, not broad
 production-stable adoption.
 
@@ -120,6 +126,8 @@ After publishing:
 6. Run a fresh install or binary smoke test from the published artifact.
 7. Record the GitHub Actions run URLs for CI, Release Preview, and Release
    Rehearsal in maintainer notes.
+8. Record the `Release Publish` run URL and confirm it produced a draft release
+   before any public release publication.
 
 ## Rollback Plan
 

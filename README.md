@@ -212,6 +212,12 @@ Artifact Attestations for the checksum subjects, verifies the GitHub Artifact At
 against the expected repository, ref, commit, and artifact digests, and does not
 publish a GitHub release.
 
+The `Release Publish` workflow is manual-only and draft-only. It requires a
+successful `Release Rehearsal` run ID, explicit `confirm_publish=true`, fresh
+checksums, release preview, contract validation, GitHub Artifact Attestation
+verification, and public-safe release notes before it creates a draft GitHub
+release.
+
 ## Continuous Integration
 
 This repository is public. The GitHub Actions workflow runs automatically on every push to a branch and every pull request targeting `main`.

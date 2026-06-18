@@ -1,0 +1,346 @@
+name: Release Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish as a draft"
+        required: true
+        default: "v0.1.0"
+      release_rehearsal_run_id:
+        description: "Successful Release Rehearsal run ID for this tag"
+        required: true
+      notes_path:
+        description: "Public-safe release notes file"
+        required: true
+        default: "docs/release/V0.1.0-RELEASE-NOTES.md"
+      confirm_publish:
+        description: "Type true to create a draft GitHub release"
+        required: true
+        default: "false"
+
+permissions:
+  actions: read
+  contents: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: release-publish-${{ github.event.inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  draft-release:
+    name: Draft release
+    runs-on: ubuntu-latest
+    environment: production-release
+    env:
+      REQUESTED_PUBLISH_TAG: ${{ github.event.inputs.tag }}
+      RELEASE_REHEARSAL_RUN_ID: ${{ github.event.inputs.release_rehearsal_run_id }}
+      RELEASE_NOTES_PATH: ${{ github.event.inputs.notes_path }}
+      CONFIRM_PUBLISH: ${{ github.event.inputs.confirm_publish }}
+
+    steps:
+      - name: Guard explicit publish approval
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${CONFIRM_PUBLISH}" != "true" ]]; then
+            echo "confirm_publish must be exactly true" >&2
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Resolve publish tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${REQUESTED_PUBLISH_TAG:-}"
+          if [[ -z "$tag" ]]; then
+            echo "release publish tag is required" >&2
+            exit 1
+          fi
+          if [[ "$tag" != v* ]]; then
+            echo "release publish tag must start with v" >&2
+            exit 1
+          fi
+
+          echo "AO_FORGE_RELEASE_PREVIEW_TAG=$tag" >> "$GITHUB_ENV"
+          echo "AO_FORGE_RELEASE_PUBLISH_TAG=$tag" >> "$GITHUB_ENV"
+          echo "AO_FORGE_RELEASE_PUBLISH_OUT=${RUNNER_TEMP}/ao-forge-release-publish" >> "$GITHUB_ENV"
+          echo "tag=$tag" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Download release rehearsal evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${RELEASE_REHEARSAL_RUN_ID:-}" ]]; then
+            echo "release_rehearsal_run_id is required" >&2
+            exit 1
+          fi
+          gh run download "${RELEASE_REHEARSAL_RUN_ID}" \
+            --name release-rehearsal-evidence \
+            --dir "${RUNNER_TEMP}/release-rehearsal-evidence"
+
+      - name: Validate rehearsal evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import sys
+
+          evidence_root = pathlib.Path(os.environ["RUNNER_TEMP"]) / "release-rehearsal-evidence"
+          expected_tag = os.environ["AO_FORGE_RELEASE_PUBLISH_TAG"]
+          audits = list(evidence_root.rglob("release-preview-audit.json"))
+          inspections = list(evidence_root.rglob("release-preview-inspect.json"))
+
+          errors = []
+          if len(audits) != 1:
+              errors.append(f"expected exactly one rehearsal audit, found {len(audits)}")
+          if len(inspections) != 1:
+              errors.append(f"expected exactly one rehearsal inspect JSON, found {len(inspections)}")
+
+          if not errors:
+              audit = json.loads(audits[0].read_text())
+              inspect = json.loads(inspections[0].read_text())
+              if audit.get("status") != "passed" or inspect.get("status") != "passed":
+                  errors.append("rehearsal evidence did not pass")
+              if audit.get("tag") != expected_tag or inspect.get("tag") != expected_tag:
+                  errors.append("rehearsal evidence tag mismatch")
+              if inspect.get("failed_checks") != 0:
+                  errors.append("rehearsal failed_checks must be 0")
+              if audit.get("mutates_releases") is not False or inspect.get("mutates_releases") is not False:
+                  errors.append("rehearsal mutates_releases must be false")
+              if audit.get("network_required") is not False or inspect.get("network_required") is not False:
+                  errors.append("rehearsal network_required must be false")
+
+          if errors:
+              for error in errors:
+                  print(f"::error::{error}")
+              sys.exit(1)
+
+          print(f"release_rehearsal_run_id={os.environ['RELEASE_REHEARSAL_RUN_ID']}")
+          print(f"release_rehearsal_tag={expected_tag}")
+          PY
+
+      - name: Build release archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist build
+
+          GOOS=linux GOARCH=amd64 go build -o build/ao-forge ./cmd/forge
+          tar -C build -czf dist/ao-forge_Linux_x86_64.tar.gz ao-forge
+          rm -f build/ao-forge
+
+          GOOS=darwin GOARCH=arm64 go build -o build/ao-forge ./cmd/forge
+          tar -C build -czf dist/ao-forge_Darwin_arm64.tar.gz ao-forge
+          rm -f build/ao-forge
+
+          GOOS=windows GOARCH=amd64 go build -o build/ao-forge.exe ./cmd/forge
+          python3 - <<'PY'
+          import zipfile
+          from pathlib import Path
+
+          archive = Path("dist/ao-forge_Windows_x86_64.zip")
+          binary = Path("build/ao-forge.exe")
+          with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+              zf.write(binary, arcname="ao-forge.exe")
+          PY
+          rm -rf build
+
+      - name: Build verification CLI
+        run: go build -o "${RUNNER_TEMP}/forge" ./cmd/forge
+
+      - name: Generate and verify checksums
+        run: |
+          "${RUNNER_TEMP}/forge" artifact checksums \
+            --artifact dist/ao-forge_Linux_x86_64.tar.gz \
+            --artifact dist/ao-forge_Darwin_arm64.tar.gz \
+            --artifact dist/ao-forge_Windows_x86_64.zip \
+            --out dist/checksums.txt
+          "${RUNNER_TEMP}/forge" artifact verify-checksums --manifest dist/checksums.txt
+
+      - name: Run release preview for draft publish
+        run: |
+          "${RUNNER_TEMP}/forge" release-preview \
+            --workspace . \
+            --tag "${AO_FORGE_RELEASE_PREVIEW_TAG}" \
+            --artifact dist/ao-forge_Linux_x86_64.tar.gz \
+            --artifact dist/ao-forge_Darwin_arm64.tar.gz \
+            --artifact dist/ao-forge_Windows_x86_64.zip \
+            --artifact dist/checksums.txt \
+            --out "${AO_FORGE_RELEASE_PUBLISH_OUT}/release-preview-audit.json"
+          "${RUNNER_TEMP}/forge" release-preview inspect --audit "${AO_FORGE_RELEASE_PUBLISH_OUT}/release-preview-audit.json" > "${AO_FORGE_RELEASE_PUBLISH_OUT}/release-preview-inspect.txt"
+          "${RUNNER_TEMP}/forge" release-preview inspect --audit "${AO_FORGE_RELEASE_PUBLISH_OUT}/release-preview-audit.json" --json > "${AO_FORGE_RELEASE_PUBLISH_OUT}/release-preview-inspect.json"
+
+      - name: Validate release evidence contracts
+        run: |
+          "${RUNNER_TEMP}/forge" contract validate --schema docs/contracts/release-preview-audit-v0.1.schema.json --document "${AO_FORGE_RELEASE_PUBLISH_OUT}/release-preview-audit.json"
+          "${RUNNER_TEMP}/forge" contract validate --schema docs/contracts/release-preview-inspect-v0.1.schema.json --document "${AO_FORGE_RELEASE_PUBLISH_OUT}/release-preview-inspect.json"
+          "${RUNNER_TEMP}/forge" contract validate --schema docs/contracts/release-artifact-inventory-v0.1.schema.json --document examples/release-preview/release-artifact-inventory.v0.1.example.json
+          "${RUNNER_TEMP}/forge" contract validate --schema docs/contracts/release-attestation-plan-v0.1.schema.json --document examples/release-preview/release-attestation-plan.v0.1.example.json
+
+      - name: Generate artifact attestations
+        uses: actions/attest@v4
+        with:
+          subject-checksums: dist/checksums.txt
+
+      - name: Verify artifact attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for artifact in \
+            dist/ao-forge_Linux_x86_64.tar.gz \
+            dist/ao-forge_Darwin_arm64.tar.gz \
+            dist/ao-forge_Windows_x86_64.zip
+          do
+            gh attestation verify "$artifact" \
+              --owner "${GITHUB_REPOSITORY_OWNER}" \
+              --format json > "${artifact}.attestation.json"
+          done
+
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import sys
+
+          expected_repo = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}"
+          expected_ref = os.environ["GITHUB_REF"]
+          expected_sha = os.environ["GITHUB_SHA"]
+          expected_workflow = ".github/workflows/release-publish.yml"
+
+          manifest = {}
+          for line in pathlib.Path("dist/checksums.txt").read_text().splitlines():
+              if not line.strip():
+                  continue
+              digest, name = line.split(maxsplit=1)
+              manifest[name] = digest
+
+          failures = []
+          for artifact, expected_digest in manifest.items():
+              records = json.loads(pathlib.Path(f"{artifact}.attestation.json").read_text())
+              matched = False
+
+              for record in records:
+                  result = record.get("verificationResult", {})
+                  statement = result.get("statement", {})
+                  certificate = result.get("signature", {}).get("certificate", {})
+                  workflow = (
+                      statement.get("predicate", {})
+                      .get("buildDefinition", {})
+                      .get("externalParameters", {})
+                      .get("workflow", {})
+                  )
+                  subjects = statement.get("subject", [])
+                  subject_matches = any(
+                      subject.get("name") == artifact
+                      and subject.get("digest", {}).get("sha256") == expected_digest
+                      for subject in subjects
+                  )
+
+                  if (
+                      subject_matches
+                      and workflow.get("repository") == expected_repo
+                      and workflow.get("ref") == expected_ref
+                      and workflow.get("path") == expected_workflow
+                      and certificate.get("sourceRepositoryURI") == expected_repo
+                      and certificate.get("sourceRepositoryRef") == expected_ref
+                      and certificate.get("sourceRepositoryDigest") == expected_sha
+                  ):
+                      matched = True
+                      break
+
+              if not matched:
+                  failures.append(f"{artifact}: no verified attestation matched expected release publish identity")
+
+          if failures:
+              print("\n".join(failures), file=sys.stderr)
+              sys.exit(1)
+
+          print(f"artifact_attestations_verified={len(manifest)}")
+          PY
+
+      - name: Validate release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import sys
+
+          notes_path = pathlib.Path(os.environ["RELEASE_NOTES_PATH"])
+          if not notes_path.is_file():
+              print(f"release notes file not found: {notes_path}", file=sys.stderr)
+              sys.exit(1)
+
+          text = notes_path.read_text()
+          forbidden = ["/Users/", "/tmp/", "gho_", "Bearer ", "Authorization:", "excluded handoff"]
+          found = [value for value in forbidden if value in text]
+          if found:
+              for value in found:
+                  print(f"::error::release notes contain forbidden public-unsafe text: {value}")
+              sys.exit(1)
+          print(f"release_notes={notes_path}")
+          PY
+
+      - name: Create draft GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "${AO_FORGE_RELEASE_PUBLISH_TAG}" \
+            dist/ao-forge_Linux_x86_64.tar.gz \
+            dist/ao-forge_Darwin_arm64.tar.gz \
+            dist/ao-forge_Windows_x86_64.zip \
+            dist/checksums.txt \
+            dist/*.attestation.json \
+            "${AO_FORGE_RELEASE_PUBLISH_OUT}/release-preview-audit.json" \
+            "${AO_FORGE_RELEASE_PUBLISH_OUT}/release-preview-inspect.txt" \
+            "${AO_FORGE_RELEASE_PUBLISH_OUT}/release-preview-inspect.json" \
+            examples/release-preview/release-artifact-inventory.v0.1.example.json \
+            examples/release-preview/release-attestation-plan.v0.1.example.json \
+            --repo "${GITHUB_REPOSITORY}" \
+            --target "${GITHUB_SHA}" \
+            --title "AO Forge ${AO_FORGE_RELEASE_PUBLISH_TAG}" \
+            --notes-file "${RELEASE_NOTES_PATH}" \
+            --draft
+
+      - name: Upload release publish evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-publish-evidence
+          path: |
+            dist/ao-forge_Linux_x86_64.tar.gz
+            dist/ao-forge_Darwin_arm64.tar.gz
+            dist/ao-forge_Windows_x86_64.zip
+            dist/checksums.txt
+            dist/*.attestation.json
+            ${{ runner.temp }}/release-rehearsal-evidence
+            ${{ runner.temp }}/ao-forge-release-publish/release-preview-audit.json
+            ${{ runner.temp }}/ao-forge-release-publish/release-preview-inspect.txt
+            ${{ runner.temp }}/ao-forge-release-publish/release-preview-inspect.json
+            examples/release-preview/release-artifact-inventory.v0.1.example.json
+            examples/release-preview/release-attestation-plan.v0.1.example.json
+          if-no-files-found: error
+          retention-days: 30

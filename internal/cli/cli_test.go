@@ -889,6 +889,95 @@ func TestReleaseAttestationWorkflowProducesSignedEvidenceWithoutPublishing(t *te
 	}
 }
 
+func TestReleasePublishWorkflowCreatesDraftReleaseOnlyAfterEvidenceGates(t *testing.T) {
+	root := repoRoot(t)
+	readText := func(path ...string) string {
+		t.Helper()
+		bytes, err := os.ReadFile(filepath.Join(append([]string{root}, path...)...))
+		if err != nil {
+			t.Fatalf("read %s: %v", filepath.Join(path...), err)
+		}
+		return string(bytes)
+	}
+
+	workflow := readText(".github", "workflows", "release-publish.yml")
+	readme := readText("README.md")
+	previewRunbook := readText("docs", "release", "PREVIEW-RELEASE.md")
+	firstRelease := readText("docs", "release", "FIRST-PUBLIC-RELEASE.md")
+	releaseNotes := readText("docs", "release", "V0.1.0-RELEASE-NOTES.md")
+	threatModel := readText("docs", "security", "RELEASE-THREAT-MODEL.md")
+
+	for _, check := range []struct {
+		name string
+		doc  string
+		want string
+	}{
+		{name: "workflow name", doc: workflow, want: "name: Release Publish"},
+		{name: "manual trigger", doc: workflow, want: "workflow_dispatch:"},
+		{name: "tag input", doc: workflow, want: "tag:"},
+		{name: "rehearsal run input", doc: workflow, want: "release_rehearsal_run_id:"},
+		{name: "confirmation input", doc: workflow, want: "confirm_publish:"},
+		{name: "confirmation true gate", doc: workflow, want: "confirm_publish must be exactly true"},
+		{name: "environment approval", doc: workflow, want: "environment: production-release"},
+		{name: "read actions permission", doc: workflow, want: "actions: read"},
+		{name: "write contents permission", doc: workflow, want: "contents: write"},
+		{name: "oidc permission", doc: workflow, want: "id-token: write"},
+		{name: "attestations permission", doc: workflow, want: "attestations: write"},
+		{name: "download rehearsal evidence", doc: workflow, want: "gh run download"},
+		{name: "rehearsal artifact", doc: workflow, want: "release-rehearsal-evidence"},
+		{name: "validate rehearsal evidence", doc: workflow, want: "Validate rehearsal evidence"},
+		{name: "rehearsal passed", doc: workflow, want: "rehearsal evidence did not pass"},
+		{name: "rehearsal failed checks", doc: workflow, want: "failed_checks"},
+		{name: "rehearsal non-mutating", doc: workflow, want: "mutates_releases"},
+		{name: "rehearsal offline", doc: workflow, want: "network_required"},
+		{name: "linux artifact", doc: workflow, want: "ao-forge_Linux_x86_64.tar.gz"},
+		{name: "darwin artifact", doc: workflow, want: "ao-forge_Darwin_arm64.tar.gz"},
+		{name: "windows artifact", doc: workflow, want: "ao-forge_Windows_x86_64.zip"},
+		{name: "checksum generation", doc: workflow, want: "artifact checksums"},
+		{name: "checksum verification", doc: workflow, want: "artifact verify-checksums"},
+		{name: "release preview", doc: workflow, want: "release-preview"},
+		{name: "audit contract", doc: workflow, want: "release-preview-audit-v0.1.schema.json"},
+		{name: "inspect contract", doc: workflow, want: "release-preview-inspect-v0.1.schema.json"},
+		{name: "inventory contract", doc: workflow, want: "release-artifact-inventory-v0.1.schema.json"},
+		{name: "attestation contract", doc: workflow, want: "release-attestation-plan-v0.1.schema.json"},
+		{name: "attest action", doc: workflow, want: "actions/attest@v4"},
+		{name: "attest checksums", doc: workflow, want: "subject-checksums: dist/checksums.txt"},
+		{name: "verify attestations", doc: workflow, want: "gh attestation verify"},
+		{name: "attestation verified count", doc: workflow, want: "artifact_attestations_verified"},
+		{name: "release notes validation", doc: workflow, want: "Validate release notes"},
+		{name: "private path guard", doc: workflow, want: "/Users/"},
+		{name: "draft release create", doc: workflow, want: "gh release create"},
+		{name: "draft flag", doc: workflow, want: "--draft"},
+		{name: "target sha", doc: workflow, want: "--target \"${GITHUB_SHA}\""},
+		{name: "upload publish evidence", doc: workflow, want: "release-publish-evidence"},
+		{name: "readme publish workflow", doc: readme, want: "`Release Publish`"},
+		{name: "preview runbook publish workflow", doc: previewRunbook, want: "## Draft Release Publish"},
+		{name: "first release publish workflow", doc: firstRelease, want: "`Release Publish`"},
+		{name: "release notes publish workflow", doc: releaseNotes, want: "Release Publish"},
+		{name: "threat model publish workflow", doc: threatModel, want: "`Release Publish`"},
+	} {
+		if !strings.Contains(check.doc, check.want) {
+			t.Fatalf("%s missing %q", check.name, check.want)
+		}
+	}
+
+	for _, forbidden := range []string{
+		"push:",
+		"pull_request:",
+		"--latest",
+		"--prerelease=false",
+		"--generate-notes",
+		"softprops/action-gh-release",
+		"contents: read\n",
+		"actions/upload-artifact@v4",
+		"actions/upload-artifact@v5",
+	} {
+		if strings.Contains(workflow, forbidden) {
+			t.Fatalf("release publish workflow must not contain %q\n%s", forbidden, workflow)
+		}
+	}
+}
+
 func TestArtifactChecksumsWritesStableSHA256Manifest(t *testing.T) {
 	tmpDir := t.TempDir()
 	firstPath := filepath.Join(tmpDir, "ao-forge_Darwin_arm64.tar.gz")

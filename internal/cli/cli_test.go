@@ -1108,6 +1108,7 @@ func TestReleaseVerifyWorkflowChecksPublishedReleaseEvidence(t *testing.T) {
 		{name: "bundle default", doc: workflow, want: "default: \"true\""},
 		{name: "read contents", doc: workflow, want: "contents: read"},
 		{name: "read attestations", doc: workflow, want: "attestations: read"},
+		{name: "stable concurrency group", doc: workflow, want: "group: release-verify-${{ github.workflow }}-${{ github.ref }}"},
 		{name: "setup go", doc: workflow, want: "actions/setup-go@v6"},
 		{name: "resolve release tag", doc: workflow, want: "Resolve release tag"},
 		{name: "release view", doc: workflow, want: "gh release view"},
@@ -1145,6 +1146,7 @@ func TestReleaseVerifyWorkflowChecksPublishedReleaseEvidence(t *testing.T) {
 		"softprops/action-gh-release",
 		"actions/upload-artifact@v4",
 		"actions/upload-artifact@v5",
+		"github.event.release.tag_name || github.event.inputs.tag",
 	} {
 		if strings.Contains(workflow, forbidden) {
 			t.Fatalf("release verify workflow must not contain %q\n%s", forbidden, workflow)

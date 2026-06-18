@@ -213,6 +213,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runInspect(args[1:], stdout, stderr)
 	case "doctor":
 		return runDoctor(args[1:], stdout, stderr)
+	case "artifact":
+		return runArtifact(args[1:], stdout, stderr)
 	case "release-preview":
 		return runReleasePreview(args[1:], stdout, stderr)
 	case "run":
@@ -244,6 +246,7 @@ Usage:
   forge resume --run <run-id> [--out <factory-packet.json>] [--live] [--confirm-release] [--release-preview-audit <release-preview-audit.json>]
   forge inspect --packet <factory-packet.json>
   forge doctor --foundation <foundation-baseline.json> [--json]
+  forge artifact checksums --artifact <path> [--artifact <path> ...] [--out <checksums.txt>]
   forge release-preview --workspace <git-workspace> [--tag <vX.Y.Z>] [--artifact <path> ...] [--out <release-preview-audit.json>]
   forge release-preview inspect --audit <release-preview-audit.json>
 
@@ -252,8 +255,8 @@ Factory terms:
   workcell        bounded unit of factory work with dependencies and evidence
   factory packet  operator-ready JSON summary of plan, gates, evidence, and next actions
 
-Slice 2.6 status:
-  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, release preview audits, release preview enforcement, and release preview audit inspection are enabled.
+Slice 2.7 status:
+  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, release preview audits, release preview enforcement, release preview audit inspection, and artifact checksums are enabled.
 `)
 }
 
@@ -4264,6 +4267,94 @@ func resolveGitPath() string {
 		return gitBin
 	}
 	return "git"
+}
+
+type artifactChecksumFlags struct {
+	artifactPaths []string
+	outPath       string
+}
+
+func runArtifact(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "forge artifact: missing subcommand checksums")
+		return 2
+	}
+	switch args[0] {
+	case "checksums":
+		return runArtifactChecksums(args[1:], stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "forge artifact: unknown subcommand %q\n", args[0])
+		return 2
+	}
+}
+
+func parseArtifactChecksumFlags(args []string) (artifactChecksumFlags, error) {
+	var flags artifactChecksumFlags
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--artifact":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return artifactChecksumFlags{}, fmt.Errorf("--artifact requires a value")
+			}
+			flags.artifactPaths = append(flags.artifactPaths, args[i+1])
+			i++
+		case "--out":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return artifactChecksumFlags{}, fmt.Errorf("--out requires a value")
+			}
+			flags.outPath = args[i+1]
+			i++
+		case "--help", "-h":
+			return artifactChecksumFlags{}, fmt.Errorf("help is available with `forge --help`")
+		default:
+			if strings.HasPrefix(args[i], "--") {
+				return artifactChecksumFlags{}, fmt.Errorf("unknown flag %s", args[i])
+			}
+			return artifactChecksumFlags{}, fmt.Errorf("unexpected argument %s", args[i])
+		}
+	}
+	if len(flags.artifactPaths) == 0 {
+		return artifactChecksumFlags{}, fmt.Errorf("missing required --artifact")
+	}
+	return flags, nil
+}
+
+func runArtifactChecksums(args []string, stdout, stderr io.Writer) int {
+	flags, err := parseArtifactChecksumFlags(args)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge artifact checksums: %v\n", err)
+		return 2
+	}
+
+	manifest, err := buildArtifactChecksumManifest(flags.artifactPaths)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge artifact checksums: %v\n", err)
+		return 1
+	}
+
+	if flags.outPath != "" {
+		if err := writeFile(flags.outPath, []byte(manifest)); err != nil {
+			fmt.Fprintf(stderr, "forge artifact checksums: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "artifact_checksums=%s\n", displayPath(flags.outPath))
+		return 0
+	}
+
+	fmt.Fprint(stdout, manifest)
+	return 0
+}
+
+func buildArtifactChecksumManifest(paths []string) (string, error) {
+	var manifest strings.Builder
+	for _, path := range paths {
+		artifact := auditReleasePreviewArtifact(path)
+		if artifact.Status != "present" {
+			return "", fmt.Errorf("artifact path is %s: %s", artifact.Status, artifact.Path)
+		}
+		fmt.Fprintf(&manifest, "%s  %s\n", artifact.SHA256, artifact.Path)
+	}
+	return manifest.String(), nil
 }
 
 type releasePreviewFlags struct {

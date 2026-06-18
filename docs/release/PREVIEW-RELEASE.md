@@ -17,6 +17,14 @@ or any manual GitHub release operation.
 
 ## Example
 
+Generate the checksum manifest with AO Forge before running the preview:
+
+```sh
+forge artifact checksums \
+  --artifact ./dist/ao-forge_Linux_x86_64.tar.gz \
+  --out ./dist/checksums.txt
+```
+
 ```sh
 forge release-preview \
   --workspace . \

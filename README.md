@@ -206,6 +206,11 @@ publishing. Run it manually with the intended tag, or let it run on pushed `v*`
 tags, then review the uploaded `release-rehearsal-evidence` artifact before any
 public release mutation.
 
+The `Release Attestation` workflow builds the expected preview artifacts,
+generates and verifies `checksums.txt`, runs release preview, and creates GitHub
+Artifact Attestations for the checksum subjects without publishing a GitHub
+release.
+
 ## Continuous Integration
 
 This repository is public. The GitHub Actions workflow runs automatically on every push to a branch and every pull request targeting `main`.

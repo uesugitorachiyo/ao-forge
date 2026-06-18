@@ -807,6 +807,72 @@ func TestReleaseRehearsalWorkflowValidatesTaggedEvidenceWithoutPublishing(t *tes
 	}
 }
 
+func TestReleaseAttestationWorkflowProducesSignedEvidenceWithoutPublishing(t *testing.T) {
+	root := repoRoot(t)
+	readText := func(path ...string) string {
+		t.Helper()
+		bytes, err := os.ReadFile(filepath.Join(append([]string{root}, path...)...))
+		if err != nil {
+			t.Fatalf("read %s: %v", filepath.Join(path...), err)
+		}
+		return string(bytes)
+	}
+
+	workflow := readText(".github", "workflows", "release-attestation.yml")
+	previewRunbook := readText("docs", "release", "PREVIEW-RELEASE.md")
+	releaseNotes := readText("docs", "release", "V0.1.0-RELEASE-NOTES.md")
+	readme := readText("README.md")
+
+	for _, check := range []struct {
+		name string
+		doc  string
+		want string
+	}{
+		{name: "workflow name", doc: workflow, want: "name: Release Attestation"},
+		{name: "manual trigger", doc: workflow, want: "workflow_dispatch:"},
+		{name: "tag trigger", doc: workflow, want: "tags:"},
+		{name: "read contents", doc: workflow, want: "contents: read"},
+		{name: "oidc permission", doc: workflow, want: "id-token: write"},
+		{name: "attestation permission", doc: workflow, want: "attestations: write"},
+		{name: "setup go", doc: workflow, want: "actions/setup-go@v6"},
+		{name: "linux artifact", doc: workflow, want: "ao-forge_Linux_x86_64.tar.gz"},
+		{name: "darwin artifact", doc: workflow, want: "ao-forge_Darwin_arm64.tar.gz"},
+		{name: "windows artifact", doc: workflow, want: "ao-forge_Windows_x86_64.zip"},
+		{name: "forge checksums", doc: workflow, want: "artifact checksums"},
+		{name: "forge checksum verification", doc: workflow, want: "artifact verify-checksums"},
+		{name: "release preview", doc: workflow, want: "release-preview"},
+		{name: "contract audit", doc: workflow, want: "release-preview-audit-v0.1.schema.json"},
+		{name: "contract inspect", doc: workflow, want: "release-preview-inspect-v0.1.schema.json"},
+		{name: "contract inventory", doc: workflow, want: "release-artifact-inventory-v0.1.schema.json"},
+		{name: "contract attestation plan", doc: workflow, want: "release-attestation-plan-v0.1.schema.json"},
+		{name: "attest action", doc: workflow, want: "actions/attest@v4"},
+		{name: "attest checksums subject", doc: workflow, want: "subject-checksums: dist/checksums.txt"},
+		{name: "upload evidence", doc: workflow, want: "release-attestation-evidence"},
+		{name: "runbook section", doc: previewRunbook, want: "## Release Attestation"},
+		{name: "release notes attestation", doc: releaseNotes, want: "Release Attestation"},
+		{name: "readme attestation workflow", doc: readme, want: "`Release Attestation`"},
+	} {
+		if !strings.Contains(check.doc, check.want) {
+			t.Fatalf("%s missing %q", check.name, check.want)
+		}
+	}
+
+	for _, forbidden := range []string{
+		"contents: write",
+		"GITHUB_TOKEN:",
+		"--confirm-release",
+		"--live",
+		"gh release create",
+		"softprops/action-gh-release",
+		"actions/upload-artifact@v4",
+		"actions/upload-artifact@v5",
+	} {
+		if strings.Contains(workflow, forbidden) {
+			t.Fatalf("release attestation workflow must not contain %q\n%s", forbidden, workflow)
+		}
+	}
+}
+
 func TestArtifactChecksumsWritesStableSHA256Manifest(t *testing.T) {
 	tmpDir := t.TempDir()
 	firstPath := filepath.Join(tmpDir, "ao-forge_Darwin_arm64.tar.gz")

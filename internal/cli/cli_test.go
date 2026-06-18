@@ -59,16 +59,18 @@ func TestHelpExplainsFactoryTermsWithoutMarketingCopy(t *testing.T) {
 		"factory packet",
 		"forge plan --brief",
 		"forge inspect --packet",
+		"forge contract validate --schema <schema.json> --document <document.json> [--json]",
 		"dry-run execution",
 		"forge artifact checksums",
 		"forge release-preview inspect --audit <release-preview-audit.json> [--json]",
-		"Slice 2.7 status:",
+		"Slice 2.8 status:",
 		"release mutation",
 		"GitHub publishing",
 		"release preview audits",
 		"release preview enforcement",
 		"release preview audit inspection",
 		"artifact checksums",
+		"contract schema validation",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("help missing %q\n%s", want, stdout)
@@ -179,6 +181,113 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		if err := json.Unmarshal([]byte(doc.text), &decoded); err != nil {
 			t.Fatalf("%s is not valid JSON: %v", doc.name, err)
 		}
+	}
+}
+
+func TestContractValidateAcceptsReleasePreviewAuditAndInspectFixtures(t *testing.T) {
+	root := repoRoot(t)
+	readText := func(path ...string) string {
+		t.Helper()
+		bytes, err := os.ReadFile(filepath.Join(append([]string{root}, path...)...))
+		if err != nil {
+			t.Fatalf("read %s: %v", filepath.Join(path...), err)
+		}
+		return string(bytes)
+	}
+
+	auditSchemaPath := filepath.Join(root, "docs", "contracts", "release-preview-audit-v0.1.schema.json")
+	inspectSchemaPath := filepath.Join(root, "docs", "contracts", "release-preview-inspect-v0.1.schema.json")
+	auditPath := filepath.Join(root, "examples", "release-preview", "dirty-workspace-blocked.audit.json")
+	inspectPath := filepath.Join(root, "examples", "release-preview", "dirty-workspace-blocked.inspect.expected.json")
+
+	for _, check := range []struct {
+		name string
+		doc  string
+		want string
+	}{
+		{name: "README contract validate command", doc: readText("README.md"), want: "forge contract validate --schema docs/contracts/release-preview-audit-v0.1.schema.json"},
+		{name: "branch runbook contract validate command", doc: readText("docs", "release", "BRANCH-PROTECTION.md"), want: "forge contract validate --schema docs/contracts/release-preview-inspect-v0.1.schema.json"},
+	} {
+		if !strings.Contains(check.doc, check.want) {
+			t.Fatalf("%s missing %q", check.name, check.want)
+		}
+	}
+
+	for _, tc := range []struct {
+		name     string
+		schema   string
+		document string
+	}{
+		{name: "audit fixture", schema: auditSchemaPath, document: auditPath},
+		{name: "inspect fixture", schema: inspectSchemaPath, document: inspectPath},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			code, stdout, stderr := runCLI("contract", "validate", "--schema", tc.schema, "--document", tc.document)
+			if code != 0 {
+				t.Fatalf("contract validate failed with code %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+			}
+			for _, want := range []string{
+				"contract_validation=passed",
+				"schema=" + displayPath(tc.schema),
+				"document=" + displayPath(tc.document),
+			} {
+				if !strings.Contains(stdout, want) {
+					t.Fatalf("contract validate stdout missing %q\n%s", want, stdout)
+				}
+			}
+			if stderr != "" {
+				t.Fatalf("contract validate wrote stderr: %s", stderr)
+			}
+		})
+	}
+}
+
+func TestContractValidateRejectsInvalidDocumentWithJSONSummary(t *testing.T) {
+	root := repoRoot(t)
+	auditSchemaPath := filepath.Join(root, "docs", "contracts", "release-preview-audit-v0.1.schema.json")
+	auditPath := filepath.Join(root, "examples", "release-preview", "dirty-workspace-blocked.audit.json")
+	data, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatalf("read audit fixture: %v", err)
+	}
+	var audit map[string]any
+	if err := json.Unmarshal(data, &audit); err != nil {
+		t.Fatalf("unmarshal audit fixture: %v", err)
+	}
+	delete(audit, "checks")
+
+	tmpDir := t.TempDir()
+	invalidPath := filepath.Join(tmpDir, "invalid-release-preview-audit.json")
+	invalidData, err := marshalIndented(audit)
+	if err != nil {
+		t.Fatalf("marshal invalid audit: %v", err)
+	}
+	if err := os.WriteFile(invalidPath, invalidData, 0644); err != nil {
+		t.Fatalf("write invalid audit: %v", err)
+	}
+
+	code, stdout, stderr := runCLI("contract", "validate", "--schema", auditSchemaPath, "--document", invalidPath, "--json")
+	if code != 1 {
+		t.Fatalf("expected contract validation failure exit 1, got %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if stderr == "" || !strings.Contains(stderr, "schema validation failed") {
+		t.Fatalf("stderr missing schema validation failure: %s", stderr)
+	}
+
+	var summary struct {
+		Schema   string   `json:"schema"`
+		Document string   `json:"document"`
+		Status   string   `json:"status"`
+		Errors   []string `json:"errors"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &summary); err != nil {
+		t.Fatalf("contract validate --json did not emit JSON: %v\n%s", err, stdout)
+	}
+	if summary.Schema != displayPath(auditSchemaPath) || summary.Document != displayPath(invalidPath) || summary.Status != "failed" || len(summary.Errors) == 0 {
+		t.Fatalf("unexpected validation summary: %+v", summary)
+	}
+	if !strings.Contains(strings.Join(summary.Errors, "\n"), "checks") {
+		t.Fatalf("validation errors should mention checks, got: %+v", summary.Errors)
 	}
 }
 

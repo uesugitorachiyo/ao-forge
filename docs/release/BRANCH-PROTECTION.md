@@ -45,6 +45,7 @@ release evidence artifacts.
 ## Local Fallback
 
 Before pushing public changes, run the local release-readiness gate:
+`forge contract validate --schema docs/contracts/release-preview-inspect-v0.1.schema.json`
 
 ```sh
 git diff --check
@@ -52,6 +53,8 @@ go test ./... -count=1
 go vet ./...
 go build -o /tmp/ao-forge-smoke ./cmd/forge
 /tmp/ao-forge-smoke doctor --foundation docs/foundation/foundation-baseline.v0.1.json
+/tmp/ao-forge-smoke contract validate --schema docs/contracts/release-preview-audit-v0.1.schema.json --document examples/release-preview/dirty-workspace-blocked.audit.json
+/tmp/ao-forge-smoke contract validate --schema docs/contracts/release-preview-inspect-v0.1.schema.json --document examples/release-preview/dirty-workspace-blocked.inspect.expected.json
 gitleaks detect --source . --redact --verbose
 gitleaks dir . --redact --verbose
 AO_FORGE_RELEASE_PREVIEW_OUT=/tmp/ao-forge-release-preview scripts/release-preview-dry-run.sh

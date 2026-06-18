@@ -299,6 +299,71 @@ func TestReleaseArtifactInventoryContractDocumentsExpectedPublicArtifacts(t *tes
 	}
 }
 
+func TestReleaseContractsRejectDriftFixtures(t *testing.T) {
+	root := repoRoot(t)
+	inventorySchema := filepath.Join(root, "docs", "contracts", "release-artifact-inventory-v0.1.schema.json")
+	attestationSchema := filepath.Join(root, "docs", "contracts", "release-attestation-plan-v0.1.schema.json")
+	fixtureDir := filepath.Join(root, "examples", "release-preview", "invalid")
+
+	for _, tc := range []struct {
+		name     string
+		schema   string
+		document string
+		want     string
+	}{
+		{
+			name:     "missing checksum manifest",
+			schema:   inventorySchema,
+			document: filepath.Join(fixtureDir, "release-artifact-inventory.missing-checksum-manifest.invalid.json"),
+			want:     "checksum_manifest",
+		},
+		{
+			name:     "unsupported platform",
+			schema:   inventorySchema,
+			document: filepath.Join(fixtureDir, "release-artifact-inventory.unsupported-platform.invalid.json"),
+			want:     "/expected_artifacts/0/os",
+		},
+		{
+			name:     "missing attestation subject",
+			schema:   attestationSchema,
+			document: filepath.Join(fixtureDir, "release-attestation-plan.missing-subject.invalid.json"),
+			want:     "checksum-manifest",
+		},
+		{
+			name:     "identity mismatch",
+			schema:   attestationSchema,
+			document: filepath.Join(fixtureDir, "release-attestation-plan.identity-mismatch.invalid.json"),
+			want:     "identity",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			code, stdout, stderr := runCLI("contract", "validate", "--schema", tc.schema, "--document", tc.document, "--json")
+			if code != 1 {
+				t.Fatalf("expected validation failure exit 1, got %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+			}
+			if !strings.Contains(stderr, "schema validation failed") {
+				t.Fatalf("stderr missing schema validation failure: %s", stderr)
+			}
+
+			var summary struct {
+				Schema   string   `json:"schema"`
+				Document string   `json:"document"`
+				Status   string   `json:"status"`
+				Errors   []string `json:"errors"`
+			}
+			if err := json.Unmarshal([]byte(stdout), &summary); err != nil {
+				t.Fatalf("contract validate --json did not emit JSON: %v\n%s", err, stdout)
+			}
+			if summary.Schema != displayPath(tc.schema) || summary.Document != displayPath(tc.document) || summary.Status != "failed" || len(summary.Errors) == 0 {
+				t.Fatalf("unexpected validation summary: %+v", summary)
+			}
+			if !strings.Contains(strings.Join(summary.Errors, "\n"), tc.want) {
+				t.Fatalf("validation errors should mention %q, got: %+v", tc.want, summary.Errors)
+			}
+		})
+	}
+}
+
 func TestContractValidateAcceptsReleasePreviewAuditAndInspectFixtures(t *testing.T) {
 	root := repoRoot(t)
 	readText := func(path ...string) string {

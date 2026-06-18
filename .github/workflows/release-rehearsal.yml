@@ -24,6 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       AO_FORGE_RELEASE_PREVIEW_OUT: ${{ runner.temp }}/ao-forge-release-rehearsal
+      REQUESTED_REHEARSAL_TAG: ${{ github.event.inputs.tag }}
 
     steps:
       - name: Checkout
@@ -44,7 +45,7 @@ jobs:
           if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
             tag="${GITHUB_REF_NAME}"
           else
-            tag="${{ inputs.tag }}"
+            tag="${REQUESTED_REHEARSAL_TAG:-}"
           fi
 
           if [[ -z "$tag" ]]; then

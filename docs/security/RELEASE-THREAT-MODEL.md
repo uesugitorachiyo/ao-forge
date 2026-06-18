@@ -49,6 +49,8 @@ Out of scope for this document:
 ## Operator Rules
 
 - Run release preview before any confirmed live release path.
+- For the first public release, follow
+  [First Public Release Checklist](../release/FIRST-PUBLIC-RELEASE.md).
 - Review both human and machine-readable inspect output:
   - `forge release-preview inspect --audit release-preview-audit.json`
   - `forge release-preview inspect --audit release-preview-audit.json --json`

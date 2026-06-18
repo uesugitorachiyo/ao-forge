@@ -68,7 +68,8 @@ confirms the evidence is passed, local-only, and non-mutating, then uploads
 `release-rehearsal-evidence`.
 
 Before publishing a real release, review the uploaded evidence artifact and
-confirm it matches the intended tag and commit.
+confirm it matches the intended tag and commit. For the first public release,
+follow `FIRST-PUBLIC-RELEASE.md`.
 
 ## Audit Contract
 

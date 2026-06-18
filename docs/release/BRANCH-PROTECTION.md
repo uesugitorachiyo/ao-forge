@@ -2,7 +2,8 @@
 
 This runbook documents the recommended GitHub branch protection settings for
 the public AO Forge repository. It is intended for maintainers configuring
-protection on `main`.
+protection on `main`. For first public release operations, also follow
+`FIRST-PUBLIC-RELEASE.md`.
 
 ## Required Settings
 

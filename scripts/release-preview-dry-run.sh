@@ -23,6 +23,7 @@ preview_artifact="$out_dir/ao-forge-preview-artifact.txt"
 checksums="$out_dir/checksums.txt"
 audit="$out_dir/release-preview-audit.json"
 inspect="$out_dir/release-preview-inspect.txt"
+inspect_json="$out_dir/release-preview-inspect.json"
 
 {
   echo "AO Forge release preview artifact"
@@ -40,6 +41,8 @@ inspect="$out_dir/release-preview-inspect.txt"
   --out "$audit"
 
 "$forge_bin" release-preview inspect --audit "$audit" > "$inspect"
+"$forge_bin" release-preview inspect --audit "$audit" --json > "$inspect_json"
 
 echo "release_preview_audit=$audit"
 echo "release_preview_inspect=$inspect"
+echo "release_preview_inspect_json=$inspect_json"

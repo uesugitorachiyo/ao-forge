@@ -106,6 +106,7 @@ jobs:
 
           evidence_root = pathlib.Path(os.environ["RUNNER_TEMP"]) / "release-rehearsal-evidence"
           expected_tag = os.environ["AO_FORGE_RELEASE_PUBLISH_TAG"]
+          expected_commit = os.environ["GITHUB_SHA"]
           audits = list(evidence_root.rglob("release-preview-audit.json"))
           inspections = list(evidence_root.rglob("release-preview-inspect.json"))
 
@@ -122,6 +123,8 @@ jobs:
                   errors.append("rehearsal evidence did not pass")
               if audit.get("tag") != expected_tag or inspect.get("tag") != expected_tag:
                   errors.append("rehearsal evidence tag mismatch")
+              if audit.get("head_commit") != expected_commit or inspect.get("head_commit") != expected_commit:
+                  errors.append("rehearsal evidence commit mismatch")
               if inspect.get("failed_checks") != 0:
                   errors.append("rehearsal failed_checks must be 0")
               if audit.get("mutates_releases") is not False or inspect.get("mutates_releases") is not False:

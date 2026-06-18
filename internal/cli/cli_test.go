@@ -936,6 +936,8 @@ func TestReleasePublishWorkflowCreatesDraftReleaseOnlyAfterEvidenceGates(t *test
 		{name: "rehearsal failed checks", doc: workflow, want: "failed_checks"},
 		{name: "rehearsal non-mutating", doc: workflow, want: "mutates_releases"},
 		{name: "rehearsal offline", doc: workflow, want: "network_required"},
+		{name: "rehearsal commit binding", doc: workflow, want: "rehearsal evidence commit mismatch"},
+		{name: "publish commit binding", doc: workflow, want: "GITHUB_SHA"},
 		{name: "linux artifact", doc: workflow, want: "ao-forge_Linux_x86_64.tar.gz"},
 		{name: "darwin artifact", doc: workflow, want: "ao-forge_Darwin_arm64.tar.gz"},
 		{name: "windows artifact", doc: workflow, want: "ao-forge_Windows_x86_64.zip"},

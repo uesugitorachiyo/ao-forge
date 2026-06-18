@@ -1,0 +1,42 @@
+{
+  "schema_version": "ao.forge.release-artifact-inventory.v0.1",
+  "release_name": "ao-forge",
+  "version_tag_pattern": "v*",
+  "checksum_manifest": {
+    "path": "dist/checksums.txt",
+    "algorithm": "sha256",
+    "required": true
+  },
+  "expected_artifacts": [
+    {
+      "artifact_id": "ao-forge_freebsd_amd64",
+      "path_template": "dist/ao-forge_FreeBSD_x86_64.tar.gz",
+      "platform": "freebsd-amd64",
+      "os": "freebsd",
+      "arch": "amd64",
+      "package_format": "tar.gz",
+      "required": true,
+      "checksum_required": true,
+      "provenance": {
+        "source": "github.com/uesugitorachiyo/ao-forge",
+        "builder": "github-actions",
+        "workflow": "release"
+      },
+      "attestations": [
+        "github-artifact-attestation",
+        "slsa-provenance",
+        "signed-checksum"
+      ]
+    }
+  ],
+  "required_attestations": [
+    "github-artifact-attestation",
+    "slsa-provenance",
+    "signed-checksum"
+  ],
+  "release_invariants": [
+    "public-release-artifacts-only",
+    "no-ad-hoc-local-paths",
+    "checksums-match-artifacts"
+  ]
+}

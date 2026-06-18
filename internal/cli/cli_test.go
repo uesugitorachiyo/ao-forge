@@ -1039,6 +1039,47 @@ func TestArtifactChecksumsWritesStableSHA256Manifest(t *testing.T) {
 	}
 }
 
+func TestArtifactChecksumsPreservesRelativeArtifactPaths(t *testing.T) {
+	tmpDir := t.TempDir()
+	distDir := filepath.Join(tmpDir, "dist")
+	if err := os.MkdirAll(distDir, 0o755); err != nil {
+		t.Fatalf("mkdir dist: %v", err)
+	}
+	artifactName := "ao-forge_Linux_x86_64.tar.gz"
+	artifactData := []byte("portable release artifact\n")
+	if err := os.WriteFile(filepath.Join(distDir, artifactName), artifactData, 0o644); err != nil {
+		t.Fatalf("write artifact: %v", err)
+	}
+
+	t.Chdir(distDir)
+
+	code, stdout, stderr := runCLI("artifact", "checksums", "--artifact", artifactName, "--out", "checksums.txt")
+	if code != 0 {
+		t.Fatalf("artifact checksums failed with code %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "artifact_checksums=checksums.txt") {
+		t.Fatalf("stdout missing portable checksums output path: %s", stdout)
+	}
+
+	sum := sha256.Sum256(artifactData)
+	wantManifest := fmt.Sprintf("%s  %s\n", hex.EncodeToString(sum[:]), artifactName)
+	gotManifest, err := os.ReadFile("checksums.txt")
+	if err != nil {
+		t.Fatalf("read checksum manifest: %v", err)
+	}
+	if string(gotManifest) != wantManifest {
+		t.Fatalf("checksum manifest drifted\nwant:\n%sgot:\n%s", wantManifest, string(gotManifest))
+	}
+
+	code, stdout, stderr = runCLI("artifact", "verify-checksums", "--manifest", "checksums.txt")
+	if code != 0 {
+		t.Fatalf("artifact verify-checksums failed with code %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "artifact_checksums_verified=1") {
+		t.Fatalf("stdout missing verified count: %s", stdout)
+	}
+}
+
 func TestArtifactChecksumsFailsClosedOnMissingArtifact(t *testing.T) {
 	missingPath := filepath.Join(t.TempDir(), "missing-artifact.tar.gz")
 
@@ -7956,7 +7997,9 @@ func TestReleasePreviewFixtureArtifactsDriveInspectJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read checksum fixture: %v", err)
 	}
-	code, stdout, stderr := runCLI("artifact", "checksums", "--artifact", artifactPath)
+	t.Chdir(root)
+	relArtifactPath := filepath.ToSlash(filepath.Join("examples", "release-preview", "ao-forge-preview-artifact.txt"))
+	code, stdout, stderr := runCLI("artifact", "checksums", "--artifact", relArtifactPath)
 	if code != 0 {
 		t.Fatalf("artifact checksums fixture failed with code %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
 	}

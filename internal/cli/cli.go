@@ -4563,7 +4563,7 @@ func buildArtifactChecksumManifest(paths []string) (string, error) {
 		if artifact.Status != "present" {
 			return "", fmt.Errorf("artifact path is %s: %s", artifact.Status, artifact.Path)
 		}
-		fmt.Fprintf(&manifest, "%s  %s\n", artifact.SHA256, artifact.Path)
+		fmt.Fprintf(&manifest, "%s  %s\n", artifact.SHA256, filepath.ToSlash(path))
 	}
 	return manifest.String(), nil
 }

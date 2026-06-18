@@ -104,6 +104,14 @@
             "type": "string",
             "minLength": 1
           },
+          "executor": {
+            "type": "string",
+            "enum": ["ao2", "agy-swarms"]
+          },
+          "task": {
+            "type": "string",
+            "minLength": 1
+          },
           "status": {
             "type": "string",
             "minLength": 1

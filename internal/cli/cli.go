@@ -65,6 +65,8 @@ type briefWorkcell struct {
 	WorkcellID string          `json:"workcell_id"`
 	Kind       string          `json:"kind"`
 	Workspace  string          `json:"workspace,omitempty"`
+	Executor   string          `json:"executor,omitempty"`
+	Task       string          `json:"task,omitempty"`
 	DependsOn  []string        `json:"depends_on"`
 	Rubric     *workcellRubric `json:"rubric,omitempty"`
 }
@@ -104,6 +106,8 @@ type planWorkcell struct {
 	WorkcellID string          `json:"workcell_id"`
 	Kind       string          `json:"kind"`
 	Workspace  string          `json:"workspace,omitempty"`
+	Executor   string          `json:"executor,omitempty"`
+	Task       string          `json:"task,omitempty"`
 	Status     string          `json:"status"`
 	DependsOn  []string        `json:"depends_on"`
 	Rubric     *workcellRubric `json:"rubric,omitempty"`
@@ -157,6 +161,8 @@ type factoryPacket struct {
 		WorkcellID string   `json:"workcell_id"`
 		Kind       string   `json:"kind"`
 		Workspace  string   `json:"workspace,omitempty"`
+		Executor   string   `json:"executor,omitempty"`
+		Task       string   `json:"task,omitempty"`
 		Status     string   `json:"status"`
 		DependsOn  []string `json:"depends_on"`
 		AO2Run     string   `json:"ao2_run"`
@@ -889,6 +895,8 @@ func buildPlan(brief factoryBrief, canonicalBrief []byte) factoryPlan {
 			WorkcellID: cell.WorkcellID,
 			Kind:       cell.Kind,
 			Workspace:  cell.Workspace,
+			Executor:   cell.Executor,
+			Task:       cell.Task,
 			Status:     "planned",
 			DependsOn:  cloneStrings(cell.DependsOn),
 			Rubric:     cell.Rubric,
@@ -1199,6 +1207,45 @@ func resolveAo2Binary() (string, error) {
 	return "", fmt.Errorf("ao2 binary not found (checked AO2_PATH, sibling directory ../ao2, and PATH)")
 }
 
+func resolveAgySwarmsProjectDir() (string, bool) {
+	if p := os.Getenv("AGY_SWARMS_PROJECT_PATH"); p != "" {
+		if info, err := os.Stat(p); err == nil && info.IsDir() {
+			return p, true
+		}
+	}
+	if root, ok := findRepoRoot(); ok {
+		sibling := filepath.Join(root, "../agy-swarms")
+		if info, err := os.Stat(sibling); err == nil && info.IsDir() {
+			return sibling, true
+		}
+	}
+	return "", false
+}
+
+func resolveAgySwarmsCommand() ([]string, error) {
+	if p := os.Getenv("AGY_SWARMS_PATH"); p != "" {
+		if _, err := os.Stat(p); err == nil {
+			return []string{p}, nil
+		}
+		return nil, fmt.Errorf("AGY_SWARMS_PATH is set to %q but file does not exist", p)
+	}
+
+	if dir, ok := resolveAgySwarmsProjectDir(); ok {
+		if uvPath, err := exec.LookPath("uv"); err == nil {
+			return []string{uvPath, "run", "--project", dir, "agy-swarms"}, nil
+		}
+	}
+
+	if p, err := exec.LookPath("agy-swarms"); err == nil {
+		return []string{p}, nil
+	}
+	if p, err := exec.LookPath("agy"); err == nil {
+		return []string{p}, nil
+	}
+
+	return nil, fmt.Errorf("agy-swarms not found (checked AGY_SWARMS_PATH, sibling directory ../agy-swarms with uv, and PATH)")
+}
+
 func runRun(args []string, stdout, stderr io.Writer) int {
 	var planPath, gateResultPath, outPath string
 	var controlPlaneURL string
@@ -1317,6 +1364,8 @@ func executePlanRun(
 			WorkcellID string   `json:"workcell_id"`
 			Kind       string   `json:"kind"`
 			Workspace  string   `json:"workspace,omitempty"`
+			Executor   string   `json:"executor,omitempty"`
+			Task       string   `json:"task,omitempty"`
 			Status     string   `json:"status"`
 			DependsOn  []string `json:"depends_on"`
 			AO2Run     string   `json:"ao2_run"`
@@ -1327,6 +1376,8 @@ func executePlanRun(
 			packet.Workcells[i].WorkcellID = wc.WorkcellID
 			packet.Workcells[i].Kind = wc.Kind
 			packet.Workcells[i].Workspace = wc.Workspace
+			packet.Workcells[i].Executor = wc.Executor
+			packet.Workcells[i].Task = wc.Task
 			packet.Workcells[i].DependsOn = cloneStrings(wc.DependsOn)
 			if schedulerStates != nil && i < len(schedulerStates) {
 				packet.Workcells[i].Status = schedulerStates[i].Status
@@ -1745,6 +1796,8 @@ func executePlanRun(
 		WorkcellID string   `json:"workcell_id"`
 		Kind       string   `json:"kind"`
 		Workspace  string   `json:"workspace,omitempty"`
+		Executor   string   `json:"executor,omitempty"`
+		Task       string   `json:"task,omitempty"`
 		Status     string   `json:"status"`
 		DependsOn  []string `json:"depends_on"`
 		AO2Run     string   `json:"ao2_run"`
@@ -1755,6 +1808,8 @@ func executePlanRun(
 		packet.Workcells[i].WorkcellID = wc.WorkcellID
 		packet.Workcells[i].Kind = wc.Kind
 		packet.Workcells[i].Workspace = wc.Workspace
+		packet.Workcells[i].Executor = wc.Executor
+		packet.Workcells[i].Task = wc.Task
 		packet.Workcells[i].DependsOn = cloneStrings(wc.DependsOn)
 		packet.Workcells[i].AO2Run = "none"
 		if schedulerStates != nil && i < len(schedulerStates) {
@@ -1931,6 +1986,8 @@ func runResume(args []string, stdout, stderr io.Writer) int {
 					Stderr:     stderrText,
 					SpecSHA256: specSHA,
 					Workspace:  prevWc.Workspace,
+					Executor:   prevWc.Executor,
+					Task:       prevWc.Task,
 				}
 			}
 		}
@@ -2389,7 +2446,7 @@ func parseMarkdownBrief(data []byte) (factoryBrief, error) {
 	lines := strings.Split(string(data), "\n")
 	currentSection := ""
 
-	workcellRegex := regexp.MustCompile(`^\s*[-\*]\s*([a-zA-Z0-9_-]+)\s*\((prepare|execute|verify|close)\)(?:\s+workspace:\s*([^\s\(\)]+))?(?:\s+(?:depends\s+on|depends_on):\s*([a-zA-Z0-9_,\s-]+))?\s*$`)
+	workcellRegex := regexp.MustCompile(`^\s*[-\*]\s*([a-zA-Z0-9_-]+)\s*\((prepare|execute|verify|close)\)(?:\s+executor:\s*([a-zA-Z0-9_-]+))?(?:\s+workspace:\s*([^\s\(\)]+))?(?:\s+task:\s*"([^"]*)")?(?:\s+(?:depends\s+on|depends_on):\s*([a-zA-Z0-9_,\s-]+))?\s*$`)
 
 	for _, line := range lines {
 		trimmedLine := strings.TrimSpace(line)
@@ -2453,10 +2510,12 @@ func parseMarkdownBrief(data []byte) (factoryBrief, error) {
 				if len(matches) >= 3 {
 					wcID := matches[1]
 					wcKind := matches[2]
-					wcWorkspace := matches[3]
+					wcExecutor := matches[3]
+					wcWorkspace := matches[4]
+					wcTask := matches[5]
 					deps := []string{}
-					if len(matches) > 4 && matches[4] != "" {
-						depList := strings.Split(matches[4], ",")
+					if len(matches) > 6 && matches[6] != "" {
+						depList := strings.Split(matches[6], ",")
 						for _, d := range depList {
 							trimmedDep := strings.TrimSpace(d)
 							if trimmedDep != "" {
@@ -2467,7 +2526,9 @@ func parseMarkdownBrief(data []byte) (factoryBrief, error) {
 					brief.ExpectedWorkcells = append(brief.ExpectedWorkcells, briefWorkcell{
 						WorkcellID: wcID,
 						Kind:       wcKind,
+						Executor:   wcExecutor,
 						Workspace:  wcWorkspace,
+						Task:       wcTask,
 						DependsOn:  deps,
 					})
 				}
@@ -2512,8 +2573,8 @@ func writeMarkdownPacket(outPath string, packet factoryPacket) error {
 	buf.WriteString("\n")
 
 	buf.WriteString("## Workcells\n\n")
-	buf.WriteString("| Workcell ID | Kind | Status | Workspace | Run Mode | Summary |\n")
-	buf.WriteString("| --- | --- | --- | --- | --- | --- |\n")
+	buf.WriteString("| Workcell ID | Kind | Executor | Status | Workspace | Run Mode | Summary |\n")
+	buf.WriteString("| --- | --- | --- | --- | --- | --- | --- |\n")
 	for _, wc := range packet.Workcells {
 		runMode := wc.AO2Run
 		if runMode == "" {
@@ -2523,7 +2584,11 @@ func writeMarkdownPacket(outPath string, packet factoryPacket) error {
 		if wsDisplay == "" {
 			wsDisplay = packet.Objective.Workspace
 		}
-		fmt.Fprintf(&buf, "| %s | %s | %s | %s | %s | %s |\n", wc.WorkcellID, wc.Kind, wc.Status, wsDisplay, runMode, wc.Summary)
+		execDisplay := wc.Executor
+		if execDisplay == "" {
+			execDisplay = "ao2"
+		}
+		fmt.Fprintf(&buf, "| %s | %s | %s | %s | %s | %s | %s |\n", wc.WorkcellID, wc.Kind, execDisplay, wc.Status, wsDisplay, runMode, wc.Summary)
 	}
 	buf.WriteString("\n")
 
@@ -2556,6 +2621,8 @@ type workcellRunState struct {
 	ID         string
 	Kind       string
 	Workspace  string
+	Executor   string
+	Task       string
 	DependsOn  []string
 	Status     string // "pending", "running", "passed", "failed", "skipped"
 	Summary    string
@@ -2586,6 +2653,8 @@ func runWorkcellsConcurrent(ctx context.Context, plan factoryPlan, ao2Path strin
 			ID:         wc.WorkcellID,
 			Kind:       wc.Kind,
 			Workspace:  wc.Workspace,
+			Executor:   wc.Executor,
+			Task:       wc.Task,
 			DependsOn:  wc.DependsOn,
 			Status:     status,
 			Summary:    existingSummary,
@@ -2691,10 +2760,12 @@ func runWorkcellsConcurrent(ctx context.Context, plan factoryPlan, ao2Path strin
 						t.Summary = "Cancelled during execution"
 					} else {
 						t.Status = "passed"
-						if liveMode {
-							t.Summary = "Governed run started by ao2"
-						} else {
-							t.Summary = "Dry-run accepted by ao2"
+						if t.Summary == "" {
+							if liveMode {
+								t.Summary = "Governed run started by ao2"
+							} else {
+								t.Summary = "Dry-run accepted by ao2"
+							}
 						}
 					}
 				}
@@ -2714,93 +2785,179 @@ func runWorkcellsConcurrent(ctx context.Context, plan factoryPlan, ao2Path strin
 }
 
 func executeSingleWorkcell(ctx context.Context, plan factoryPlan, wcState *workcellRunState, ao2Path string, liveMode bool) error {
-	// Construct Ao2RunSpec with only this workcell/task
-	specTask := runTask{
-		ID:        wcState.ID,
-		Kind:      mapWorkcellKind(wcState.Kind),
-		Deps:      nil, // Since ao-forge manages dependencies, we can pass empty deps to ao2
-		Rationale: "ao-forge workcell " + wcState.ID,
-	}
-
 	repoPath := plan.Objective.Workspace
 	if wcState.Workspace != "" {
 		repoPath = wcState.Workspace
 	}
 
-	runSpec := ao2RunSpec{
-		APIVersion: "ao2.run/v1",
-		Kind:       "Run",
-		Metadata: runMetadata{
-			Name:        plan.PlanID,
-			Description: plan.Objective.Text,
-		},
-		Spec: runSpecDetails{
-			Source: runSource{
-				SchemaVersion: "ao2.sdd-plan.v1",
-				PlanID:        plan.PlanID,
+	if wcState.Executor == "agy-swarms" {
+		cmdArgs, err := resolveAgySwarmsCommand()
+		if err != nil {
+			return fmt.Errorf("failed to resolve agy-swarms command: %v", err)
+		}
+
+		taskPrompt := wcState.Task
+		if taskPrompt == "" {
+			taskPrompt = plan.Objective.Text
+		}
+		taskSpec := map[string]interface{}{
+			"task": taskPrompt,
+			"model_pins": map[string]string{
+				"default": "gemini-3.5-flash",
 			},
-			PlanKind: "build",
-			Goal:     plan.Objective.Text,
-			Target: runTarget{
-				RepoPath: repoPath,
-			},
-			TrustBoundary: trustBoundary{
-				ControlPlaneRole:   "read_only_observer",
-				MutatesAoArtifacts: false,
-			},
-			Tasks: []runTask{specTask},
-		},
-	}
+		}
+		taskData, err := json.MarshalIndent(taskSpec, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal agy-swarms task for %s: %v", wcState.ID, err)
+		}
 
-	specData, err := json.MarshalIndent(runSpec, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal ao2 run spec for %s: %v", wcState.ID, err)
-	}
+		tempTask, err := os.CreateTemp("", "agy-task-"+wcState.ID+"-*.json")
+		if err != nil {
+			return fmt.Errorf("failed to create temp task for %s: %v", wcState.ID, err)
+		}
+		defer os.Remove(tempTask.Name())
 
-	specSum := sha256.Sum256(specData)
-	wcState.SpecSHA256 = hex.EncodeToString(specSum[:])
+		if _, err := tempTask.Write(taskData); err != nil {
+			tempTask.Close()
+			return fmt.Errorf("failed to write temp task for %s: %v", wcState.ID, err)
+		}
+		tempTask.Close()
 
-	tempSpec, err := os.CreateTemp("", "ao2-runspec-"+wcState.ID+"-*.json")
-	if err != nil {
-		return fmt.Errorf("failed to create temp spec for %s: %v", wcState.ID, err)
-	}
-	defer os.Remove(tempSpec.Name())
+		tempReport, err := os.CreateTemp("", "agy-report-"+wcState.ID+"-*.json")
+		if err != nil {
+			return fmt.Errorf("failed to create temp report for %s: %v", wcState.ID, err)
+		}
+		tempReport.Close()
+		defer os.Remove(tempReport.Name())
 
-	if _, err := tempSpec.Write(specData); err != nil {
-		tempSpec.Close()
-		return fmt.Errorf("failed to write temp spec for %s: %v", wcState.ID, err)
-	}
-	tempSpec.Close()
+		specSum := sha256.Sum256(taskData)
+		wcState.SpecSHA256 = hex.EncodeToString(specSum[:])
 
-	// Execute command with context cancellation support
-	var cmd *exec.Cmd
-	if liveMode {
-		cmd = exec.CommandContext(ctx, ao2Path, "run", "--spec", tempSpec.Name())
-	} else {
-		cmd = exec.CommandContext(ctx, ao2Path, "run", "--dry-run", "--spec", tempSpec.Name())
-	}
-	var stdoutBuf, stderrBuf bytes.Buffer
-	cmd.Stdout = &stdoutBuf
-	cmd.Stderr = &stderrBuf
+		args := append(cmdArgs[1:], "run", "--task", tempTask.Name(), "--report", tempReport.Name(), "--allow-local-commands")
+		if liveMode {
+			args = append(args, "--reviewer", "agy", "--closer", "agy")
+		} else {
+			args = append(args, "--dry-run")
+		}
 
-	runErr := cmd.Run()
-	wcState.Stdout = stdoutBuf.String()
-	wcState.Stderr = stderrBuf.String()
+		cmdName := cmdArgs[0]
+		cmd := exec.CommandContext(ctx, cmdName, args...)
+		cmd.Dir = repoPath
 
-	if runErr != nil {
-		return fmt.Errorf("ao2 run failed for %s: %v (stderr: %q)", wcState.ID, runErr, wcState.Stderr)
-	}
+		var stdoutBuf, stderrBuf bytes.Buffer
+		cmd.Stdout = &stdoutBuf
+		cmd.Stderr = &stderrBuf
 
-	if liveMode {
-		if !strings.Contains(wcState.Stdout, "status=governed_run_started") &&
-			!strings.Contains(wcState.Stdout, "status=governed_provider_run_started") &&
-			!strings.Contains(wcState.Stdout, "status=Accepted") &&
-			!strings.Contains(wcState.Stdout, "status=accepted") {
-			return fmt.Errorf("ao2 run output for %s did not confirm acceptance: %q (stderr: %q)", wcState.ID, wcState.Stdout, wcState.Stderr)
+		runErr := cmd.Run()
+		wcState.Stdout = stdoutBuf.String()
+		wcState.Stderr = stderrBuf.String()
+
+		if reportData, err := os.ReadFile(tempReport.Name()); err == nil {
+			var report map[string]interface{}
+			if err := json.Unmarshal(reportData, &report); err == nil {
+				_ = os.WriteFile(fmt.Sprintf("agy-swarms-report-%s.json", wcState.ID), reportData, 0644)
+				statusStr, _ := report["status"].(string)
+				spentTokens := 0.0
+				if st, ok := report["spent_tokens"].(float64); ok {
+					spentTokens = st
+				}
+				spentUSD := 0.0
+				if su, ok := report["spent_usd"].(float64); ok {
+					spentUSD = su
+				}
+				if statusStr == "succeeded" {
+					wcState.Summary = fmt.Sprintf("Swarm execution succeeded (Tokens: %.0f, Cost: $%.2f)", spentTokens, spentUSD)
+				} else {
+					wcState.Summary = fmt.Sprintf("Swarm execution failed (Tokens: %.0f, Cost: $%.2f)", spentTokens, spentUSD)
+				}
+			}
+		}
+
+		if runErr != nil {
+			return fmt.Errorf("agy-swarms execution failed for %s: %v (stderr: %q)", wcState.ID, runErr, wcState.Stderr)
 		}
 	} else {
-		if !strings.Contains(wcState.Stdout, "status=dry_run_accepted") {
-			return fmt.Errorf("ao2 run output for %s did not confirm acceptance: %q (stderr: %q)", wcState.ID, wcState.Stdout, wcState.Stderr)
+		specTask := runTask{
+			ID:        wcState.ID,
+			Kind:      mapWorkcellKind(wcState.Kind),
+			Deps:      nil,
+			Rationale: "ao-forge workcell " + wcState.ID,
+		}
+
+		runSpec := ao2RunSpec{
+			APIVersion: "ao2.run/v1",
+			Kind:       "Run",
+			Metadata: runMetadata{
+				Name:        plan.PlanID,
+				Description: plan.Objective.Text,
+			},
+			Spec: runSpecDetails{
+				Source: runSource{
+					SchemaVersion: "ao2.sdd-plan.v1",
+					PlanID:        plan.PlanID,
+				},
+				PlanKind: "build",
+				Goal:     plan.Objective.Text,
+				Target: runTarget{
+					RepoPath: repoPath,
+				},
+				TrustBoundary: trustBoundary{
+					ControlPlaneRole:   "read_only_observer",
+					MutatesAoArtifacts: false,
+				},
+				Tasks: []runTask{specTask},
+			},
+		}
+
+		specData, err := json.MarshalIndent(runSpec, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal ao2 run spec for %s: %v", wcState.ID, err)
+		}
+
+		specSum := sha256.Sum256(specData)
+		wcState.SpecSHA256 = hex.EncodeToString(specSum[:])
+
+		tempSpec, err := os.CreateTemp("", "ao2-runspec-"+wcState.ID+"-*.json")
+		if err != nil {
+			return fmt.Errorf("failed to create temp spec for %s: %v", wcState.ID, err)
+		}
+		defer os.Remove(tempSpec.Name())
+
+		if _, err := tempSpec.Write(specData); err != nil {
+			tempSpec.Close()
+			return fmt.Errorf("failed to write temp spec for %s: %v", wcState.ID, err)
+		}
+		tempSpec.Close()
+
+		var cmd *exec.Cmd
+		if liveMode {
+			cmd = exec.CommandContext(ctx, ao2Path, "run", "--spec", tempSpec.Name())
+		} else {
+			cmd = exec.CommandContext(ctx, ao2Path, "run", "--dry-run", "--spec", tempSpec.Name())
+		}
+		var stdoutBuf, stderrBuf bytes.Buffer
+		cmd.Stdout = &stdoutBuf
+		cmd.Stderr = &stderrBuf
+
+		runErr := cmd.Run()
+		wcState.Stdout = stdoutBuf.String()
+		wcState.Stderr = stderrBuf.String()
+
+		if runErr != nil {
+			return fmt.Errorf("ao2 run failed for %s: %v (stderr: %q)", wcState.ID, runErr, wcState.Stderr)
+		}
+
+		if liveMode {
+			if !strings.Contains(wcState.Stdout, "status=governed_run_started") &&
+				!strings.Contains(wcState.Stdout, "status=governed_provider_run_started") &&
+				!strings.Contains(wcState.Stdout, "status=Accepted") &&
+				!strings.Contains(wcState.Stdout, "status=accepted") {
+				return fmt.Errorf("ao2 run output for %s did not confirm acceptance: %q (stderr: %q)", wcState.ID, wcState.Stdout, wcState.Stderr)
+			}
+		} else {
+			if !strings.Contains(wcState.Stdout, "status=dry_run_accepted") {
+				return fmt.Errorf("ao2 run output for %s did not confirm acceptance: %q (stderr: %q)", wcState.ID, wcState.Stdout, wcState.Stderr)
+			}
 		}
 	}
 

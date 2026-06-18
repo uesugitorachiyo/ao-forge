@@ -1859,8 +1859,8 @@ func main() {
 		"test md",
 		"- **Workspace**: test-ws",
 		"## Workcells",
-		"| Workcell ID | Kind | Status | Workspace | Run Mode | Summary |",
-		"| cell1 | prepare | passed | test-ws | dry-run | Dry-run accepted by ao2 |",
+		"| Workcell ID | Kind | Executor | Status | Workspace | Run Mode | Summary |",
+		"| cell1 | prepare | ao2 | passed | test-ws | dry-run | Dry-run accepted by ao2 |",
 		"## Evidence",
 		"## Next Actions",
 	} {
@@ -4330,5 +4330,397 @@ func TestMultiWorkspaceExecution(t *testing.T) {
 		t.Fatalf("expected wc2 workspace to be %q, got %q", customWS, packet.Workcells[1].Workspace)
 	}
 }
+
+func TestParseMarkdownBriefWithExecutorAndTask(t *testing.T) {
+	mdBrief := `# Objective
+test parsing agy-swarms brief
+
+# Workspace
+default-ws
+
+# Constraints
+- Local First: true
+- Allow Network: false
+- Allow Release Mutation: false
+- Require Control Plane Readback: false
+- Release Mode: false
+
+# Expected Workcells
+- wc1 (prepare) executor: agy-swarms workspace: custom-ws-1 task: "Refactor model schemas to v2"
+- wc2 (execute) executor: ao2 workspace: custom-ws-2 depends on: wc1
+- wc3 (verify) depends on: wc2
+
+# Expected Evidence
+- test-evidence
+`
+	brief, err := parseMarkdownBrief([]byte(mdBrief))
+	if err != nil {
+		t.Fatalf("parseMarkdownBrief: %v", err)
+	}
+
+	if len(brief.ExpectedWorkcells) != 3 {
+		t.Fatalf("expected 3 workcells, got %d", len(brief.ExpectedWorkcells))
+	}
+
+	wc1 := brief.ExpectedWorkcells[0]
+	if wc1.WorkcellID != "wc1" || wc1.Kind != "prepare" || wc1.Executor != "agy-swarms" || wc1.Workspace != "custom-ws-1" || wc1.Task != "Refactor model schemas to v2" {
+		t.Fatalf("unexpected wc1: %+v", wc1)
+	}
+
+	wc2 := brief.ExpectedWorkcells[1]
+	if wc2.WorkcellID != "wc2" || wc2.Kind != "execute" || wc2.Executor != "ao2" || wc2.Workspace != "custom-ws-2" || wc2.Task != "" {
+		t.Fatalf("unexpected wc2: %+v", wc2)
+	}
+
+	wc3 := brief.ExpectedWorkcells[2]
+	if wc3.WorkcellID != "wc3" || wc3.Kind != "verify" || wc3.Executor != "" || wc3.Workspace != "" || wc3.Task != "" {
+		t.Fatalf("unexpected wc3: %+v", wc3)
+	}
+}
+
+func compileTestAgySwarms(t *testing.T, tmpDir string, tracePath string) string {
+	t.Helper()
+	dummySrc := filepath.Join(tmpDir, "dummy_agy.go")
+	dummyBin := filepath.Join(tmpDir, "dummy_agy")
+	if os.PathSeparator == '\\' {
+		dummyBin += ".exe"
+	}
+	srcContent := fmt.Sprintf(`package main
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"strings"
+)
+
+func main() {
+	var taskPath, reportPath string
+	for i, arg := range os.Args {
+		if arg == "--task" && i+1 < len(os.Args) {
+			taskPath = os.Args[i+1]
+		}
+		if arg == "--report" && i+1 < len(os.Args) {
+			reportPath = os.Args[i+1]
+		}
+	}
+	_ = taskPath
+
+	// Log execution trace (argv) to trace file for verification
+	if %q != "" {
+		traceData := strings.Join(os.Args, " ") + "\n"
+		f, err := os.OpenFile(%q, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err == nil {
+			f.WriteString(traceData)
+			f.Close()
+		}
+	}
+
+	if reportPath != "" {
+		// Mock a successful local-runner-report JSON output
+		report := map[string]interface{}{
+			"status": "succeeded",
+			"spent_tokens": 1250,
+			"spent_usd": 0.02,
+			"states": map[string]string{
+				"worker_0": "succeeded",
+			},
+			"blockers": []interface{}{},
+			"concerns": []interface{}{},
+			"changed_files": []string{},
+			"results": map[string]interface{}{
+				"worker_0": map[string]interface{}{
+					"status": "succeeded",
+					"error_class": "",
+					"artifact": map[string]interface{}{},
+					"stdout": "coverage is 85.0%%\nsuccess pattern present",
+					"stderr": "",
+					"exit_code": 0,
+				},
+			},
+		}
+		data, err := json.Marshal(report)
+		if err == nil {
+			os.WriteFile(reportPath, data, 0644)
+		}
+	}
+
+	// Write mock stdout output for command success check and rubric matching
+	fmt.Println("coverage is 85.0%%")
+	fmt.Println("success pattern present")
+	os.Exit(0)
+}`, tracePath, tracePath)
+
+	if err := os.WriteFile(dummySrc, []byte(srcContent), 0644); err != nil {
+		t.Fatalf("write dummy agy src: %v", err)
+	}
+
+	cmd := exec.Command("go", "build", "-o", dummyBin, dummySrc)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build dummy agy: %v (output: %q)", err, string(out))
+	}
+	return dummyBin
+}
+
+func TestAgySwarmsExecutionDryRun(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Compile dummy agy-swarms binary and dummy ao2 binary
+	traceFile := filepath.Join(tmpDir, "trace.log")
+	dummyAgy := compileTestAgySwarms(t, tmpDir, traceFile)
+	t.Setenv("AGY_SWARMS_PATH", dummyAgy)
+
+	dummyAo2 := compileTestAo2(t, tmpDir, filepath.Join(tmpDir, "ao2-trace.log"))
+	t.Setenv("AO2_PATH", dummyAo2)
+
+	defaultWS := filepath.Join(tmpDir, "default-ws")
+	if err := os.MkdirAll(defaultWS, 0755); err != nil {
+		t.Fatalf("mkdir default-ws: %v", err)
+	}
+
+	// Change wd to tmpDir to support .forge init and run commands locally
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer func() {
+		_ = os.Chdir(oldWd)
+	}()
+
+	if code, _, stderr := runCLI("init"); code != 0 {
+		t.Fatalf("init failed: %s", stderr)
+	}
+
+	// Construct plan with wc1 using agy-swarms, and wc2 using ao2
+	planContent := fmt.Sprintf(`{
+		"schema_version": "ao.forge.factory-plan.v0.1",
+		"plan_id": "forge-plan-efedbfb309b1",
+		"objective": {
+			"text": "test agy-swarms execution",
+			"workspace": %q,
+			"release_mode": false
+		},
+		"constraints": {
+			"local_first": true,
+			"allow_network": false,
+			"allow_release_mutation": false,
+			"require_control_plane_readback": false
+		},
+		"execution_enabled": false,
+		"policy_gate": {
+			"required": true,
+			"status": "allowed",
+			"explanation": "gate allowed"
+		},
+		"workcells": [
+			{
+				"workcell_id": "wc1",
+				"kind": "prepare",
+				"executor": "agy-swarms",
+				"task": "Perform swarm tasks",
+				"status": "planned",
+				"depends_on": [],
+				"rubric": {
+					"required_patterns": ["success pattern present"],
+					"min_coverage": 80.0
+				}
+			},
+			{
+				"workcell_id": "wc2",
+				"kind": "execute",
+				"status": "planned",
+				"depends_on": ["wc1"]
+			}
+		],
+		"expected_evidence": ["test"],
+		"next_actions": [
+			{"action_id": "test", "description": "test", "required": true}
+		]
+	}`, defaultWS)
+
+	planPath := filepath.Join(tmpDir, "plan.json")
+	if err := os.WriteFile(planPath, []byte(planContent), 0644); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+
+	gateContent := `{
+		"schema_version": "covenant.version-result.v1",
+		"status": "allowed",
+		"plan_id": "forge-plan-efedbfb309b1",
+		"execution_enabled": true,
+		"decision": {
+			"schema_version": "covenant.decision.v1",
+			"decision_id": "test-decision",
+			"target_plan_id": "forge-plan-efedbfb309b1",
+			"decision": "allow",
+			"explanation": "test allowed",
+			"source": "test-covenant"
+		}
+	}`
+	gatePath := filepath.Join(tmpDir, "gate_result.json")
+	if err := os.WriteFile(gatePath, []byte(gateContent), 0644); err != nil {
+		t.Fatalf("write gate: %v", err)
+	}
+
+	outPacket := filepath.Join(tmpDir, "packet.json")
+	code, stdout, stderr := runCLI("run", "--plan", planPath, "--gate-result", gatePath, "--out", outPacket)
+	if code != 0 {
+		t.Fatalf("expected run to succeed, got %d (stdout: %q, stderr: %q)", code, stdout, stderr)
+	}
+
+	// Verify trace file has correct commands for agy-swarms (wc1)
+	traceData, err := os.ReadFile(traceFile)
+	if err != nil {
+		t.Fatalf("read trace file: %v", err)
+	}
+	traceStr := strings.TrimSpace(string(traceData))
+	if !strings.Contains(traceStr, "--dry-run") {
+		t.Fatalf("expected dry-run args in agy-swarms call, got: %q", traceStr)
+	}
+	if !strings.Contains(traceStr, "--allow-local-commands") {
+		t.Fatalf("expected --allow-local-commands in agy-swarms call, got: %q", traceStr)
+	}
+
+	// Verify final packet workcells have correct status, executor, and summary
+	finalData, err := os.ReadFile(outPacket)
+	if err != nil {
+		t.Fatalf("read final packet: %v", err)
+	}
+	var packet factoryPacket
+	if err := json.Unmarshal(finalData, &packet); err != nil {
+		t.Fatalf("unmarshal final packet: %v", err)
+	}
+
+	if packet.Workcells[0].Executor != "agy-swarms" {
+		t.Fatalf("expected wc1 executor to be agy-swarms, got %q", packet.Workcells[0].Executor)
+	}
+	if packet.Workcells[0].Task != "Perform swarm tasks" {
+		t.Fatalf("expected wc1 task to be 'Perform swarm tasks', got %q", packet.Workcells[0].Task)
+	}
+	if !strings.Contains(packet.Workcells[0].Summary, "Swarm execution succeeded (Tokens: 1250, Cost: $0.02)") {
+		t.Fatalf("unexpected summary for wc1: %q", packet.Workcells[0].Summary)
+	}
+
+	// Verify that agy-swarms report file was written in workspace
+	reportPath := filepath.Join(tmpDir, "agy-swarms-report-wc1.json")
+	if _, err := os.Stat(reportPath); err != nil {
+		t.Fatalf("expected agy-swarms report file to exist, but got err: %v", err)
+	}
+}
+
+func TestAgySwarmsExecutionLive(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Compile dummy agy-swarms binary and dummy ao2 binary
+	traceFile := filepath.Join(tmpDir, "trace.log")
+	dummyAgy := compileTestAgySwarms(t, tmpDir, traceFile)
+	t.Setenv("AGY_SWARMS_PATH", dummyAgy)
+
+	dummyAo2 := compileTestAo2(t, tmpDir, filepath.Join(tmpDir, "ao2-trace.log"))
+	t.Setenv("AO2_PATH", dummyAo2)
+
+	defaultWS := filepath.Join(tmpDir, "default-ws")
+	if err := os.MkdirAll(defaultWS, 0755); err != nil {
+		t.Fatalf("mkdir default-ws: %v", err)
+	}
+
+	// Change wd to tmpDir to support .forge init and run commands locally
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer func() {
+		_ = os.Chdir(oldWd)
+	}()
+
+	if code, _, stderr := runCLI("init"); code != 0 {
+		t.Fatalf("init failed: %s", stderr)
+	}
+
+	// Construct plan with wc1 using agy-swarms
+	planContent := fmt.Sprintf(`{
+		"schema_version": "ao.forge.factory-plan.v0.1",
+		"plan_id": "forge-plan-efedbfb309b1",
+		"objective": {
+			"text": "test agy-swarms live execution",
+			"workspace": %q,
+			"release_mode": false
+		},
+		"constraints": {
+			"local_first": true,
+			"allow_network": false,
+			"allow_release_mutation": false,
+			"require_control_plane_readback": false
+		},
+		"execution_enabled": false,
+		"policy_gate": {
+			"required": true,
+			"status": "allowed",
+			"explanation": "gate allowed"
+		},
+		"workcells": [
+			{
+				"workcell_id": "wc1",
+				"kind": "prepare",
+				"executor": "agy-swarms",
+				"status": "planned",
+				"depends_on": []
+			}
+		],
+		"expected_evidence": ["test"],
+		"next_actions": [
+			{"action_id": "test", "description": "test", "required": true}
+		]
+	}`, defaultWS)
+
+	planPath := filepath.Join(tmpDir, "plan.json")
+	if err := os.WriteFile(planPath, []byte(planContent), 0644); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+
+	gateContent := `{
+		"schema_version": "covenant.version-result.v1",
+		"status": "allowed",
+		"plan_id": "forge-plan-efedbfb309b1",
+		"execution_enabled": true,
+		"decision": {
+			"schema_version": "covenant.decision.v1",
+			"decision_id": "test-decision",
+			"target_plan_id": "forge-plan-efedbfb309b1",
+			"decision": "allow",
+			"explanation": "test allowed",
+			"source": "test-covenant"
+		}
+	}`
+	gatePath := filepath.Join(tmpDir, "gate_result.json")
+	if err := os.WriteFile(gatePath, []byte(gateContent), 0644); err != nil {
+		t.Fatalf("write gate: %v", err)
+	}
+
+	outPacket := filepath.Join(tmpDir, "packet.json")
+	code, stdout, stderr := runCLI("run", "--plan", planPath, "--gate-result", gatePath, "--out", outPacket, "--live")
+	if code != 0 {
+		t.Fatalf("expected run to succeed, got %d (stdout: %q, stderr: %q)", code, stdout, stderr)
+	}
+
+	// Verify trace file shows that agy-swarms was run with live args
+	traceData, err := os.ReadFile(traceFile)
+	if err != nil {
+		t.Fatalf("read trace file: %v", err)
+	}
+	traceStr := strings.TrimSpace(string(traceData))
+	if strings.Contains(traceStr, "--dry-run") {
+		t.Fatalf("did not expect dry-run args in live agy-swarms call, got: %q", traceStr)
+	}
+	if !strings.Contains(traceStr, "--reviewer agy") || !strings.Contains(traceStr, "--closer agy") {
+		t.Fatalf("expected live reviewer/closer args in live agy-swarms call, got: %q", traceStr)
+	}
+}
+
 
 

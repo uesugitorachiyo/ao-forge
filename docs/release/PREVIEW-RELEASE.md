@@ -47,6 +47,21 @@ Do not run a live confirmed release if the preview audit is `blocked`. Fix the
 failed checks, regenerate artifacts if needed, rerun the preview, and only then
 proceed to release mutation.
 
+Confirmed release mutation through `forge run`, `forge once`, or `forge resume`
+requires the passed audit:
+
+```sh
+forge run \
+  --plan factory-plan.json \
+  --gate-result gate-result.json \
+  --live \
+  --confirm-release \
+  --release-preview-audit release-preview-audit.json
+```
+
+AO Forge validates that the audit is passed, non-mutating, local-only, and bound
+to the same workspace, tag, and HEAD commit before release mutation can proceed.
+
 ## Privacy
 
 The preview audit can include local workspace and artifact paths. Keep ad hoc

@@ -336,6 +336,61 @@ func TestReleasePreviewWorkflowPublishesDryRunAuditArtifacts(t *testing.T) {
 	}
 }
 
+func TestReleaseRehearsalWorkflowValidatesTaggedEvidenceWithoutPublishing(t *testing.T) {
+	root := repoRoot(t)
+	readText := func(path ...string) string {
+		t.Helper()
+		bytes, err := os.ReadFile(filepath.Join(append([]string{root}, path...)...))
+		if err != nil {
+			t.Fatalf("read %s: %v", filepath.Join(path...), err)
+		}
+		return string(bytes)
+	}
+
+	workflow := readText(".github", "workflows", "release-rehearsal.yml")
+	previewRunbook := readText("docs", "release", "PREVIEW-RELEASE.md")
+	readme := readText("README.md")
+
+	for _, check := range []struct {
+		name string
+		doc  string
+		want string
+	}{
+		{name: "workflow name", doc: workflow, want: "name: Release Rehearsal"},
+		{name: "manual trigger", doc: workflow, want: "workflow_dispatch:"},
+		{name: "tag push trigger", doc: workflow, want: "tags:"},
+		{name: "version tag glob", doc: workflow, want: "'v*'"},
+		{name: "read only permissions", doc: workflow, want: "contents: read"},
+		{name: "tag env", doc: workflow, want: "AO_FORGE_RELEASE_PREVIEW_TAG"},
+		{name: "dry run script", doc: workflow, want: "scripts/release-preview-dry-run.sh"},
+		{name: "validate evidence step", doc: workflow, want: "Validate rehearsal evidence"},
+		{name: "audit schema validation", doc: workflow, want: "ao.forge.release-preview-audit.v0.1"},
+		{name: "inspect schema validation", doc: workflow, want: "ao.forge.release-preview-inspect.v0.1"},
+		{name: "upload evidence artifact", doc: workflow, want: "release-rehearsal-evidence"},
+		{name: "runbook section", doc: previewRunbook, want: "## Tagged Release Rehearsal"},
+		{name: "runbook workflow name", doc: previewRunbook, want: "`Release Rehearsal`"},
+		{name: "runbook artifact name", doc: previewRunbook, want: "`release-rehearsal-evidence`"},
+		{name: "readme mentions rehearsal", doc: readme, want: "tagged release rehearsal"},
+	} {
+		if !strings.Contains(check.doc, check.want) {
+			t.Fatalf("%s missing %q", check.name, check.want)
+		}
+	}
+
+	for _, forbidden := range []string{
+		"contents: write",
+		"GITHUB_TOKEN:",
+		"--confirm-release",
+		"--live",
+		"gh release create",
+		"softprops/action-gh-release",
+	} {
+		if strings.Contains(workflow, forbidden) {
+			t.Fatalf("release rehearsal workflow must not contain %q\n%s", forbidden, workflow)
+		}
+	}
+}
+
 func TestArtifactChecksumsWritesStableSHA256Manifest(t *testing.T) {
 	tmpDir := t.TempDir()
 	firstPath := filepath.Join(tmpDir, "ao-forge_Darwin_arm64.tar.gz")

@@ -1,0 +1,116 @@
+name: Release Rehearsal
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to rehearse without publishing"
+        required: true
+        default: "v0.0.0-rehearsal"
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-rehearsal-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  tagged-rehearsal:
+    name: Tagged release rehearsal
+    runs-on: ubuntu-latest
+    env:
+      AO_FORGE_RELEASE_PREVIEW_OUT: ${{ runner.temp }}/ao-forge-release-rehearsal
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Resolve rehearsal tag
+        id: rehearsal-tag
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+            tag="${GITHUB_REF_NAME}"
+          else
+            tag="${{ inputs.tag }}"
+          fi
+
+          if [[ -z "$tag" ]]; then
+            echo "release rehearsal tag is required" >&2
+            exit 1
+          fi
+
+          echo "AO_FORGE_RELEASE_PREVIEW_TAG=$tag" >> "$GITHUB_ENV"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Run tagged release rehearsal
+        run: scripts/release-preview-dry-run.sh
+
+      - name: Validate rehearsal evidence
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import sys
+
+          out_dir = pathlib.Path(os.environ["AO_FORGE_RELEASE_PREVIEW_OUT"])
+          expected_tag = os.environ["AO_FORGE_RELEASE_PREVIEW_TAG"]
+          audit_path = out_dir / "release-preview-audit.json"
+          inspect_path = out_dir / "release-preview-inspect.json"
+
+          audit = json.loads(audit_path.read_text())
+          inspect = json.loads(inspect_path.read_text())
+
+          errors = []
+          if audit.get("schema_version") != "ao.forge.release-preview-audit.v0.1":
+            errors.append("unexpected audit schema version")
+          if inspect.get("inspect_schema_version") != "ao.forge.release-preview-inspect.v0.1":
+            errors.append("unexpected inspect schema version")
+          if audit.get("status") != "passed" or inspect.get("status") != "passed":
+            errors.append("rehearsal evidence did not pass")
+          if audit.get("tag") != expected_tag or inspect.get("tag") != expected_tag:
+            errors.append("rehearsal evidence tag mismatch")
+          if audit.get("mutates_releases") is not False or inspect.get("mutates_releases") is not False:
+            errors.append("rehearsal evidence must be non-mutating")
+          if audit.get("network_required") is not False or inspect.get("network_required") is not False:
+            errors.append("rehearsal evidence must not require network")
+          if inspect.get("failed_checks") != 0:
+            errors.append("inspect JSON reported failed checks")
+          if inspect.get("artifacts") != len(audit.get("artifacts", [])):
+            errors.append("inspect JSON artifact count mismatch")
+
+          if errors:
+            for error in errors:
+              print(f"::error::{error}")
+            sys.exit(1)
+
+          print(f"release_rehearsal_tag={expected_tag}")
+          print(f"release_rehearsal_audit={audit_path}")
+          print(f"release_rehearsal_inspect={inspect_path}")
+          PY
+
+      - name: Upload release rehearsal evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-rehearsal-evidence
+          path: |
+            ${{ runner.temp }}/ao-forge-release-rehearsal/release-preview-audit.json
+            ${{ runner.temp }}/ao-forge-release-rehearsal/release-preview-inspect.txt
+            ${{ runner.temp }}/ao-forge-release-rehearsal/release-preview-inspect.json
+            ${{ runner.temp }}/ao-forge-release-rehearsal/checksums.txt
+          if-no-files-found: error
+          retention-days: 14

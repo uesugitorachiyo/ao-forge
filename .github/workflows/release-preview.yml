@@ -38,6 +38,12 @@ jobs:
       - name: Inspect release preview audit as JSON
         run: go run ./cmd/forge release-preview inspect --audit "${RUNNER_TEMP}/ao-forge-release-preview/release-preview-audit.json" --json
 
+      - name: Validate release preview audit schema
+        run: go run ./cmd/forge contract validate --schema docs/contracts/release-preview-audit-v0.1.schema.json --document "${RUNNER_TEMP}/ao-forge-release-preview/release-preview-audit.json"
+
+      - name: Validate release preview inspect schema
+        run: go run ./cmd/forge contract validate --schema docs/contracts/release-preview-inspect-v0.1.schema.json --document "${RUNNER_TEMP}/ao-forge-release-preview/release-preview-inspect.json"
+
       - name: Upload release preview audit
         uses: actions/upload-artifact@v7
         with:

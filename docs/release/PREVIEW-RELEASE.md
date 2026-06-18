@@ -114,6 +114,25 @@ forge contract validate \
   --document examples/release-preview/release-artifact-inventory.v0.1.example.json
 ```
 
+## Release Attestation Plan
+
+The signed evidence plan uses schema version
+`ao.forge.release-attestation-plan.v0.1`. The formal schema is published at
+`docs/contracts/release-attestation-plan-v0.1.schema.json`, and the public-safe
+example lives at
+`../../examples/release-preview/release-attestation-plan.v0.1.example.json`.
+
+Use this plan to bind release archives, checksum manifests, release preview
+evidence, and artifact inventory to a signer identity. The v0.1 example assumes
+GitHub Actions OIDC keyless signing for the eventual release workflow. It does
+not store private keys, local absolute paths, or operator secrets.
+
+```sh
+forge contract validate \
+  --schema docs/contracts/release-attestation-plan-v0.1.schema.json \
+  --document examples/release-preview/release-attestation-plan.v0.1.example.json
+```
+
 ## Operator Rule
 
 Do not run a live confirmed release if the preview audit is `blocked`. Fix the

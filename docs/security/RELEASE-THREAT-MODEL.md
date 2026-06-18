@@ -39,7 +39,7 @@ Out of scope for this document:
 | Attack | Example failure mode | Current control | Operator evidence | Remaining gap |
 | --- | --- | --- | --- | --- |
 | Tag spoofing | A release tag already points at a different commit. | `forge release-preview` resolves the tag and checks whether it is available or already points to HEAD. | `release-preview-audit.json`, `release-preview-inspect.txt`, and `release-preview-inspect.json` show `tag`, `head_commit`, and release-tag check status. | A future signed-tag policy can make tag identity stronger. |
-| Artifact tampering | An artifact changes between build and release review. | `forge artifact checksums` emits a stable SHA-256 manifest, `forge release-preview` records artifact size, checksum, status, and provenance, and `release-artifact-inventory.v0.1.example.json` defines the expected public artifact set. | `checksums.txt`, release preview artifact details, and the release artifact inventory contract. | A future signed checksum attestation can bind checksums to an operator key. |
+| Artifact tampering | An artifact changes between build and release review. | `forge artifact checksums` emits a stable SHA-256 manifest, `forge release-preview` records artifact size, checksum, status, and provenance, `release-artifact-inventory.v0.1.example.json` defines the expected public artifact set, and `release-attestation-plan.v0.1.example.json` defines the signed evidence plan. | `checksums.txt`, release preview artifact details, the release artifact inventory contract, and the release attestation plan contract. | Current v0.1 attestation plan defines signer identity, signed subjects, and verification steps; future implementation should produce and verify signed attestations automatically. |
 | Credential exposure | Release preview accidentally depends on write credentials or stores tokens in output. | The release preview workflow uses `contents: read`; preview commands do not require network access and do not store credentials. | Workflow YAML, audit fields `mutates_releases=false` and `network_required=false`. | Secret scanning remains required before public pushes. |
 | Workflow permission escalation | CI preview gains write permissions or live release flags. | Release preview workflow permissions are read-only, and tests forbid `contents: write`, `GITHUB_TOKEN:`, `--live`, and `--confirm-release` in the preview workflow. | `TestReleasePreviewWorkflowPublishesDryRunAuditArtifacts` and GitHub Actions logs. | Branch protection should require CI and Release Preview before merge; see the [Branch Protection Runbook](../release/BRANCH-PROTECTION.md). |
 | Stale release evidence | A live release uses an old audit from another commit or workspace. | Live release validation checks the passed audit, local-only preview status, workspace binding, tag, and HEAD commit before mutation. | Factory packet policy decisions and release preview audit fields. | A future signed evidence bundle can make replay attempts easier to reject across machines. |
@@ -74,6 +74,6 @@ AO Forge has enough controls for public-preview release rehearsal:
 - secret scanning in the recommended release-readiness gate.
 
 It is not yet full production-stable release infrastructure. The next hardening
-steps are branch protection documentation, fixture-based release evidence tests,
-formal inspect JSON schema coverage, and signed checksum or evidence
-attestation.
+steps are fixture-based release evidence tests, release rehearsal readback
+against the artifact inventory and attestation plan, and automatic production
+and verification of signed attestations.

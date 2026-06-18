@@ -61,6 +61,7 @@ over provider execution, release publishing, or control-plane approval.
 - [Release Preview Audit v0.1 Schema](docs/contracts/release-preview-audit-v0.1.schema.json)
 - [Release Preview Inspect v0.1 Schema](docs/contracts/release-preview-inspect-v0.1.schema.json)
 - [Release Artifact Inventory v0.1 Schema](docs/contracts/release-artifact-inventory-v0.1.schema.json)
+- [Release Attestation Plan v0.1 Schema](docs/contracts/release-attestation-plan-v0.1.schema.json)
 - [Release Preview Fixtures](examples/release-preview/)
 - [Example Vertical Slice](examples/vertical-slices/risky-pr-factory.factory.json)
 - [Example Deterministic Plan](examples/plans/risky-pr-factory-plan.json)
@@ -127,6 +128,15 @@ tag:
 ./bin/forge contract validate \
   --schema docs/contracts/release-artifact-inventory-v0.1.schema.json \
   --document examples/release-preview/release-artifact-inventory.v0.1.example.json
+```
+
+Validate the public release attestation plan before signing or publishing
+release artifacts:
+
+```sh
+./bin/forge contract validate \
+  --schema docs/contracts/release-attestation-plan-v0.1.schema.json \
+  --document examples/release-preview/release-attestation-plan.v0.1.example.json
 ```
 
 Verify that the local workspace matches the verified baseline:

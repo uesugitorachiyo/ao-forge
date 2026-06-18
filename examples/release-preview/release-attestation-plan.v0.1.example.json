@@ -1,0 +1,83 @@
+{
+  "schema_version": "ao.forge.release-attestation-plan.v0.1",
+  "plan_id": "release-attestation-ao-forge-v0.1",
+  "release_name": "ao-forge",
+  "signer_identity": {
+    "provider": "github-actions-oidc",
+    "identity": "github.com/uesugitorachiyo/ao-forge/.github/workflows/release.yml@refs/tags/v*",
+    "scope": "release-workflow",
+    "key_material_policy": "keyless-oidc"
+  },
+  "subjects": [
+    {
+      "subject_id": "ao-forge_linux_amd64",
+      "subject_type": "release-archive",
+      "path_template": "dist/ao-forge_Linux_x86_64.tar.gz",
+      "digest_algorithm": "sha256",
+      "required": true
+    },
+    {
+      "subject_id": "ao-forge_darwin_arm64",
+      "subject_type": "release-archive",
+      "path_template": "dist/ao-forge_Darwin_arm64.tar.gz",
+      "digest_algorithm": "sha256",
+      "required": true
+    },
+    {
+      "subject_id": "ao-forge_windows_amd64",
+      "subject_type": "release-archive",
+      "path_template": "dist/ao-forge_Windows_x86_64.zip",
+      "digest_algorithm": "sha256",
+      "required": true
+    },
+    {
+      "subject_id": "checksums",
+      "subject_type": "checksum-manifest",
+      "path_template": "dist/checksums.txt",
+      "digest_algorithm": "sha256",
+      "required": true
+    },
+    {
+      "subject_id": "release-preview-audit",
+      "subject_type": "release-preview-audit",
+      "path_template": "release-preview-audit.json",
+      "digest_algorithm": "sha256",
+      "required": true
+    },
+    {
+      "subject_id": "release-artifact-inventory",
+      "subject_type": "artifact-inventory",
+      "path_template": "release-artifact-inventory.v0.1.json",
+      "digest_algorithm": "sha256",
+      "required": true
+    }
+  ],
+  "verification_steps": [
+    {
+      "step_id": "verify-signer-identity",
+      "description": "Verify every release attestation is bound to the expected GitHub Actions OIDC release workflow identity.",
+      "required": true
+    },
+    {
+      "step_id": "verify-subject-digests",
+      "description": "Verify every attested subject digest matches the release artifact, checksum manifest, preview audit, and inventory under review.",
+      "required": true
+    },
+    {
+      "step_id": "verify-preview-and-rehearsal",
+      "description": "Verify release preview and release rehearsal evidence were produced for the same tag and commit before publishing.",
+      "required": true
+    }
+  ],
+  "failure_policy": {
+    "on_missing_signature": "block-release",
+    "on_identity_mismatch": "block-release",
+    "on_digest_mismatch": "block-release"
+  },
+  "privacy_rules": [
+    "no-private-keys-in-repo",
+    "no-local-absolute-paths",
+    "no-operator-secrets",
+    "public-identities-only"
+  ]
+}

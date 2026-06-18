@@ -207,9 +207,10 @@ tags, then review the uploaded `release-rehearsal-evidence` artifact before any
 public release mutation.
 
 The `Release Attestation` workflow builds the expected preview artifacts,
-generates and verifies `checksums.txt`, runs release preview, and creates GitHub
-Artifact Attestations for the checksum subjects without publishing a GitHub
-release.
+generates and verifies `checksums.txt`, runs release preview, creates GitHub
+Artifact Attestations for the checksum subjects, verifies the GitHub Artifact Attestations
+against the expected repository, ref, commit, and artifact digests, and does not
+publish a GitHub release.
 
 ## Continuous Integration
 

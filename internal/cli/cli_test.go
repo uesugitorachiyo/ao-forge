@@ -227,7 +227,7 @@ func TestReleaseAttestationPlanContractDocumentsSignedEvidence(t *testing.T) {
 		{name: "preview runbook example link", doc: readText("docs", "release", "PREVIEW-RELEASE.md"), want: "../../examples/release-preview/release-attestation-plan.v0.1.example.json"},
 		{name: "branch protection local validation", doc: readText("docs", "release", "BRANCH-PROTECTION.md"), want: "release-attestation-plan-v0.1.schema.json"},
 		{name: "threat model signed checksum control", doc: readText("docs", "security", "RELEASE-THREAT-MODEL.md"), want: "`release-attestation-plan.v0.1.example.json`"},
-		{name: "threat model gap closed", doc: readText("docs", "security", "RELEASE-THREAT-MODEL.md"), want: "Current v0.1 attestation plan defines signer identity, signed subjects, and verification steps"},
+		{name: "threat model gap closed", doc: readText("docs", "security", "RELEASE-THREAT-MODEL.md"), want: "`Release Attestation` produces and verifies GitHub Artifact Attestations"},
 	} {
 		if !strings.Contains(check.doc, check.want) {
 			t.Fatalf("%s missing %q", check.name, check.want)
@@ -850,10 +850,23 @@ func TestReleaseAttestationWorkflowProducesSignedEvidenceWithoutPublishing(t *te
 		{name: "contract attestation plan", doc: workflow, want: "release-attestation-plan-v0.1.schema.json"},
 		{name: "attest action", doc: workflow, want: "actions/attest@v4"},
 		{name: "attest checksums subject", doc: workflow, want: "subject-checksums: dist/checksums.txt"},
+		{name: "verify attestation step", doc: workflow, want: "Verify artifact attestations"},
+		{name: "verify attestation command", doc: workflow, want: "gh attestation verify"},
+		{name: "verify attestation json", doc: workflow, want: "--format json"},
+		{name: "github cli token", doc: workflow, want: "GH_TOKEN: ${{ github.token }}"},
+		{name: "verify repository identity", doc: workflow, want: "sourceRepositoryURI"},
+		{name: "verify ref identity", doc: workflow, want: "sourceRepositoryRef"},
+		{name: "verify digest identity", doc: workflow, want: "sourceRepositoryDigest"},
+		{name: "verify runtime ref", doc: workflow, want: "GITHUB_REF"},
+		{name: "verify runtime sha", doc: workflow, want: "GITHUB_SHA"},
+		{name: "upload verifier json", doc: workflow, want: "dist/*.attestation.json"},
 		{name: "upload evidence", doc: workflow, want: "release-attestation-evidence"},
 		{name: "runbook section", doc: previewRunbook, want: "## Release Attestation"},
+		{name: "runbook verification gate", doc: previewRunbook, want: "verifies each generated GitHub Artifact Attestation"},
 		{name: "release notes attestation", doc: releaseNotes, want: "Release Attestation"},
+		{name: "release notes automatic attestation verification", doc: releaseNotes, want: "Release Attestation produces and verifies GitHub Artifact Attestations"},
 		{name: "readme attestation workflow", doc: readme, want: "`Release Attestation`"},
+		{name: "readme attestation verification", doc: readme, want: "verifies the GitHub Artifact Attestations"},
 	} {
 		if !strings.Contains(check.doc, check.want) {
 			t.Fatalf("%s missing %q", check.name, check.want)

@@ -120,6 +120,88 @@ jobs:
         with:
           subject-checksums: dist/checksums.txt
 
+      - name: Verify artifact attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for artifact in \
+            dist/ao-forge_Linux_x86_64.tar.gz \
+            dist/ao-forge_Darwin_arm64.tar.gz \
+            dist/ao-forge_Windows_x86_64.zip
+          do
+            gh attestation verify "$artifact" \
+              --owner "${GITHUB_REPOSITORY_OWNER}" \
+              --format json > "${artifact}.attestation.json"
+          done
+
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import sys
+
+          expected_repo = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}"
+          expected_ref = os.environ["GITHUB_REF"]
+          expected_sha = os.environ["GITHUB_SHA"]
+          expected_workflow = ".github/workflows/release-attestation.yml"
+
+          manifest = {}
+          for line in pathlib.Path("dist/checksums.txt").read_text().splitlines():
+              if not line.strip():
+                  continue
+              digest, name = line.split(maxsplit=1)
+              manifest[name] = digest
+
+          failures = []
+          for artifact, expected_digest in manifest.items():
+              evidence_path = pathlib.Path(f"{artifact}.attestation.json")
+              records = json.loads(evidence_path.read_text())
+              matched = False
+
+              for record in records:
+                  result = record.get("verificationResult", {})
+                  statement = result.get("statement", {})
+                  certificate = result.get("signature", {}).get("certificate", {})
+                  workflow = (
+                      statement.get("predicate", {})
+                      .get("buildDefinition", {})
+                      .get("externalParameters", {})
+                      .get("workflow", {})
+                  )
+                  subjects = statement.get("subject", [])
+                  subject_matches = any(
+                      subject.get("name") == artifact
+                      and subject.get("digest", {}).get("sha256") == expected_digest
+                      for subject in subjects
+                  )
+
+                  if (
+                      subject_matches
+                      and workflow.get("repository") == expected_repo
+                      and workflow.get("ref") == expected_ref
+                      and workflow.get("path") == expected_workflow
+                      and certificate.get("sourceRepositoryURI") == expected_repo
+                      and certificate.get("sourceRepositoryRef") == expected_ref
+                      and certificate.get("sourceRepositoryDigest") == expected_sha
+                  ):
+                      matched = True
+                      break
+
+              if not matched:
+                  failures.append(
+                      f"{artifact}: no verified attestation matched repo={expected_repo} "
+                      f"ref={expected_ref} sha={expected_sha} digest={expected_digest}"
+                  )
+
+          if failures:
+              print("\n".join(failures), file=sys.stderr)
+              sys.exit(1)
+
+          print(f"artifact_attestations_verified={len(manifest)}")
+          PY
+
       - name: Upload release attestation evidence
         uses: actions/upload-artifact@v7
         with:
@@ -129,6 +211,7 @@ jobs:
             dist/ao-forge_Darwin_arm64.tar.gz
             dist/ao-forge_Windows_x86_64.zip
             dist/checksums.txt
+            dist/*.attestation.json
             ${{ runner.temp }}/ao-forge-release-attestation/release-preview-audit.json
             ${{ runner.temp }}/ao-forge-release-attestation/release-preview-inspect.txt
             ${{ runner.temp }}/ao-forge-release-attestation/release-preview-inspect.json

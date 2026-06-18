@@ -4,3 +4,4 @@
 *.md text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
+examples/release-preview/*.txt text eol=lf

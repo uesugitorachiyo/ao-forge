@@ -75,6 +75,14 @@
             "type": "string",
             "minLength": 1
           },
+          "executor": {
+            "type": "string",
+            "enum": ["ao2", "agy-swarms"]
+          },
+          "task": {
+            "type": "string",
+            "minLength": 1
+          },
           "depends_on": {
             "type": "array",
             "items": {

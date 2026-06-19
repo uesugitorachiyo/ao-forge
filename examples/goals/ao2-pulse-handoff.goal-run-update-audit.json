@@ -1,7 +1,7 @@
 {
   "audit_schema_version": "ao.forge.goal-run-update-audit.v0.1",
   "goal_run": "examples/goals/ao2-weekend-hardening.goal-run.json",
-  "out": "tmp/ao2-weekend-hardening.goal-run.json",
+  "out": "examples/goals/ao2-pulse-handoff.goal-run.json",
   "goal_id": "ao2-weekend-hardening",
   "previous_phase": "planning",
   "current_phase": "implementation",
@@ -16,7 +16,7 @@
   ],
   "last_verified_at": "2026-06-19T14:30:00Z",
   "last_iteration_status": "passed",
-  "last_iteration_summary": "Transitioned from planning with a bounded implementation task.",
+  "last_iteration_summary": "AO2 Pulse selected a bounded implementation task after validating the latest GoalRun.",
   "evidence": [
     {
       "label": "ao2-weekend-hardening.goal-run.json",

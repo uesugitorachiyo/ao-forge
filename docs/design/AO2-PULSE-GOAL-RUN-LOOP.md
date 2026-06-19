@@ -75,6 +75,20 @@ Run these commands from the repository that owns the GoalRun contract.
    forge goal validate --goal-run tmp/ao2-weekend-hardening.goal-run.json
    ```
 
+## Handoff Fixture
+
+The checked-in handoff pair shows the durable artifact AO2 Pulse should
+preserve after a successful iteration:
+
+- `examples/goals/ao2-pulse-handoff.goal-run.json` is the candidate GoalRun
+  after moving from `planning` to `implementation`.
+- `examples/goals/ao2-pulse-handoff.goal-run-update-audit.json` is the matching
+  update audit, including the candidate path, changed fields, and hashed
+  evidence attachment.
+
+CI runs `scripts/verify-goal-fixtures.sh` to validate every checked-in GoalRun
+and GoalRun update-audit fixture, including this handoff pair.
+
 ## Stop And Backoff
 
 AO2 Pulse must not continue when any of these checks fail:

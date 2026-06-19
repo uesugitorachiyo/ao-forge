@@ -511,6 +511,8 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	goalRunDocs := readText("docs", "design", "GOAL-RUNS.md")
 	goalRunExample := readText("examples", "goals", "ao2-weekend-hardening.goal-run.json")
 	goalRunUpdateAuditExample := readText("examples", "goals", "ao2-weekend-hardening.goal-run-update-audit.json")
+	ao2PulseHandoffGoalRunExample := readText("examples", "goals", "ao2-pulse-handoff.goal-run.json")
+	ao2PulseHandoffAuditExample := readText("examples", "goals", "ao2-pulse-handoff.goal-run-update-audit.json")
 	briefSchema := readText("docs", "contracts", "factory-brief-v0.1.schema.json")
 	planSchema := readText("docs", "contracts", "factory-plan-v0.1.schema.json")
 	releasePreviewSchema := readText("docs", "contracts", "release-preview-audit-v0.1.schema.json")
@@ -534,6 +536,8 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "README goal run update audit schema link", doc: readme, want: "[GoalRun Update Audit v0.1 Schema](docs/contracts/goal-run-update-audit-v0.1.schema.json)"},
 		{name: "README goal run example link", doc: readme, want: "[Example GoalRun](examples/goals/ao2-weekend-hardening.goal-run.json)"},
 		{name: "README goal run update audit example link", doc: readme, want: "[Example GoalRun Update Audit](examples/goals/ao2-weekend-hardening.goal-run-update-audit.json)"},
+		{name: "README AO2 Pulse handoff goal run link", doc: readme, want: "[AO2 Pulse Handoff GoalRun](examples/goals/ao2-pulse-handoff.goal-run.json)"},
+		{name: "README AO2 Pulse handoff audit link", doc: readme, want: "[AO2 Pulse Handoff Update Audit](examples/goals/ao2-pulse-handoff.goal-run-update-audit.json)"},
 		{name: "README goal run validate command", doc: readme, want: "./bin/forge goal validate --goal-run examples/goals/ao2-weekend-hardening.goal-run.json"},
 		{name: "README goal run inspect command", doc: readme, want: "./bin/forge goal inspect --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --json"},
 		{name: "README goal run transitions command", doc: readme, want: "./bin/forge goal transitions --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --to implementation"},
@@ -595,6 +599,9 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "AO2 Pulse docs update command", doc: ao2PulseGoalRunLoopDocs, want: "forge goal update"},
 		{name: "AO2 Pulse docs update evidence", doc: ao2PulseGoalRunLoopDocs, want: "--evidence examples/goals/ao2-weekend-hardening.goal-run.json"},
 		{name: "AO2 Pulse docs hashed evidence", doc: ao2PulseGoalRunLoopDocs, want: "every hashed evidence attachment listed by the update audit"},
+		{name: "AO2 Pulse docs handoff fixture", doc: ao2PulseGoalRunLoopDocs, want: "## Handoff Fixture"},
+		{name: "AO2 Pulse docs handoff goal run", doc: ao2PulseGoalRunLoopDocs, want: "examples/goals/ao2-pulse-handoff.goal-run.json"},
+		{name: "AO2 Pulse docs handoff audit", doc: ao2PulseGoalRunLoopDocs, want: "examples/goals/ao2-pulse-handoff.goal-run-update-audit.json"},
 		{name: "AO2 Pulse docs audit validate command", doc: ao2PulseGoalRunLoopDocs, want: "docs/contracts/goal-run-update-audit-v0.1.schema.json"},
 		{name: "AO2 Pulse docs candidate validate", doc: ao2PulseGoalRunLoopDocs, want: "forge goal validate --goal-run tmp/ao2-weekend-hardening.goal-run.json"},
 		{name: "AO2 Pulse docs terminal phases", doc: ao2PulseGoalRunLoopDocs, want: "complete` and `stopped`"},
@@ -605,8 +612,14 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run example scheduler", doc: goalRunExample, want: `"scheduler": "codex-cron"`},
 		{name: "goal run update audit example id", doc: goalRunUpdateAuditExample, want: `"audit_schema_version": "ao.forge.goal-run-update-audit.v0.1"`},
 		{name: "goal run update audit example transition", doc: goalRunUpdateAuditExample, want: `"phase_transition": "planning->implementation"`},
+		{name: "goal run update audit example evidence field", doc: goalRunUpdateAuditExample, want: `"last_iteration.evidence"`},
 		{name: "goal run update audit example evidence", doc: goalRunUpdateAuditExample, want: `"path": "examples/goals/ao2-weekend-hardening.goal-run.json"`},
 		{name: "goal run update audit example status", doc: goalRunUpdateAuditExample, want: `"status": "updated"`},
+		{name: "AO2 Pulse handoff goal run phase", doc: ao2PulseHandoffGoalRunExample, want: `"current_phase": "implementation"`},
+		{name: "AO2 Pulse handoff goal run evidence", doc: ao2PulseHandoffGoalRunExample, want: `"path": "examples/goals/ao2-weekend-hardening.goal-run.json"`},
+		{name: "AO2 Pulse handoff audit out", doc: ao2PulseHandoffAuditExample, want: `"out": "examples/goals/ao2-pulse-handoff.goal-run.json"`},
+		{name: "AO2 Pulse handoff audit evidence field", doc: ao2PulseHandoffAuditExample, want: `"last_iteration.evidence"`},
+		{name: "AO2 Pulse handoff audit status", doc: ao2PulseHandoffAuditExample, want: `"status": "updated"`},
 		{name: "brief schema id", doc: briefSchema, want: `"ao.forge.factory-brief.v0.1"`},
 		{name: "brief strict root", doc: briefSchema, want: `"additionalProperties": false`},
 		{name: "brief objective", doc: briefSchema, want: `"objective"`},

@@ -306,8 +306,6 @@ func TestGoalRunCLILintsEvidencePaths(t *testing.T) {
 	root := repoRoot(t)
 	retainedPath := filepath.Join(root, "examples", "goals", "ao2-retained-evidence.goal-run.json")
 	auditPath := filepath.Join(root, "examples", "goals", "ao2-pulse-handoff.goal-run-update-audit.json")
-	tmpPath := filepath.Join(root, "examples", "goals", "invalid", "tmp-evidence-path.goal-run.path-invalid.json")
-	tmpAuditPath := filepath.Join(root, "examples", "goals", "invalid", "tmp-evidence-path.goal-run-update-audit.path-invalid.json")
 	lintSchemaPath := filepath.Join(root, "docs", "contracts", "goal-run-evidence-lint-v0.1.schema.json")
 
 	code, stdout, stderr := runCLI("goal", "evidence", "lint", "--goal-run", retainedPath)
@@ -402,57 +400,89 @@ func TestGoalRunCLILintsEvidencePaths(t *testing.T) {
 		t.Fatalf("goal evidence lint dual target stderr drifted: %s", stderr)
 	}
 
-	code, stdout, stderr = runCLI("goal", "evidence", "lint", "--goal-run", tmpPath)
-	if code != 1 {
-		t.Fatalf("goal evidence lint invalid path exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
-	}
-	if !strings.Contains(stdout, "goal_evidence_lint=failed") ||
-		!strings.Contains(stdout, "uses a temporary path") {
-		t.Fatalf("goal evidence lint invalid path stdout drifted:\n%s", stdout)
-	}
-	if !strings.Contains(stderr, "evidence path lint failed") {
-		t.Fatalf("goal evidence lint invalid path stderr drifted: %s", stderr)
-	}
+	for _, tc := range []struct {
+		name         string
+		targetFlag   string
+		path         string
+		documentType string
+		reason       string
+	}{
+		{
+			name:         "goal run tmp",
+			targetFlag:   "--goal-run",
+			path:         filepath.Join(root, "examples", "goals", "invalid", "tmp-evidence-path.goal-run.path-invalid.json"),
+			documentType: "goal_run",
+			reason:       "uses a temporary path",
+		},
+		{
+			name:         "goal run parent traversal",
+			targetFlag:   "--goal-run",
+			path:         filepath.Join(root, "examples", "goals", "invalid", "parent-traversal-evidence-path.goal-run.path-invalid.json"),
+			documentType: "goal_run",
+			reason:       "uses a parent traversal path",
+		},
+		{
+			name:         "goal run windows absolute",
+			targetFlag:   "--goal-run",
+			path:         filepath.Join(root, "examples", "goals", "invalid", "windows-absolute-evidence-path.goal-run.path-invalid.json"),
+			documentType: "goal_run",
+			reason:       "uses an absolute path",
+		},
+		{
+			name:         "update audit tmp",
+			targetFlag:   "--update-audit",
+			path:         filepath.Join(root, "examples", "goals", "invalid", "tmp-evidence-path.goal-run-update-audit.path-invalid.json"),
+			documentType: "goal_run_update_audit",
+			reason:       "uses a temporary path",
+		},
+		{
+			name:         "update audit parent traversal",
+			targetFlag:   "--update-audit",
+			path:         filepath.Join(root, "examples", "goals", "invalid", "parent-traversal-evidence-path.goal-run-update-audit.path-invalid.json"),
+			documentType: "goal_run_update_audit",
+			reason:       "uses a parent traversal path",
+		},
+		{
+			name:         "update audit windows absolute",
+			targetFlag:   "--update-audit",
+			path:         filepath.Join(root, "examples", "goals", "invalid", "windows-absolute-evidence-path.goal-run-update-audit.path-invalid.json"),
+			documentType: "goal_run_update_audit",
+			reason:       "uses an absolute path",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			code, stdout, stderr := runCLI("goal", "evidence", "lint", tc.targetFlag, tc.path)
+			if code != 1 {
+				t.Fatalf("goal evidence lint invalid path exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+			}
+			for _, want := range []string{
+				"goal_evidence_lint=failed",
+				"document_type=" + tc.documentType,
+				tc.reason,
+			} {
+				if !strings.Contains(stdout, want) {
+					t.Fatalf("goal evidence lint invalid path stdout missing %q\n%s", want, stdout)
+				}
+			}
+			if !strings.Contains(stderr, "evidence path lint failed") {
+				t.Fatalf("goal evidence lint invalid path stderr drifted: %s", stderr)
+			}
 
-	code, stdout, stderr = runCLI("goal", "evidence", "lint", "--goal-run", tmpPath, "--json")
-	if code != 1 {
-		t.Fatalf("goal evidence lint invalid path --json exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
-	}
-	if err := json.Unmarshal([]byte(stdout), &lintDocument); err != nil {
-		t.Fatalf("goal evidence lint invalid path --json emitted invalid JSON: %v\n%s", err, stdout)
-	}
-	if err := validateJSONSchemaValue(lintSchemaPath, lintDocument); err != nil {
-		t.Fatalf("goal evidence lint invalid path --json failed schema validation: %v\n%s", err, stdout)
-	}
-	if !strings.Contains(stderr, "evidence path lint failed") {
-		t.Fatalf("goal evidence lint invalid path --json stderr drifted: %s", stderr)
-	}
-
-	code, stdout, stderr = runCLI("goal", "evidence", "lint", "--update-audit", tmpAuditPath)
-	if code != 1 {
-		t.Fatalf("goal evidence lint invalid update audit path exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
-	}
-	if !strings.Contains(stdout, "goal_evidence_lint=failed") ||
-		!strings.Contains(stdout, "document_type=goal_run_update_audit") ||
-		!strings.Contains(stdout, "uses a temporary path") {
-		t.Fatalf("goal evidence lint invalid update audit path stdout drifted:\n%s", stdout)
-	}
-	if !strings.Contains(stderr, "evidence path lint failed") {
-		t.Fatalf("goal evidence lint invalid update audit path stderr drifted: %s", stderr)
-	}
-
-	code, stdout, stderr = runCLI("goal", "evidence", "lint", "--update-audit", tmpAuditPath, "--json")
-	if code != 1 {
-		t.Fatalf("goal evidence lint invalid update audit path --json exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
-	}
-	if err := json.Unmarshal([]byte(stdout), &lintDocument); err != nil {
-		t.Fatalf("goal evidence lint invalid update audit path --json emitted invalid JSON: %v\n%s", err, stdout)
-	}
-	if err := validateJSONSchemaValue(lintSchemaPath, lintDocument); err != nil {
-		t.Fatalf("goal evidence lint invalid update audit path --json failed schema validation: %v\n%s", err, stdout)
-	}
-	if !strings.Contains(stderr, "evidence path lint failed") {
-		t.Fatalf("goal evidence lint invalid update audit path --json stderr drifted: %s", stderr)
+			code, stdout, stderr = runCLI("goal", "evidence", "lint", tc.targetFlag, tc.path, "--json")
+			if code != 1 {
+				t.Fatalf("goal evidence lint invalid path --json exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+			}
+			var lintDocument any
+			if err := json.Unmarshal([]byte(stdout), &lintDocument); err != nil {
+				t.Fatalf("goal evidence lint invalid path --json emitted invalid JSON: %v\n%s", err, stdout)
+			}
+			if err := validateJSONSchemaValue(lintSchemaPath, lintDocument); err != nil {
+				t.Fatalf("goal evidence lint invalid path --json failed schema validation: %v\n%s", err, stdout)
+			}
+			if !strings.Contains(stderr, "evidence path lint failed") {
+				t.Fatalf("goal evidence lint invalid path --json stderr drifted: %s", stderr)
+			}
+		})
 	}
 }
 
@@ -778,9 +808,13 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	tmpEvidencePathGoalRunExample := readText("examples", "goals", "invalid", "tmp-evidence-path.goal-run.path-invalid.json")
 	absoluteEvidencePathGoalRunExample := readText("examples", "goals", "invalid", "absolute-evidence-path.goal-run.path-invalid.json")
 	homeEvidencePathGoalRunExample := readText("examples", "goals", "invalid", "home-evidence-path.goal-run.path-invalid.json")
+	parentTraversalEvidencePathGoalRunExample := readText("examples", "goals", "invalid", "parent-traversal-evidence-path.goal-run.path-invalid.json")
+	windowsAbsoluteEvidencePathGoalRunExample := readText("examples", "goals", "invalid", "windows-absolute-evidence-path.goal-run.path-invalid.json")
 	tmpEvidencePathUpdateAuditExample := readText("examples", "goals", "invalid", "tmp-evidence-path.goal-run-update-audit.path-invalid.json")
 	absoluteEvidencePathUpdateAuditExample := readText("examples", "goals", "invalid", "absolute-evidence-path.goal-run-update-audit.path-invalid.json")
 	homeEvidencePathUpdateAuditExample := readText("examples", "goals", "invalid", "home-evidence-path.goal-run-update-audit.path-invalid.json")
+	parentTraversalEvidencePathUpdateAuditExample := readText("examples", "goals", "invalid", "parent-traversal-evidence-path.goal-run-update-audit.path-invalid.json")
+	windowsAbsoluteEvidencePathUpdateAuditExample := readText("examples", "goals", "invalid", "windows-absolute-evidence-path.goal-run-update-audit.path-invalid.json")
 	briefSchema := readText("docs", "contracts", "factory-brief-v0.1.schema.json")
 	planSchema := readText("docs", "contracts", "factory-plan-v0.1.schema.json")
 	releasePreviewSchema := readText("docs", "contracts", "release-preview-audit-v0.1.schema.json")
@@ -902,9 +936,13 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run docs tmp path fixture", doc: goalRunDocs, want: "examples/goals/invalid/tmp-evidence-path.goal-run.path-invalid.json"},
 		{name: "goal run docs absolute path fixture", doc: goalRunDocs, want: "examples/goals/invalid/absolute-evidence-path.goal-run.path-invalid.json"},
 		{name: "goal run docs home path fixture", doc: goalRunDocs, want: "examples/goals/invalid/home-evidence-path.goal-run.path-invalid.json"},
+		{name: "goal run docs parent traversal path fixture", doc: goalRunDocs, want: "examples/goals/invalid/parent-traversal-evidence-path.goal-run.path-invalid.json"},
+		{name: "goal run docs windows absolute path fixture", doc: goalRunDocs, want: "examples/goals/invalid/windows-absolute-evidence-path.goal-run.path-invalid.json"},
 		{name: "goal run docs tmp path audit fixture", doc: goalRunDocs, want: "examples/goals/invalid/tmp-evidence-path.goal-run-update-audit.path-invalid.json"},
 		{name: "goal run docs absolute path audit fixture", doc: goalRunDocs, want: "examples/goals/invalid/absolute-evidence-path.goal-run-update-audit.path-invalid.json"},
 		{name: "goal run docs home path audit fixture", doc: goalRunDocs, want: "examples/goals/invalid/home-evidence-path.goal-run-update-audit.path-invalid.json"},
+		{name: "goal run docs parent traversal path audit fixture", doc: goalRunDocs, want: "examples/goals/invalid/parent-traversal-evidence-path.goal-run-update-audit.path-invalid.json"},
+		{name: "goal run docs windows absolute path audit fixture", doc: goalRunDocs, want: "examples/goals/invalid/windows-absolute-evidence-path.goal-run-update-audit.path-invalid.json"},
 		{name: "goal run docs update audit schema", doc: goalRunDocs, want: "docs/contracts/goal-run-update-audit-v0.1.schema.json"},
 		{name: "goal run docs update audit validate command", doc: goalRunDocs, want: "forge contract validate"},
 		{name: "goal run docs AO2 Pulse link", doc: goalRunDocs, want: "docs/design/AO2-PULSE-GOAL-RUN-LOOP.md"},
@@ -968,12 +1006,20 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "absolute evidence path fixture path", doc: absoluteEvidencePathGoalRunExample, want: `"path": "/tmp/ao-forge-goal-evidence/absolute-local-evidence.json"`},
 		{name: "home evidence path fixture schema valid", doc: homeEvidencePathGoalRunExample, want: `"schema_version": "ao.forge.goal-run.v0.1"`},
 		{name: "home evidence path fixture path", doc: homeEvidencePathGoalRunExample, want: `"path": "~/ao-forge-goal-evidence/home-local-evidence.json"`},
+		{name: "parent traversal evidence path fixture schema valid", doc: parentTraversalEvidencePathGoalRunExample, want: `"schema_version": "ao.forge.goal-run.v0.1"`},
+		{name: "parent traversal evidence path fixture path", doc: parentTraversalEvidencePathGoalRunExample, want: `"path": "../ao-forge-goal-evidence/parent-local-evidence.json"`},
+		{name: "windows absolute evidence path fixture schema valid", doc: windowsAbsoluteEvidencePathGoalRunExample, want: `"schema_version": "ao.forge.goal-run.v0.1"`},
+		{name: "windows absolute evidence path fixture path", doc: windowsAbsoluteEvidencePathGoalRunExample, want: `"path": "C:/ao-forge-goal-evidence/windows-local-evidence.json"`},
 		{name: "tmp evidence path audit fixture schema valid", doc: tmpEvidencePathUpdateAuditExample, want: `"audit_schema_version": "ao.forge.goal-run-update-audit.v0.1"`},
 		{name: "tmp evidence path audit fixture path", doc: tmpEvidencePathUpdateAuditExample, want: `"path": "tmp/ao-forge-goal-evidence/tmp-local-evidence.json"`},
 		{name: "absolute evidence path audit fixture schema valid", doc: absoluteEvidencePathUpdateAuditExample, want: `"audit_schema_version": "ao.forge.goal-run-update-audit.v0.1"`},
 		{name: "absolute evidence path audit fixture path", doc: absoluteEvidencePathUpdateAuditExample, want: `"path": "/tmp/ao-forge-goal-evidence/absolute-local-evidence.json"`},
 		{name: "home evidence path audit fixture schema valid", doc: homeEvidencePathUpdateAuditExample, want: `"audit_schema_version": "ao.forge.goal-run-update-audit.v0.1"`},
 		{name: "home evidence path audit fixture path", doc: homeEvidencePathUpdateAuditExample, want: `"path": "~/ao-forge-goal-evidence/home-local-evidence.json"`},
+		{name: "parent traversal evidence path audit fixture schema valid", doc: parentTraversalEvidencePathUpdateAuditExample, want: `"audit_schema_version": "ao.forge.goal-run-update-audit.v0.1"`},
+		{name: "parent traversal evidence path audit fixture path", doc: parentTraversalEvidencePathUpdateAuditExample, want: `"path": "../ao-forge-goal-evidence/parent-local-evidence.json"`},
+		{name: "windows absolute evidence path audit fixture schema valid", doc: windowsAbsoluteEvidencePathUpdateAuditExample, want: `"audit_schema_version": "ao.forge.goal-run-update-audit.v0.1"`},
+		{name: "windows absolute evidence path audit fixture path", doc: windowsAbsoluteEvidencePathUpdateAuditExample, want: `"path": "C:/ao-forge-goal-evidence/windows-local-evidence.json"`},
 		{name: "brief schema id", doc: briefSchema, want: `"ao.forge.factory-brief.v0.1"`},
 		{name: "brief strict root", doc: briefSchema, want: `"additionalProperties": false`},
 		{name: "brief objective", doc: briefSchema, want: `"objective"`},

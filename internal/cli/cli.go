@@ -311,6 +311,7 @@ Usage:
   forge goal inspect --goal-run <goal-run.json> [--json]
   forge goal transitions --goal-run <goal-run.json> [--to <phase>] [--json]
   forge goal update --goal-run <goal-run.json> --out <goal-run.json> [--phase <phase>] [--next-task <text>] [--last-verified-at <RFC3339>] [--last-iteration-status <status>] [--last-iteration-summary <text>] [--evidence <path> ...] [--json]
+  forge goal evidence verify --goal-run <goal-run.json> [--json]
 
 Factory terms:
   factory brief   normalized operator objective and constraints
@@ -318,7 +319,7 @@ Factory terms:
   factory packet  operator-ready JSON summary of plan, gates, evidence, and next actions
 
 Slice 2.8 status:
-  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, release preview audits, release preview enforcement, release preview audit inspection, artifact checksums, artifact checksum verification, contract schema validation, GoalRun validation and inspection, GoalRun transition checks, guarded GoalRun updates, and GoalRun update evidence attachments are enabled.
+  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, release preview audits, release preview enforcement, release preview audit inspection, artifact checksums, artifact checksum verification, contract schema validation, GoalRun validation and inspection, GoalRun transition checks, guarded GoalRun updates, GoalRun update evidence attachments, and GoalRun evidence verification are enabled.
 `)
 }
 
@@ -4527,9 +4528,28 @@ type goalUpdateAudit struct {
 	Status               string            `json:"status"`
 }
 
+type goalEvidenceVerifySummary struct {
+	VerifySchemaVersion string                     `json:"verify_schema_version"`
+	GoalRun             string                     `json:"goal_run"`
+	GoalID              string                     `json:"goal_id"`
+	Status              string                     `json:"status"`
+	EvidenceVerified    int                        `json:"evidence_verified"`
+	Evidence            []goalEvidenceVerifyResult `json:"evidence"`
+	Errors              []string                   `json:"errors"`
+}
+
+type goalEvidenceVerifyResult struct {
+	Label          string `json:"label"`
+	Path           string `json:"path"`
+	ExpectedSHA256 string `json:"expected_sha256,omitempty"`
+	ActualSHA256   string `json:"actual_sha256,omitempty"`
+	Status         string `json:"status"`
+	Error          string `json:"error,omitempty"`
+}
+
 func runGoal(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "forge goal: missing subcommand validate, inspect, transitions, or update")
+		fmt.Fprintln(stderr, "forge goal: missing subcommand validate, inspect, transitions, update, or evidence")
 		return 2
 	}
 	switch args[0] {
@@ -4541,11 +4561,30 @@ func runGoal(args []string, stdout, stderr io.Writer) int {
 		return runGoalTransitions(args[1:], stdout, stderr)
 	case "update":
 		return runGoalUpdate(args[1:], stdout, stderr)
+	case "evidence":
+		return runGoalEvidence(args[1:], stdout, stderr)
 	case "--help", "-h":
-		fmt.Fprintln(stderr, "forge goal: use `forge goal validate --goal-run <goal-run.json> [--json]`, `forge goal inspect --goal-run <goal-run.json> [--json]`, `forge goal transitions --goal-run <goal-run.json> [--to <phase>] [--json]`, or `forge goal update --goal-run <goal-run.json> --out <goal-run.json> [--phase <phase>] [--next-task <text>] [--last-verified-at <RFC3339>] [--last-iteration-status <status>] [--last-iteration-summary <text>] [--evidence <path> ...] [--json]`")
+		fmt.Fprintln(stderr, "forge goal: use `forge goal validate --goal-run <goal-run.json> [--json]`, `forge goal inspect --goal-run <goal-run.json> [--json]`, `forge goal transitions --goal-run <goal-run.json> [--to <phase>] [--json]`, `forge goal update --goal-run <goal-run.json> --out <goal-run.json> [--phase <phase>] [--next-task <text>] [--last-verified-at <RFC3339>] [--last-iteration-status <status>] [--last-iteration-summary <text>] [--evidence <path> ...] [--json]`, or `forge goal evidence verify --goal-run <goal-run.json> [--json]`")
 		return 0
 	default:
 		fmt.Fprintf(stderr, "forge goal: unknown subcommand %q\n", args[0])
+		return 2
+	}
+}
+
+func runGoalEvidence(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "forge goal evidence: missing subcommand verify")
+		return 2
+	}
+	switch args[0] {
+	case "verify":
+		return runGoalEvidenceVerify(args[1:], stdout, stderr)
+	case "--help", "-h":
+		fmt.Fprintln(stderr, "forge goal evidence: use `forge goal evidence verify --goal-run <goal-run.json> [--json]`")
+		return 0
+	default:
+		fmt.Fprintf(stderr, "forge goal evidence: unknown subcommand %q\n", args[0])
 		return 2
 	}
 }
@@ -4847,6 +4886,51 @@ func runGoalUpdate(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func runGoalEvidenceVerify(args []string, stdout, stderr io.Writer) int {
+	flags, err := parseGoalFlags(args)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge goal evidence verify: %v\n", err)
+		return 2
+	}
+
+	goal, err := validateAndReadGoalRun(flags.goalRunPath)
+	summary := goalEvidenceVerifySummary{
+		VerifySchemaVersion: "ao.forge.goal-run-evidence-verify.v0.1",
+		GoalRun:             displayPath(flags.goalRunPath),
+		Status:              "passed",
+		Evidence:            []goalEvidenceVerifyResult{},
+		Errors:              []string{},
+	}
+	if err != nil {
+		summary.Status = "failed"
+		summary.Errors = []string{err.Error()}
+		writeGoalEvidenceVerifySummary(stdout, summary, flags.json)
+		fmt.Fprintf(stderr, "forge goal evidence verify: goal run validation failed: %v\n", err)
+		return 1
+	}
+	summary.GoalID = goal.GoalID
+
+	if goal.LastIteration != nil {
+		for _, evidence := range goal.LastIteration.Evidence {
+			result := verifyGoalRunEvidence(evidence)
+			summary.Evidence = append(summary.Evidence, result)
+			if result.Status == "passed" {
+				summary.EvidenceVerified++
+			} else {
+				summary.Status = "failed"
+				summary.Errors = append(summary.Errors, fmt.Sprintf("%s: %s", result.Path, result.Error))
+			}
+		}
+	}
+
+	writeGoalEvidenceVerifySummary(stdout, summary, flags.json)
+	if summary.Status != "passed" {
+		fmt.Fprintf(stderr, "forge goal evidence verify: evidence verification failed for %s\n", summary.GoalRun)
+		return 1
+	}
+	return 0
+}
+
 func validateAndReadGoalRun(path string) (goalRun, error) {
 	if err := validateJSONSchemaDocument(resolveDefaultContractPath(goalRunSchemaPath), path); err != nil {
 		return goalRun{}, err
@@ -4859,6 +4943,47 @@ func validateAndReadGoalRun(path string) (goalRun, error) {
 		return goalRun{}, fmt.Errorf("unsupported goal run schema_version %q", goal.SchemaVersion)
 	}
 	return goal, nil
+}
+
+func verifyGoalRunEvidence(evidence goalRunEvidence) goalEvidenceVerifyResult {
+	result := goalEvidenceVerifyResult{
+		Label:          evidence.Label,
+		Path:           evidence.Path,
+		ExpectedSHA256: evidence.SHA256,
+		Status:         "passed",
+	}
+	if strings.TrimSpace(evidence.SHA256) == "" {
+		result.Status = "failed"
+		result.Error = "missing sha256"
+		return result
+	}
+	path := resolveGoalRunEvidencePath(evidence.Path)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		result.Status = "failed"
+		result.Error = fmt.Sprintf("read evidence: %v", err)
+		return result
+	}
+	sum := sha256.Sum256(data)
+	result.ActualSHA256 = hex.EncodeToString(sum[:])
+	if result.ActualSHA256 != evidence.SHA256 {
+		result.Status = "failed"
+		result.Error = fmt.Sprintf("sha256 mismatch: expected %s, got %s", evidence.SHA256, result.ActualSHA256)
+	}
+	return result
+}
+
+func resolveGoalRunEvidencePath(path string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+	if _, err := os.Stat(path); err == nil {
+		return path
+	}
+	if root, ok := findRepoRoot(); ok {
+		return filepath.Join(root, filepath.FromSlash(path))
+	}
+	return path
 }
 
 func applyGoalRunUpdate(goal *goalRun, flags goalUpdateFlags) ([]string, error) {
@@ -5185,6 +5310,37 @@ func writeGoalUpdateAudit(stdout io.Writer, audit goalUpdateAudit, asJSON bool) 
 		for _, evidence := range audit.Evidence {
 			fmt.Fprintf(stdout, "evidence_path=%s sha256=%s\n", evidence.Path, evidence.SHA256)
 		}
+	}
+}
+
+func writeGoalEvidenceVerifySummary(stdout io.Writer, summary goalEvidenceVerifySummary, asJSON bool) {
+	if asJSON {
+		data, err := marshalIndented(summary)
+		if err != nil {
+			fmt.Fprintf(stdout, "{\"verify_schema_version\":\"ao.forge.goal-run-evidence-verify.v0.1\",\"status\":\"failed\",\"errors\":[%q]}\n", err.Error())
+			return
+		}
+		_, _ = stdout.Write(data)
+		return
+	}
+	fmt.Fprintf(stdout, "goal_evidence_verify=%s\n", summary.Status)
+	fmt.Fprintf(stdout, "goal_run=%s\n", summary.GoalRun)
+	if summary.GoalID != "" {
+		fmt.Fprintf(stdout, "goal_id=%s\n", summary.GoalID)
+	}
+	fmt.Fprintf(stdout, "evidence_verified=%d\n", summary.EvidenceVerified)
+	for _, evidence := range summary.Evidence {
+		fmt.Fprintf(stdout, "evidence_path=%s status=%s", evidence.Path, evidence.Status)
+		if evidence.ActualSHA256 != "" {
+			fmt.Fprintf(stdout, " sha256=%s", evidence.ActualSHA256)
+		}
+		if evidence.Error != "" {
+			fmt.Fprintf(stdout, " error=%s", evidence.Error)
+		}
+		fmt.Fprintln(stdout)
+	}
+	for _, verifyErr := range summary.Errors {
+		fmt.Fprintf(stdout, "error=%s\n", verifyErr)
 	}
 }
 

@@ -222,6 +222,11 @@ jobs:
           print("release_install_verify=passed")
           PY
 
+      - name: Validate install verification audit contract
+        run: |
+          set -euo pipefail
+          "${RUNNER_TEMP}/forge" contract validate --schema docs/contracts/release-install-verify-audit-v0.1.schema.json --document "${AO_FORGE_INSTALL_VERIFY_OUT}/release-install-verify-audit.json"
+
       - name: Upload release install verification audit
         uses: actions/upload-artifact@v7
         with:

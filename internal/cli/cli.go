@@ -5175,6 +5175,10 @@ func runGoalUpdate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "forge goal update: goal run validation failed: %v\n", err)
 		return 1
 	}
+	if err := ensureGoalRunEvidenceReadyForUpdate(flags.goalRunPath, goal); err != nil {
+		fmt.Fprintf(stderr, "forge goal update: %v\n", err)
+		return 1
+	}
 
 	previousPhase := goal.CurrentPhase
 	updatedFields, err := applyGoalRunUpdate(&goal, flags)
@@ -5678,6 +5682,18 @@ func applyGoalRunUpdate(goal *goalRun, flags goalUpdateFlags) ([]string, error) 
 		}
 	}
 	return updated, nil
+}
+
+func ensureGoalRunEvidenceReadyForUpdate(path string, goal goalRun) error {
+	lint := buildGoalEvidenceLintSummaryForGoal(path, goal)
+	if lint.Status != "passed" {
+		return fmt.Errorf("existing GoalRun evidence lint failed: %s", strings.Join(lint.Errors, "; "))
+	}
+	verify := buildGoalEvidenceVerifySummary(path, goal)
+	if verify.Status != "passed" {
+		return fmt.Errorf("existing GoalRun evidence verification failed: %s", strings.Join(verify.Errors, "; "))
+	}
+	return nil
 }
 
 func buildGoalRunEvidence(path string) (goalRunEvidence, error) {

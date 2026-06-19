@@ -51,7 +51,8 @@
           "next_task",
           "last_verified_at",
           "last_iteration.status",
-          "last_iteration.summary"
+          "last_iteration.summary",
+          "last_iteration.evidence"
         ]
       }
     },
@@ -66,6 +67,28 @@
     "last_iteration_summary": {
       "type": "string",
       "minLength": 1
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["label", "path", "sha256"],
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "additionalProperties": false
+      }
     },
     "status": {
       "const": "updated"

@@ -79,6 +79,7 @@ func TestHelpExplainsFactoryTermsWithoutMarketingCopy(t *testing.T) {
 		"GoalRun validation and inspection",
 		"GoalRun transition checks",
 		"guarded GoalRun updates",
+		"GoalRun update evidence attachments",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("help missing %q\n%s", want, stdout)
@@ -310,6 +311,7 @@ func TestGoalRunCLIUpdatesWithTransitionGuardAndAudit(t *testing.T) {
 		"--last-verified-at", "2026-06-19T14:30:00Z",
 		"--last-iteration-status", "passed",
 		"--last-iteration-summary", "Transitioned from planning with a bounded implementation task.",
+		"--evidence", goalPath,
 		"--json",
 	)
 	if code != 0 {
@@ -326,7 +328,12 @@ func TestGoalRunCLIUpdatesWithTransitionGuardAndAudit(t *testing.T) {
 		PhaseTransition     string   `json:"phase_transition"`
 		UpdatedFields       []string `json:"updated_fields"`
 		LastIterationStatus string   `json:"last_iteration_status"`
-		Status              string   `json:"status"`
+		Evidence            []struct {
+			Label  string `json:"label"`
+			Path   string `json:"path"`
+			SHA256 string `json:"sha256"`
+		} `json:"evidence"`
+		Status string `json:"status"`
 	}
 	if err := json.Unmarshal([]byte(stdout), &audit); err != nil {
 		t.Fatalf("goal update emitted invalid JSON audit: %v\n%s", err, stdout)
@@ -336,10 +343,22 @@ func TestGoalRunCLIUpdatesWithTransitionGuardAndAudit(t *testing.T) {
 		audit.PreviousPhase != "planning" ||
 		audit.CurrentPhase != "implementation" ||
 		audit.PhaseTransition != "planning->implementation" ||
-		strings.Join(audit.UpdatedFields, ",") != "current_phase,next_task,last_verified_at,last_iteration.status,last_iteration.summary" ||
+		strings.Join(audit.UpdatedFields, ",") != "current_phase,next_task,last_verified_at,last_iteration.status,last_iteration.summary,last_iteration.evidence" ||
 		audit.LastIterationStatus != "passed" ||
 		audit.Status != "updated" {
 		t.Fatalf("goal update audit drifted: %+v", audit)
+	}
+	goalBytes, err := os.ReadFile(goalPath)
+	if err != nil {
+		t.Fatalf("read goal evidence source: %v", err)
+	}
+	goalSum := sha256.Sum256(goalBytes)
+	goalSHA256 := hex.EncodeToString(goalSum[:])
+	if len(audit.Evidence) != 1 ||
+		audit.Evidence[0].Label != "ao2-weekend-hardening.goal-run.json" ||
+		audit.Evidence[0].Path != "examples/goals/ao2-weekend-hardening.goal-run.json" ||
+		audit.Evidence[0].SHA256 != goalSHA256 {
+		t.Fatalf("goal update audit evidence drifted: %+v", audit.Evidence)
 	}
 	auditPath := filepath.Join(t.TempDir(), "goal-run-update-audit.json")
 	if err := os.WriteFile(auditPath, []byte(stdout), 0o644); err != nil {
@@ -379,8 +398,13 @@ func TestGoalRunCLIUpdatesWithTransitionGuardAndAudit(t *testing.T) {
 		NextTask       string `json:"next_task"`
 		LastVerifiedAt string `json:"last_verified_at"`
 		LastIteration  struct {
-			Status  string `json:"status"`
-			Summary string `json:"summary"`
+			Status   string `json:"status"`
+			Summary  string `json:"summary"`
+			Evidence []struct {
+				Label  string `json:"label"`
+				Path   string `json:"path"`
+				SHA256 string `json:"sha256"`
+			} `json:"evidence"`
 		} `json:"last_iteration"`
 	}
 	if err := json.Unmarshal(updatedBytes, &updated); err != nil {
@@ -390,7 +414,10 @@ func TestGoalRunCLIUpdatesWithTransitionGuardAndAudit(t *testing.T) {
 		updated.NextTask != "Implement the smallest verified AO2 hardening task." ||
 		updated.LastVerifiedAt != "2026-06-19T14:30:00Z" ||
 		updated.LastIteration.Status != "passed" ||
-		updated.LastIteration.Summary != "Transitioned from planning with a bounded implementation task." {
+		updated.LastIteration.Summary != "Transitioned from planning with a bounded implementation task." ||
+		len(updated.LastIteration.Evidence) != 1 ||
+		updated.LastIteration.Evidence[0].Path != "examples/goals/ao2-weekend-hardening.goal-run.json" ||
+		updated.LastIteration.Evidence[0].SHA256 != goalSHA256 {
 		t.Fatalf("updated goal run drifted: %+v", updated)
 	}
 
@@ -421,6 +448,25 @@ func TestGoalRunCLIUpdatesWithTransitionGuardAndAudit(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "update produced no changes") {
 		t.Fatalf("goal update no-op stderr drifted: %s", stderr)
+	}
+
+	missingEvidenceOut := filepath.Join(t.TempDir(), "missing-evidence.goal-run.json")
+	code, stdout, stderr = runCLI(
+		"goal", "update",
+		"--goal-run", goalPath,
+		"--out", missingEvidenceOut,
+		"--last-iteration-status", "passed",
+		"--last-iteration-summary", "Missing evidence must fail closed.",
+		"--evidence", filepath.Join(root, "examples", "goals", "missing-evidence.json"),
+	)
+	if code != 1 {
+		t.Fatalf("goal update missing evidence exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if !strings.Contains(stderr, "read evidence examples/goals/missing-evidence.json") {
+		t.Fatalf("goal update missing evidence stderr drifted: %s", stderr)
+	}
+	if _, err := os.Stat(missingEvidenceOut); !os.IsNotExist(err) {
+		t.Fatalf("missing evidence update wrote output file: %v", err)
 	}
 }
 
@@ -523,6 +569,8 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run update audit strict root", doc: goalRunUpdateAuditSchema, want: `"additionalProperties": false`},
 		{name: "goal run update audit previous phase", doc: goalRunUpdateAuditSchema, want: `"previous_phase"`},
 		{name: "goal run update audit updated fields", doc: goalRunUpdateAuditSchema, want: `"updated_fields"`},
+		{name: "goal run update audit evidence", doc: goalRunUpdateAuditSchema, want: `"evidence"`},
+		{name: "goal run update audit evidence hash", doc: goalRunUpdateAuditSchema, want: `"sha256"`},
 		{name: "goal run update audit status", doc: goalRunUpdateAuditSchema, want: `"updated"`},
 		{name: "goal run docs title", doc: goalRunDocs, want: "# AO Forge GoalRun Contract"},
 		{name: "goal run docs ownership", doc: goalRunDocs, want: "AO Forge owns durable goal and task state"},
@@ -535,6 +583,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run docs update title", doc: goalRunDocs, want: "## Guarded Updates"},
 		{name: "goal run docs update audit", doc: goalRunDocs, want: "ao.forge.goal-run-update-audit.v0.1"},
 		{name: "goal run docs update no in-place", doc: goalRunDocs, want: "refuses to write over the input file"},
+		{name: "goal run docs update evidence", doc: goalRunDocs, want: "Each `--evidence` path must be readable"},
 		{name: "goal run docs update audit schema", doc: goalRunDocs, want: "docs/contracts/goal-run-update-audit-v0.1.schema.json"},
 		{name: "goal run docs update audit validate command", doc: goalRunDocs, want: "forge contract validate"},
 		{name: "goal run docs AO2 Pulse link", doc: goalRunDocs, want: "docs/design/AO2-PULSE-GOAL-RUN-LOOP.md"},
@@ -544,6 +593,8 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "AO2 Pulse docs inspect command", doc: ao2PulseGoalRunLoopDocs, want: "forge goal inspect --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --json"},
 		{name: "AO2 Pulse docs transitions command", doc: ao2PulseGoalRunLoopDocs, want: "forge goal transitions"},
 		{name: "AO2 Pulse docs update command", doc: ao2PulseGoalRunLoopDocs, want: "forge goal update"},
+		{name: "AO2 Pulse docs update evidence", doc: ao2PulseGoalRunLoopDocs, want: "--evidence examples/goals/ao2-weekend-hardening.goal-run.json"},
+		{name: "AO2 Pulse docs hashed evidence", doc: ao2PulseGoalRunLoopDocs, want: "every hashed evidence attachment listed by the update audit"},
 		{name: "AO2 Pulse docs audit validate command", doc: ao2PulseGoalRunLoopDocs, want: "docs/contracts/goal-run-update-audit-v0.1.schema.json"},
 		{name: "AO2 Pulse docs candidate validate", doc: ao2PulseGoalRunLoopDocs, want: "forge goal validate --goal-run tmp/ao2-weekend-hardening.goal-run.json"},
 		{name: "AO2 Pulse docs terminal phases", doc: ao2PulseGoalRunLoopDocs, want: "complete` and `stopped`"},
@@ -554,6 +605,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run example scheduler", doc: goalRunExample, want: `"scheduler": "codex-cron"`},
 		{name: "goal run update audit example id", doc: goalRunUpdateAuditExample, want: `"audit_schema_version": "ao.forge.goal-run-update-audit.v0.1"`},
 		{name: "goal run update audit example transition", doc: goalRunUpdateAuditExample, want: `"phase_transition": "planning->implementation"`},
+		{name: "goal run update audit example evidence", doc: goalRunUpdateAuditExample, want: `"path": "examples/goals/ao2-weekend-hardening.goal-run.json"`},
 		{name: "goal run update audit example status", doc: goalRunUpdateAuditExample, want: `"status": "updated"`},
 		{name: "brief schema id", doc: briefSchema, want: `"ao.forge.factory-brief.v0.1"`},
 		{name: "brief strict root", doc: briefSchema, want: `"additionalProperties": false`},

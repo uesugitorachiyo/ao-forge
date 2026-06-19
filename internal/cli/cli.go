@@ -310,7 +310,7 @@ Usage:
   forge goal validate --goal-run <goal-run.json> [--json]
   forge goal inspect --goal-run <goal-run.json> [--json]
   forge goal transitions --goal-run <goal-run.json> [--to <phase>] [--json]
-  forge goal update --goal-run <goal-run.json> --out <goal-run.json> [--phase <phase>] [--next-task <text>] [--last-verified-at <RFC3339>] [--last-iteration-status <status>] [--last-iteration-summary <text>] [--json]
+  forge goal update --goal-run <goal-run.json> --out <goal-run.json> [--phase <phase>] [--next-task <text>] [--last-verified-at <RFC3339>] [--last-iteration-status <status>] [--last-iteration-summary <text>] [--evidence <path> ...] [--json]
 
 Factory terms:
   factory brief   normalized operator objective and constraints
@@ -318,7 +318,7 @@ Factory terms:
   factory packet  operator-ready JSON summary of plan, gates, evidence, and next actions
 
 Slice 2.8 status:
-  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, release preview audits, release preview enforcement, release preview audit inspection, artifact checksums, artifact checksum verification, contract schema validation, GoalRun validation and inspection, GoalRun transition checks, and guarded GoalRun updates are enabled.
+  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, release preview audits, release preview enforcement, release preview audit inspection, artifact checksums, artifact checksum verification, contract schema validation, GoalRun validation and inspection, GoalRun transition checks, guarded GoalRun updates, and GoalRun update evidence attachments are enabled.
 `)
 }
 
@@ -4459,6 +4459,7 @@ type goalUpdateFlags struct {
 	lastVerifiedAt       string
 	lastIterationStatus  string
 	lastIterationSummary string
+	evidencePaths        []string
 	json                 bool
 }
 
@@ -4511,18 +4512,19 @@ type goalTransitionSummary struct {
 }
 
 type goalUpdateAudit struct {
-	AuditSchemaVersion   string   `json:"audit_schema_version"`
-	GoalRun              string   `json:"goal_run"`
-	Out                  string   `json:"out"`
-	GoalID               string   `json:"goal_id"`
-	PreviousPhase        string   `json:"previous_phase"`
-	CurrentPhase         string   `json:"current_phase"`
-	PhaseTransition      string   `json:"phase_transition"`
-	UpdatedFields        []string `json:"updated_fields"`
-	LastVerifiedAt       string   `json:"last_verified_at"`
-	LastIterationStatus  string   `json:"last_iteration_status,omitempty"`
-	LastIterationSummary string   `json:"last_iteration_summary,omitempty"`
-	Status               string   `json:"status"`
+	AuditSchemaVersion   string            `json:"audit_schema_version"`
+	GoalRun              string            `json:"goal_run"`
+	Out                  string            `json:"out"`
+	GoalID               string            `json:"goal_id"`
+	PreviousPhase        string            `json:"previous_phase"`
+	CurrentPhase         string            `json:"current_phase"`
+	PhaseTransition      string            `json:"phase_transition"`
+	UpdatedFields        []string          `json:"updated_fields"`
+	LastVerifiedAt       string            `json:"last_verified_at"`
+	LastIterationStatus  string            `json:"last_iteration_status,omitempty"`
+	LastIterationSummary string            `json:"last_iteration_summary,omitempty"`
+	Evidence             []goalRunEvidence `json:"evidence,omitempty"`
+	Status               string            `json:"status"`
 }
 
 func runGoal(args []string, stdout, stderr io.Writer) int {
@@ -4540,7 +4542,7 @@ func runGoal(args []string, stdout, stderr io.Writer) int {
 	case "update":
 		return runGoalUpdate(args[1:], stdout, stderr)
 	case "--help", "-h":
-		fmt.Fprintln(stderr, "forge goal: use `forge goal validate --goal-run <goal-run.json> [--json]`, `forge goal inspect --goal-run <goal-run.json> [--json]`, `forge goal transitions --goal-run <goal-run.json> [--to <phase>] [--json]`, or `forge goal update --goal-run <goal-run.json> --out <goal-run.json> [--phase <phase>] [--next-task <text>] [--last-verified-at <RFC3339>] [--last-iteration-status <status>] [--last-iteration-summary <text>] [--json]`")
+		fmt.Fprintln(stderr, "forge goal: use `forge goal validate --goal-run <goal-run.json> [--json]`, `forge goal inspect --goal-run <goal-run.json> [--json]`, `forge goal transitions --goal-run <goal-run.json> [--to <phase>] [--json]`, or `forge goal update --goal-run <goal-run.json> --out <goal-run.json> [--phase <phase>] [--next-task <text>] [--last-verified-at <RFC3339>] [--last-iteration-status <status>] [--last-iteration-summary <text>] [--evidence <path> ...] [--json]`")
 		return 0
 	default:
 		fmt.Fprintf(stderr, "forge goal: unknown subcommand %q\n", args[0])
@@ -4664,6 +4666,13 @@ func parseGoalUpdateFlags(args []string) (goalUpdateFlags, error) {
 			}
 			flags.lastIterationSummary = value
 			i = next
+		case "--evidence":
+			value, next, err := readFlagValue(args, i, "--evidence")
+			if err != nil {
+				return goalUpdateFlags{}, err
+			}
+			flags.evidencePaths = append(flags.evidencePaths, value)
+			i = next
 		case "--json":
 			flags.json = true
 		case "--help", "-h":
@@ -4695,6 +4704,18 @@ func parseGoalUpdateFlags(args []string) (goalUpdateFlags, error) {
 			return goalUpdateFlags{}, fmt.Errorf("--last-verified-at must be RFC3339: %w", err)
 		}
 	}
+	seenEvidence := map[string]struct{}{}
+	for _, path := range flags.evidencePaths {
+		trimmed := strings.TrimSpace(path)
+		if trimmed == "" {
+			return goalUpdateFlags{}, fmt.Errorf("--evidence requires a non-empty value")
+		}
+		display := displayPath(trimmed)
+		if _, ok := seenEvidence[display]; ok {
+			return goalUpdateFlags{}, fmt.Errorf("--evidence path repeated: %s", display)
+		}
+		seenEvidence[display] = struct{}{}
+	}
 	return flags, nil
 }
 
@@ -4703,7 +4724,8 @@ func (flags goalUpdateFlags) hasMutation() bool {
 		flags.nextTask != "" ||
 		flags.lastVerifiedAt != "" ||
 		flags.lastIterationStatus != "" ||
-		flags.lastIterationSummary != ""
+		flags.lastIterationSummary != "" ||
+		len(flags.evidencePaths) > 0
 }
 
 func readFlagValue(args []string, index int, flag string) (string, int, error) {
@@ -4859,7 +4881,7 @@ func applyGoalRunUpdate(goal *goalRun, flags goalUpdateFlags) ([]string, error) 
 		goal.LastVerifiedAt = flags.lastVerifiedAt
 		updated = append(updated, "last_verified_at")
 	}
-	if flags.lastIterationStatus != "" || flags.lastIterationSummary != "" {
+	if flags.lastIterationStatus != "" || flags.lastIterationSummary != "" || len(flags.evidencePaths) > 0 {
 		if goal.LastIteration == nil {
 			if flags.lastIterationStatus == "" || flags.lastIterationSummary == "" {
 				return nil, fmt.Errorf("--last-iteration-status and --last-iteration-summary are required when creating last_iteration")
@@ -4877,8 +4899,40 @@ func applyGoalRunUpdate(goal *goalRun, flags goalUpdateFlags) ([]string, error) 
 		if goal.LastIteration.Evidence == nil {
 			goal.LastIteration.Evidence = []goalRunEvidence{}
 		}
+		if len(flags.evidencePaths) > 0 {
+			existingEvidence := map[string]struct{}{}
+			for _, evidence := range goal.LastIteration.Evidence {
+				existingEvidence[evidence.Path] = struct{}{}
+			}
+			for _, path := range flags.evidencePaths {
+				evidence, err := buildGoalRunEvidence(path)
+				if err != nil {
+					return nil, err
+				}
+				if _, ok := existingEvidence[evidence.Path]; ok {
+					return nil, fmt.Errorf("--evidence path already attached: %s", evidence.Path)
+				}
+				goal.LastIteration.Evidence = append(goal.LastIteration.Evidence, evidence)
+				existingEvidence[evidence.Path] = struct{}{}
+			}
+			updated = append(updated, "last_iteration.evidence")
+		}
 	}
 	return updated, nil
+}
+
+func buildGoalRunEvidence(path string) (goalRunEvidence, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return goalRunEvidence{}, fmt.Errorf("read evidence %s: %w", displayPath(path), err)
+	}
+	sum := sha256.Sum256(data)
+	display := displayPath(path)
+	return goalRunEvidence{
+		Label:  filepath.Base(display),
+		Path:   display,
+		SHA256: hex.EncodeToString(sum[:]),
+	}, nil
 }
 
 func buildGoalUpdateAudit(flags goalUpdateFlags, goal goalRun, previousPhase string, updatedFields []string) goalUpdateAudit {
@@ -4901,6 +4955,7 @@ func buildGoalUpdateAudit(flags goalUpdateFlags, goal goalRun, previousPhase str
 	if goal.LastIteration != nil {
 		audit.LastIterationStatus = goal.LastIteration.Status
 		audit.LastIterationSummary = goal.LastIteration.Summary
+		audit.Evidence = append([]goalRunEvidence(nil), goal.LastIteration.Evidence...)
 	}
 	return audit
 }
@@ -5124,6 +5179,12 @@ func writeGoalUpdateAudit(stdout io.Writer, audit goalUpdateAudit, asJSON bool) 
 	fmt.Fprintf(stdout, "last_verified_at=%s\n", audit.LastVerifiedAt)
 	if audit.LastIterationStatus != "" {
 		fmt.Fprintf(stdout, "last_iteration_status=%s\n", audit.LastIterationStatus)
+	}
+	if len(audit.Evidence) > 0 {
+		fmt.Fprintf(stdout, "evidence=%d\n", len(audit.Evidence))
+		for _, evidence := range audit.Evidence {
+			fmt.Fprintf(stdout, "evidence_path=%s sha256=%s\n", evidence.Path, evidence.SHA256)
+		}
 	}
 }
 

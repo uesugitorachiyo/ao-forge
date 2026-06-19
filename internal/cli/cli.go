@@ -44,6 +44,8 @@ const (
 	goalRunSchemaPath            = "docs/contracts/goal-run-v0.1.schema.json"
 	goalRunUpdateAuditVersion    = "ao.forge.goal-run-update-audit.v0.1"
 	goalRunUpdateAuditSchemaPath = "docs/contracts/goal-run-update-audit-v0.1.schema.json"
+	goalRetainedEvidenceVersion  = "ao.forge.goal-run-retained-evidence.v0.1"
+	goalRetainedEvidencePath     = "docs/contracts/goal-run-retained-evidence-v0.1.schema.json"
 )
 
 var (
@@ -242,6 +244,26 @@ type goalRunEvidence struct {
 	SHA256 string `json:"sha256,omitempty"`
 }
 
+type goalRetainedEvidenceArtifact struct {
+	SchemaVersion   string `json:"schema_version"`
+	GoalID          string `json:"goal_id"`
+	Iteration       string `json:"iteration"`
+	Phase           string `json:"phase"`
+	Summary         string `json:"summary"`
+	RetentionPolicy struct {
+		Layout                                 string `json:"layout"`
+		TemporaryPathsAllowed                  bool   `json:"temporary_paths_allowed"`
+		MinimumRetentionDaysAfterTerminalPhase int    `json:"minimum_retention_days_after_terminal_phase"`
+	} `json:"retention_policy"`
+	RetentionMetadata struct {
+		RetainedAt             string   `json:"retained_at"`
+		RetentionClass         string   `json:"retention_class"`
+		RetainWhileGoalActive  bool     `json:"retain_while_goal_active"`
+		DeletionRequiresReview bool     `json:"deletion_requires_review"`
+		CleanupChangeMustName  []string `json:"cleanup_change_must_name"`
+	} `json:"retention_metadata"`
+}
+
 var goalRunPhaseTransitions = map[string][]string{
 	"planning":       {"implementation", "blocked", "backoff", "stopped"},
 	"implementation": {"verification", "blocked", "backoff", "stopped"},
@@ -319,6 +341,7 @@ Usage:
   forge goal evidence verify --goal-run <goal-run.json> [--json]
   forge goal evidence lint --goal-run <goal-run.json> [--json]
   forge goal evidence lint --update-audit <goal-run-update-audit.json> [--json]
+  forge goal evidence retention --artifact <retained-evidence.json> [--now <RFC3339>] [--json]
 
 Factory terms:
   factory brief   normalized operator objective and constraints
@@ -326,7 +349,7 @@ Factory terms:
   factory packet  operator-ready JSON summary of plan, gates, evidence, and next actions
 
 Slice 2.8 status:
-  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, release preview audits, release preview enforcement, release preview audit inspection, artifact checksums, artifact checksum verification, contract schema validation, GoalRun validation and inspection, GoalRun transition checks, guarded GoalRun updates, GoalRun update evidence attachments, GoalRun evidence verification, and GoalRun evidence path linting are enabled.
+  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, release preview audits, release preview enforcement, release preview audit inspection, artifact checksums, artifact checksum verification, contract schema validation, GoalRun validation and inspection, GoalRun transition checks, guarded GoalRun updates, GoalRun update evidence attachments, GoalRun evidence verification, GoalRun evidence path linting, and GoalRun retained evidence retention audits are enabled.
 `)
 }
 
@@ -4477,6 +4500,12 @@ type goalEvidenceLintFlags struct {
 	json            bool
 }
 
+type goalEvidenceRetentionFlags struct {
+	artifactPath string
+	now          string
+	json         bool
+}
+
 type goalValidationSummary struct {
 	GoalRun         string   `json:"goal_run"`
 	Schema          string   `json:"schema"`
@@ -4578,6 +4607,24 @@ type goalEvidenceLintResult struct {
 	Error  string `json:"error,omitempty"`
 }
 
+type goalEvidenceRetentionSummary struct {
+	RetentionAuditSchemaVersion            string   `json:"retention_audit_schema_version"`
+	Artifact                               string   `json:"artifact"`
+	GoalID                                 string   `json:"goal_id"`
+	Iteration                              string   `json:"iteration"`
+	Phase                                  string   `json:"phase"`
+	RetentionClass                         string   `json:"retention_class"`
+	RetainedAt                             string   `json:"retained_at"`
+	Now                                    string   `json:"now"`
+	Status                                 string   `json:"status"`
+	RetentionStatus                        string   `json:"retention_status"`
+	CleanupReviewStatus                    string   `json:"cleanup_review_status"`
+	AgeDays                                int      `json:"age_days"`
+	MinimumRetentionDaysAfterTerminalPhase int      `json:"minimum_retention_days_after_terminal_phase"`
+	MandatoryRetentionUntil                string   `json:"mandatory_retention_until,omitempty"`
+	Errors                                 []string `json:"errors"`
+}
+
 func runGoal(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, "forge goal: missing subcommand validate, inspect, transitions, update, or evidence")
@@ -4595,7 +4642,7 @@ func runGoal(args []string, stdout, stderr io.Writer) int {
 	case "evidence":
 		return runGoalEvidence(args[1:], stdout, stderr)
 	case "--help", "-h":
-		fmt.Fprintln(stderr, "forge goal: use `forge goal validate --goal-run <goal-run.json> [--json]`, `forge goal inspect --goal-run <goal-run.json> [--json]`, `forge goal transitions --goal-run <goal-run.json> [--to <phase>] [--json]`, `forge goal update --goal-run <goal-run.json> --out <goal-run.json> [--phase <phase>] [--next-task <text>] [--last-verified-at <RFC3339>] [--last-iteration-status <status>] [--last-iteration-summary <text>] [--evidence <path> ...] [--json]`, `forge goal evidence verify --goal-run <goal-run.json> [--json]`, or `forge goal evidence lint --goal-run <goal-run.json> [--json]`")
+		fmt.Fprintln(stderr, "forge goal: use `forge goal validate --goal-run <goal-run.json> [--json]`, `forge goal inspect --goal-run <goal-run.json> [--json]`, `forge goal transitions --goal-run <goal-run.json> [--to <phase>] [--json]`, `forge goal update --goal-run <goal-run.json> --out <goal-run.json> [--phase <phase>] [--next-task <text>] [--last-verified-at <RFC3339>] [--last-iteration-status <status>] [--last-iteration-summary <text>] [--evidence <path> ...] [--json]`, `forge goal evidence verify --goal-run <goal-run.json> [--json]`, `forge goal evidence lint --goal-run <goal-run.json> [--json]`, or `forge goal evidence retention --artifact <retained-evidence.json> [--now <RFC3339>] [--json]`")
 		return 0
 	default:
 		fmt.Fprintf(stderr, "forge goal: unknown subcommand %q\n", args[0])
@@ -4605,7 +4652,7 @@ func runGoal(args []string, stdout, stderr io.Writer) int {
 
 func runGoalEvidence(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "forge goal evidence: missing subcommand verify or lint")
+		fmt.Fprintln(stderr, "forge goal evidence: missing subcommand verify, lint, or retention")
 		return 2
 	}
 	switch args[0] {
@@ -4613,8 +4660,10 @@ func runGoalEvidence(args []string, stdout, stderr io.Writer) int {
 		return runGoalEvidenceVerify(args[1:], stdout, stderr)
 	case "lint":
 		return runGoalEvidenceLint(args[1:], stdout, stderr)
+	case "retention":
+		return runGoalEvidenceRetention(args[1:], stdout, stderr)
 	case "--help", "-h":
-		fmt.Fprintln(stderr, "forge goal evidence: use `forge goal evidence verify --goal-run <goal-run.json> [--json]`, `forge goal evidence lint --goal-run <goal-run.json> [--json]`, or `forge goal evidence lint --update-audit <goal-run-update-audit.json> [--json]`")
+		fmt.Fprintln(stderr, "forge goal evidence: use `forge goal evidence verify --goal-run <goal-run.json> [--json]`, `forge goal evidence lint --goal-run <goal-run.json> [--json]`, `forge goal evidence lint --update-audit <goal-run-update-audit.json> [--json]`, or `forge goal evidence retention --artifact <retained-evidence.json> [--now <RFC3339>] [--json]`")
 		return 0
 	default:
 		fmt.Fprintf(stderr, "forge goal evidence: unknown subcommand %q\n", args[0])
@@ -4683,6 +4732,46 @@ func parseGoalEvidenceLintFlags(args []string) (goalEvidenceLintFlags, error) {
 	}
 	if flags.goalRunPath != "" && flags.updateAuditPath != "" {
 		return goalEvidenceLintFlags{}, fmt.Errorf("use exactly one of --goal-run or --update-audit")
+	}
+	return flags, nil
+}
+
+func parseGoalEvidenceRetentionFlags(args []string) (goalEvidenceRetentionFlags, error) {
+	var flags goalEvidenceRetentionFlags
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--artifact":
+			value, next, err := readFlagValue(args, i, "--artifact")
+			if err != nil {
+				return goalEvidenceRetentionFlags{}, err
+			}
+			flags.artifactPath = value
+			i = next
+		case "--now":
+			value, next, err := readFlagValue(args, i, "--now")
+			if err != nil {
+				return goalEvidenceRetentionFlags{}, err
+			}
+			flags.now = value
+			i = next
+		case "--json":
+			flags.json = true
+		case "--help", "-h":
+			return goalEvidenceRetentionFlags{}, fmt.Errorf("help is available with `forge --help`")
+		default:
+			if strings.HasPrefix(args[i], "--") {
+				return goalEvidenceRetentionFlags{}, fmt.Errorf("unknown flag %s", args[i])
+			}
+			return goalEvidenceRetentionFlags{}, fmt.Errorf("unexpected argument %s", args[i])
+		}
+	}
+	if flags.artifactPath == "" {
+		return goalEvidenceRetentionFlags{}, fmt.Errorf("missing required --artifact")
+	}
+	if flags.now != "" {
+		if _, err := time.Parse(time.RFC3339, flags.now); err != nil {
+			return goalEvidenceRetentionFlags{}, fmt.Errorf("--now must be RFC3339: %w", err)
+		}
 	}
 	return flags, nil
 }
@@ -5065,6 +5154,86 @@ func runGoalEvidenceLint(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func runGoalEvidenceRetention(args []string, stdout, stderr io.Writer) int {
+	flags, err := parseGoalEvidenceRetentionFlags(args)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge goal evidence retention: %v\n", err)
+		return 2
+	}
+
+	now := time.Now().UTC()
+	if flags.now != "" {
+		parsedNow, err := time.Parse(time.RFC3339, flags.now)
+		if err != nil {
+			fmt.Fprintf(stderr, "forge goal evidence retention: --now must be RFC3339: %v\n", err)
+			return 2
+		}
+		now = parsedNow.UTC()
+	}
+
+	summary := goalEvidenceRetentionSummary{
+		RetentionAuditSchemaVersion: "ao.forge.goal-run-retained-evidence-audit.v0.1",
+		Artifact:                    displayPath(flags.artifactPath),
+		Now:                         now.Format(time.RFC3339),
+		Status:                      "passed",
+		RetentionStatus:             "unknown",
+		CleanupReviewStatus:         "unknown",
+		Errors:                      []string{},
+	}
+
+	artifact, err := validateAndReadGoalRetainedEvidence(flags.artifactPath)
+	if err != nil {
+		summary.Status = "failed"
+		summary.Errors = []string{err.Error()}
+		writeGoalEvidenceRetentionSummary(stdout, summary, flags.json)
+		fmt.Fprintf(stderr, "forge goal evidence retention: retained evidence validation failed: %v\n", err)
+		return 1
+	}
+
+	applyGoalEvidenceRetentionArtifact(&summary, artifact)
+	retainedAt, err := time.Parse(time.RFC3339, artifact.RetentionMetadata.RetainedAt)
+	if err != nil {
+		summary.Status = "failed"
+		summary.RetentionStatus = "unknown"
+		summary.CleanupReviewStatus = "unknown"
+		summary.Errors = []string{fmt.Sprintf("retained_at must be RFC3339: %v", err)}
+		writeGoalEvidenceRetentionSummary(stdout, summary, flags.json)
+		fmt.Fprintf(stderr, "forge goal evidence retention: retained evidence audit failed for %s\n", summary.Artifact)
+		return 1
+	}
+
+	retainedAt = retainedAt.UTC()
+	summary.RetainedAt = retainedAt.Format(time.RFC3339)
+	if retainedAt.After(now) {
+		summary.Status = "failed"
+		summary.RetentionStatus = "unknown"
+		summary.CleanupReviewStatus = "unknown"
+		summary.Errors = []string{fmt.Sprintf("retained_at %s is after now %s", summary.RetainedAt, summary.Now)}
+		writeGoalEvidenceRetentionSummary(stdout, summary, flags.json)
+		fmt.Fprintf(stderr, "forge goal evidence retention: retained evidence audit failed for %s\n", summary.Artifact)
+		return 1
+	}
+
+	summary.AgeDays = int(now.Sub(retainedAt).Hours() / 24)
+	if isTerminalGoalRunPhase(artifact.Phase) {
+		mandatoryUntil := retainedAt.AddDate(0, 0, artifact.RetentionPolicy.MinimumRetentionDaysAfterTerminalPhase)
+		summary.MandatoryRetentionUntil = mandatoryUntil.UTC().Format(time.RFC3339)
+		if now.Before(mandatoryUntil) {
+			summary.RetentionStatus = "mandatory_retention"
+			summary.CleanupReviewStatus = "not_eligible_minimum_window"
+		} else {
+			summary.RetentionStatus = "cleanup_review_eligible"
+			summary.CleanupReviewStatus = "eligible_after_review"
+		}
+	} else {
+		summary.RetentionStatus = "active_retention"
+		summary.CleanupReviewStatus = "not_eligible_active_goal"
+	}
+
+	writeGoalEvidenceRetentionSummary(stdout, summary, flags.json)
+	return 0
+}
+
 func validateAndReadGoalRun(path string) (goalRun, error) {
 	if err := validateJSONSchemaDocument(resolveDefaultContractPath(goalRunSchemaPath), path); err != nil {
 		return goalRun{}, err
@@ -5091,6 +5260,29 @@ func validateAndReadGoalRunUpdateAudit(path string) (goalUpdateAudit, error) {
 		return goalUpdateAudit{}, fmt.Errorf("unsupported goal run update audit schema_version %q", audit.AuditSchemaVersion)
 	}
 	return audit, nil
+}
+
+func validateAndReadGoalRetainedEvidence(path string) (goalRetainedEvidenceArtifact, error) {
+	if err := validateJSONSchemaDocument(resolveDefaultContractPath(goalRetainedEvidencePath), path); err != nil {
+		return goalRetainedEvidenceArtifact{}, err
+	}
+	artifact, err := readGoalRetainedEvidence(path)
+	if err != nil {
+		return goalRetainedEvidenceArtifact{}, err
+	}
+	if artifact.SchemaVersion != goalRetainedEvidenceVersion {
+		return goalRetainedEvidenceArtifact{}, fmt.Errorf("unsupported retained evidence schema_version %q", artifact.SchemaVersion)
+	}
+	return artifact, nil
+}
+
+func applyGoalEvidenceRetentionArtifact(summary *goalEvidenceRetentionSummary, artifact goalRetainedEvidenceArtifact) {
+	summary.GoalID = artifact.GoalID
+	summary.Iteration = artifact.Iteration
+	summary.Phase = artifact.Phase
+	summary.RetentionClass = artifact.RetentionMetadata.RetentionClass
+	summary.RetainedAt = artifact.RetentionMetadata.RetainedAt
+	summary.MinimumRetentionDaysAfterTerminalPhase = artifact.RetentionPolicy.MinimumRetentionDaysAfterTerminalPhase
 }
 
 func verifyGoalRunEvidence(evidence goalRunEvidence) goalEvidenceVerifyResult {
@@ -5333,6 +5525,18 @@ func readGoalRunUpdateAudit(path string) (goalUpdateAudit, error) {
 	return audit, nil
 }
 
+func readGoalRetainedEvidence(path string) (goalRetainedEvidenceArtifact, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return goalRetainedEvidenceArtifact{}, err
+	}
+	var artifact goalRetainedEvidenceArtifact
+	if err := decodeJSONStrict(data, &artifact); err != nil {
+		return goalRetainedEvidenceArtifact{}, fmt.Errorf("parse retained evidence JSON: %w", err)
+	}
+	return artifact, nil
+}
+
 func samePath(left, right string) bool {
 	leftAbs, leftErr := filepath.Abs(left)
 	rightAbs, rightErr := filepath.Abs(right)
@@ -5403,6 +5607,10 @@ func allowedGoalRunNextPhases(phase string) []string {
 func isKnownGoalRunPhase(phase string) bool {
 	_, ok := goalRunPhaseTransitions[phase]
 	return ok
+}
+
+func isTerminalGoalRunPhase(phase string) bool {
+	return phase == "complete" || phase == "stopped"
 }
 
 func formatGoalRunPhaseList(phases []string) string {
@@ -5569,6 +5777,46 @@ func writeGoalEvidenceLintSummary(stdout io.Writer, summary goalEvidenceLintSumm
 	}
 	for _, lintErr := range summary.Errors {
 		fmt.Fprintf(stdout, "error=%s\n", lintErr)
+	}
+}
+
+func writeGoalEvidenceRetentionSummary(stdout io.Writer, summary goalEvidenceRetentionSummary, asJSON bool) {
+	if asJSON {
+		data, err := marshalIndented(summary)
+		if err != nil {
+			fmt.Fprintf(stdout, "{\"retention_audit_schema_version\":\"ao.forge.goal-run-retained-evidence-audit.v0.1\",\"status\":\"failed\",\"retention_status\":\"unknown\",\"cleanup_review_status\":\"unknown\",\"errors\":[%q]}\n", err.Error())
+			return
+		}
+		_, _ = stdout.Write(data)
+		return
+	}
+	fmt.Fprintf(stdout, "goal_evidence_retention=%s\n", summary.Status)
+	fmt.Fprintf(stdout, "artifact=%s\n", summary.Artifact)
+	if summary.GoalID != "" {
+		fmt.Fprintf(stdout, "goal_id=%s\n", summary.GoalID)
+	}
+	if summary.Iteration != "" {
+		fmt.Fprintf(stdout, "iteration=%s\n", summary.Iteration)
+	}
+	if summary.Phase != "" {
+		fmt.Fprintf(stdout, "phase=%s\n", summary.Phase)
+	}
+	if summary.RetentionClass != "" {
+		fmt.Fprintf(stdout, "retention_class=%s\n", summary.RetentionClass)
+	}
+	if summary.RetainedAt != "" {
+		fmt.Fprintf(stdout, "retained_at=%s\n", summary.RetainedAt)
+	}
+	fmt.Fprintf(stdout, "now=%s\n", summary.Now)
+	fmt.Fprintf(stdout, "retention_status=%s\n", summary.RetentionStatus)
+	fmt.Fprintf(stdout, "cleanup_review_status=%s\n", summary.CleanupReviewStatus)
+	fmt.Fprintf(stdout, "age_days=%d\n", summary.AgeDays)
+	fmt.Fprintf(stdout, "minimum_retention_days_after_terminal_phase=%d\n", summary.MinimumRetentionDaysAfterTerminalPhase)
+	if summary.MandatoryRetentionUntil != "" {
+		fmt.Fprintf(stdout, "mandatory_retention_until=%s\n", summary.MandatoryRetentionUntil)
+	}
+	for _, auditErr := range summary.Errors {
+		fmt.Fprintf(stdout, "error=%s\n", auditErr)
 	}
 }
 

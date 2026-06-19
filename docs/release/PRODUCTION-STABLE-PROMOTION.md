@@ -11,6 +11,7 @@ Before running promotion audit, collect:
 - the published release tag;
 - a successful `Release Verify` run for the same tag, using default
   `require_evidence_bundle=true` and `require_signed_tag=true`;
+- confirmation that the tag signer is active in `RELEASE-SIGNERS.json`;
 - a successful `Release Rollback` audit-only run for the same tag;
 - confirmation that the release has completed the agreed soak window.
 

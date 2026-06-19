@@ -1009,7 +1009,9 @@ func TestReleasePublishWorkflowCreatesDraftReleaseOnlyAfterEvidenceGates(t *test
 		{name: "publish commit binding", doc: workflow, want: "GITHUB_SHA"},
 		{name: "signed tag gate", doc: workflow, want: "Verify signed release tag"},
 		{name: "annotated tag required", doc: workflow, want: "release publish tag must be an annotated tag"},
+		{name: "signer policy import", doc: workflow, want: "Import release signer keys"},
 		{name: "signed tag required", doc: workflow, want: "git tag -v \"${AO_FORGE_RELEASE_PUBLISH_TAG}\""},
+		{name: "signer policy check", doc: workflow, want: "release tag signer is not in RELEASE-SIGNERS.json"},
 		{name: "tag resolves to commit", doc: workflow, want: "release publish tag target mismatch"},
 		{name: "linux artifact", doc: workflow, want: "ao-forge_Linux_x86_64.tar.gz"},
 		{name: "darwin artifact", doc: workflow, want: "ao-forge_Darwin_arm64.tar.gz"},
@@ -1123,7 +1125,9 @@ func TestReleaseVerifyWorkflowChecksPublishedReleaseEvidence(t *testing.T) {
 		{name: "release must be public", doc: workflow, want: "release must be published, not draft"},
 		{name: "tag verification", doc: workflow, want: "Verify release tag identity"},
 		{name: "annotated requirement", doc: workflow, want: "release tag must be an annotated tag"},
+		{name: "signer policy import", doc: workflow, want: "Import release signer keys"},
 		{name: "signed verification", doc: workflow, want: "git tag -v \"${AO_FORGE_RELEASE_VERIFY_TAG}\""},
+		{name: "signer policy check", doc: workflow, want: "release tag signer is not in RELEASE-SIGNERS.json"},
 		{name: "legacy signed override", doc: workflow, want: "require_signed_tag=false allows legacy releases only"},
 		{name: "download release", doc: workflow, want: "gh release download"},
 		{name: "expected linux asset", doc: workflow, want: "ao-forge_Linux_x86_64.tar.gz"},
@@ -1239,6 +1243,79 @@ func TestReleaseRollbackWorkflowGuardsReleaseYankActions(t *testing.T) {
 
 	if strings.Contains(workflow, "\n            PY\n") {
 		t.Fatalf("release rollback workflow contains an indented heredoc terminator that bash will not close")
+	}
+}
+
+func TestReleaseSignerPolicyDefinesEligibilityAndRotation(t *testing.T) {
+	root := repoRoot(t)
+	readText := func(path ...string) string {
+		t.Helper()
+		bytes, err := os.ReadFile(filepath.Join(append([]string{root}, path...)...))
+		if err != nil {
+			t.Fatalf("read %s: %v", filepath.Join(path...), err)
+		}
+		return string(bytes)
+	}
+
+	policyText := readText("docs", "release", "RELEASE-SIGNERS.json")
+	runbook := readText("docs", "release", "RELEASE-SIGNERS.md")
+	publicKey := readText("docs", "release", "signers", "uesugi-2026.asc")
+	readme := readText("README.md")
+	threatModel := readText("docs", "security", "RELEASE-THREAT-MODEL.md")
+	promotion := readText("docs", "release", "PRODUCTION-STABLE-PROMOTION.md")
+
+	var policy struct {
+		SchemaVersion string `json:"schema_version"`
+		ActiveSigners []struct {
+			GitHubLogin string `json:"github_login"`
+			Fingerprint string `json:"fingerprint"`
+			PublicKeyPath string `json:"public_key_path"`
+			Status string `json:"status"`
+		} `json:"active_signers"`
+		RotationRules []string `json:"rotation_rules"`
+	}
+	if err := json.Unmarshal([]byte(policyText), &policy); err != nil {
+		t.Fatalf("release signer policy must be valid JSON: %v", err)
+	}
+	if policy.SchemaVersion != "ao.forge.release-signers.v0.1" {
+		t.Fatalf("unexpected signer policy schema: %q", policy.SchemaVersion)
+	}
+	if len(policy.ActiveSigners) != 1 {
+		t.Fatalf("expected exactly one initial active signer, got %d", len(policy.ActiveSigners))
+	}
+	signer := policy.ActiveSigners[0]
+	if signer.GitHubLogin != "uesugitorachiyo" || signer.Status != "active" {
+		t.Fatalf("unexpected signer identity: %+v", signer)
+	}
+	if signer.Fingerprint != "8D5D9D83E11871F366A02E3FF8C8B4ACE0A1DFD8" {
+		t.Fatalf("unexpected signer fingerprint: %q", signer.Fingerprint)
+	}
+	if signer.PublicKeyPath != "docs/release/signers/uesugi-2026.asc" {
+		t.Fatalf("unexpected signer public key path: %q", signer.PublicKeyPath)
+	}
+	if len(policy.RotationRules) < 3 {
+		t.Fatalf("expected concrete signer rotation rules")
+	}
+
+	for _, check := range []struct {
+		name string
+		doc string
+		want string
+	}{
+		{name: "public key", doc: publicKey, want: "BEGIN PGP PUBLIC KEY BLOCK"},
+		{name: "runbook title", doc: runbook, want: "# Release Signers"},
+		{name: "eligibility", doc: runbook, want: "## Eligibility"},
+		{name: "rotation", doc: runbook, want: "## Key Rotation"},
+		{name: "revocation", doc: runbook, want: "## Revocation"},
+		{name: "publish gate", doc: runbook, want: "`Release Publish` imports keys from `docs/release/signers/`"},
+		{name: "verify gate", doc: runbook, want: "`Release Verify` checks `RELEASE-SIGNERS.json`"},
+		{name: "readme policy", doc: readme, want: "`RELEASE-SIGNERS.json`"},
+		{name: "threat model policy", doc: threatModel, want: "`RELEASE-SIGNERS.json`"},
+		{name: "promotion policy", doc: promotion, want: "`RELEASE-SIGNERS.json`"},
+	} {
+		if !strings.Contains(check.doc, check.want) {
+			t.Fatalf("%s missing %q", check.name, check.want)
+		}
 	}
 }
 

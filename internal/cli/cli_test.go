@@ -1537,7 +1537,12 @@ func TestReleaseVerifyWorkflowChecksPublishedReleaseEvidence(t *testing.T) {
 		{name: "workflow name", doc: workflow, want: "name: Release Verify"},
 		{name: "manual trigger", doc: workflow, want: "workflow_dispatch:"},
 		{name: "published trigger", doc: workflow, want: "types: [published]"},
+		{name: "scheduled trigger", doc: workflow, want: "schedule:"},
+		{name: "weekly cron", doc: workflow, want: "cron: \"17 9 * * 1\""},
 		{name: "tag input", doc: workflow, want: "tag:"},
+		{name: "promoted default tag", doc: workflow, want: "default: \"v0.1.2\""},
+		{name: "scheduled promoted tag", doc: workflow, want: "SCHEDULED_VERIFY_TAG: v0.1.2"},
+		{name: "scheduled resolver", doc: workflow, want: "${GITHUB_EVENT_NAME}\" == \"schedule\""},
 		{name: "bundle input", doc: workflow, want: "require_evidence_bundle:"},
 		{name: "bundle default", doc: workflow, want: "default: \"true\""},
 		{name: "signed tag input", doc: workflow, want: "require_signed_tag:"},
@@ -1576,8 +1581,10 @@ func TestReleaseVerifyWorkflowChecksPublishedReleaseEvidence(t *testing.T) {
 		{name: "upload verify audit", doc: workflow, want: "release-verify-audit"},
 		{name: "summary", doc: workflow, want: "post_release_verification=passed"},
 		{name: "readme workflow", doc: readme, want: "`Release Verify`"},
+		{name: "readme scheduled drift", doc: readme, want: "weekly schedule for the promoted `v0.1.2` release"},
 		{name: "first release workflow", doc: firstRelease, want: "`Release Verify` workflow"},
 		{name: "threat model workflow", doc: threatModel, want: "`Release Verify`"},
+		{name: "threat model scheduled drift", doc: threatModel, want: "weekly schedule for promoted releases"},
 	} {
 		if !strings.Contains(check.doc, check.want) {
 			t.Fatalf("%s missing %q", check.name, check.want)

@@ -3,12 +3,14 @@ name: Release Verify
 on:
   release:
     types: [published]
+  schedule:
+    - cron: "17 9 * * 1"
   workflow_dispatch:
     inputs:
       tag:
         description: "Published release tag to verify"
         required: true
-        default: "v0.1.0"
+        default: "v0.1.2"
       require_evidence_bundle:
         description: "Require release-evidence-bundle.json and its attestation"
         required: true
@@ -35,6 +37,7 @@ jobs:
       REQUESTED_VERIFY_TAG: ${{ github.event.inputs.tag }}
       REQUIRE_EVIDENCE_BUNDLE_INPUT: ${{ github.event.inputs.require_evidence_bundle }}
       REQUIRE_SIGNED_TAG_INPUT: ${{ github.event.inputs.require_signed_tag }}
+      SCHEDULED_VERIFY_TAG: v0.1.2
 
     steps:
       - name: Checkout
@@ -62,6 +65,9 @@ jobs:
         run: |
           set -euo pipefail
           tag="${RELEASE_EVENT_TAG:-${REQUESTED_VERIFY_TAG:-}}"
+          if [[ -z "$tag" && "${GITHUB_EVENT_NAME}" == "schedule" ]]; then
+            tag="${SCHEDULED_VERIFY_TAG}"
+          fi
           if [[ -z "$tag" ]]; then
             echo "release verify tag is required" >&2
             exit 1
@@ -94,6 +100,7 @@ jobs:
           echo "AO_FORGE_REQUIRE_SIGNED_TAG=$require_signed_tag" >> "$GITHUB_ENV"
           echo "AO_FORGE_RELEASE_VERIFY_DIR=${RUNNER_TEMP}/ao-forge-release-verify" >> "$GITHUB_ENV"
           echo "tag=$tag" >> "$GITHUB_STEP_SUMMARY"
+          echo "event=${GITHUB_EVENT_NAME}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Read published release metadata
         env:

@@ -140,3 +140,33 @@ selected the next state.
   GoalRun unchanged.
 - Evidence that depends on live repository state should be refreshed after the
   worktree, branch, or checked commit changes.
+
+## Evidence Retention Policy
+
+Persisted `last_iteration.evidence` paths must point to durable evidence, not
+scratch files. `tmp/`, `/tmp/`, runner temp directories, user home directories,
+and machine-local absolute paths are allowed while constructing a candidate, but
+must not be preserved in the durable GoalRun or update audit.
+
+Use this repository-relative layout for retained loop evidence:
+
+```text
+docs/evidence/goals/<goal_id>/<YYYYMMDDTHHMMSSZ>-<phase>/
+```
+
+The retained directory should include the candidate GoalRun, the update audit,
+the evidence verification JSON, and any source artifacts referenced by
+`last_iteration.evidence`. File names should be stable, descriptive, and safe to
+compare in code review; avoid timestamps inside individual file names unless
+they are part of the iteration directory.
+
+Retention rules:
+
+- Keep evidence for any non-terminal GoalRun while the loop may continue.
+- After `complete` or `stopped`, keep loop evidence for at least 90 days.
+- Keep release, promotion, and public provenance evidence indefinitely unless a
+  later audited retention decision replaces that policy.
+- Do not delete an evidence artifact while any retained GoalRun or update audit
+  still references its path.
+- Cleanup must be reviewable: remove evidence in a separate change that names
+  the GoalRun, iteration directory, and reason for removal.

@@ -30,6 +30,8 @@ evidence verification schema is
 lint schema is `docs/contracts/goal-run-evidence-lint-v0.1.schema.json`. The
 retained evidence artifact schema is
 `docs/contracts/goal-run-retained-evidence-v0.1.schema.json`. The
+readiness audit schema is
+`docs/contracts/goal-run-readiness-audit-v0.1.schema.json`. The
 examples are `examples/goals/ao2-weekend-hardening.goal-run.json` and
 `examples/goals/ao2-weekend-hardening.goal-run-update-audit.json`.
 AO2 Pulse integration rules live in
@@ -69,11 +71,18 @@ Use the non-mutating transition gate before any loop writes a new phase:
 ```sh
 forge goal transitions --goal-run examples/goals/ao2-weekend-hardening.goal-run.json
 forge goal transitions --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --to implementation
+forge goal readiness --goal-run examples/goals/ao2-retained-evidence.goal-run.json --to verification --json
 ```
 
 A denied `--to` check returns non-zero. `stopped` and `complete` are terminal
 states, so an automated loop must not resume from them without a new operator
 approved `GoalRun`.
+
+`forge goal readiness` is the combined pre-loop gate for AO2 Pulse. It validates
+the GoalRun, inspects the next-action guard, checks the optional phase
+transition, lints evidence paths, verifies evidence hashes, and audits retained
+evidence artifacts. Its JSON output is validated by
+`docs/contracts/goal-run-readiness-audit-v0.1.schema.json`.
 
 ## Guarded Updates
 

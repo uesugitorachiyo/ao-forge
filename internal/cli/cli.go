@@ -337,6 +337,7 @@ Usage:
   forge goal validate --goal-run <goal-run.json> [--json]
   forge goal inspect --goal-run <goal-run.json> [--json]
   forge goal transitions --goal-run <goal-run.json> [--to <phase>] [--json]
+  forge goal readiness --goal-run <goal-run.json> [--to <phase>] [--now <RFC3339>] [--json]
   forge goal update --goal-run <goal-run.json> --out <goal-run.json> [--phase <phase>] [--next-task <text>] [--last-verified-at <RFC3339>] [--last-iteration-status <status>] [--last-iteration-summary <text>] [--evidence <path> ...] [--json]
   forge goal evidence verify --goal-run <goal-run.json> [--json]
   forge goal evidence lint --goal-run <goal-run.json> [--json]
@@ -349,7 +350,7 @@ Factory terms:
   factory packet  operator-ready JSON summary of plan, gates, evidence, and next actions
 
 Slice 2.8 status:
-  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, release preview audits, release preview enforcement, release preview audit inspection, artifact checksums, artifact checksum verification, contract schema validation, GoalRun validation and inspection, GoalRun transition checks, guarded GoalRun updates, GoalRun update evidence attachments, GoalRun evidence verification, GoalRun evidence path linting, and GoalRun retained evidence retention audits are enabled.
+  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, release preview audits, release preview enforcement, release preview audit inspection, artifact checksums, artifact checksum verification, contract schema validation, GoalRun validation and inspection, GoalRun transition checks, guarded GoalRun updates, GoalRun update evidence attachments, GoalRun evidence verification, GoalRun evidence path linting, GoalRun retained evidence retention audits, and GoalRun readiness audits are enabled.
 `)
 }
 
@@ -4482,6 +4483,13 @@ type goalTransitionFlags struct {
 	json        bool
 }
 
+type goalReadinessFlags struct {
+	goalRunPath string
+	toPhase     string
+	now         string
+	json        bool
+}
+
 type goalUpdateFlags struct {
 	goalRunPath          string
 	outPath              string
@@ -4625,6 +4633,26 @@ type goalEvidenceRetentionSummary struct {
 	Errors                                 []string `json:"errors"`
 }
 
+type goalReadinessSummary struct {
+	ReadinessSchemaVersion string                         `json:"readiness_schema_version"`
+	GoalRun                string                         `json:"goal_run"`
+	GoalID                 string                         `json:"goal_id,omitempty"`
+	CurrentPhase           string                         `json:"current_phase,omitempty"`
+	RequestedPhase         string                         `json:"requested_phase,omitempty"`
+	Status                 string                         `json:"status"`
+	Checks                 []goalReadinessCheck           `json:"checks"`
+	EvidenceLint           goalEvidenceLintSummary        `json:"evidence_lint"`
+	EvidenceVerify         goalEvidenceVerifySummary      `json:"evidence_verify"`
+	RetentionAudits        []goalEvidenceRetentionSummary `json:"retention_audits"`
+	Errors                 []string                       `json:"errors"`
+}
+
+type goalReadinessCheck struct {
+	CheckID string `json:"check_id"`
+	Status  string `json:"status"`
+	Summary string `json:"summary"`
+}
+
 func runGoal(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, "forge goal: missing subcommand validate, inspect, transitions, update, or evidence")
@@ -4637,12 +4665,14 @@ func runGoal(args []string, stdout, stderr io.Writer) int {
 		return runGoalInspect(args[1:], stdout, stderr)
 	case "transitions":
 		return runGoalTransitions(args[1:], stdout, stderr)
+	case "readiness":
+		return runGoalReadiness(args[1:], stdout, stderr)
 	case "update":
 		return runGoalUpdate(args[1:], stdout, stderr)
 	case "evidence":
 		return runGoalEvidence(args[1:], stdout, stderr)
 	case "--help", "-h":
-		fmt.Fprintln(stderr, "forge goal: use `forge goal validate --goal-run <goal-run.json> [--json]`, `forge goal inspect --goal-run <goal-run.json> [--json]`, `forge goal transitions --goal-run <goal-run.json> [--to <phase>] [--json]`, `forge goal update --goal-run <goal-run.json> --out <goal-run.json> [--phase <phase>] [--next-task <text>] [--last-verified-at <RFC3339>] [--last-iteration-status <status>] [--last-iteration-summary <text>] [--evidence <path> ...] [--json]`, `forge goal evidence verify --goal-run <goal-run.json> [--json]`, `forge goal evidence lint --goal-run <goal-run.json> [--json]`, or `forge goal evidence retention --artifact <retained-evidence.json> [--now <RFC3339>] [--json]`")
+		fmt.Fprintln(stderr, "forge goal: use `forge goal validate --goal-run <goal-run.json> [--json]`, `forge goal inspect --goal-run <goal-run.json> [--json]`, `forge goal transitions --goal-run <goal-run.json> [--to <phase>] [--json]`, `forge goal readiness --goal-run <goal-run.json> [--to <phase>] [--now <RFC3339>] [--json]`, `forge goal update --goal-run <goal-run.json> --out <goal-run.json> [--phase <phase>] [--next-task <text>] [--last-verified-at <RFC3339>] [--last-iteration-status <status>] [--last-iteration-summary <text>] [--evidence <path> ...] [--json]`, `forge goal evidence verify --goal-run <goal-run.json> [--json]`, `forge goal evidence lint --goal-run <goal-run.json> [--json]`, or `forge goal evidence retention --artifact <retained-evidence.json> [--now <RFC3339>] [--json]`")
 		return 0
 	default:
 		fmt.Fprintf(stderr, "forge goal: unknown subcommand %q\n", args[0])
@@ -4808,6 +4838,56 @@ func parseGoalTransitionFlags(args []string) (goalTransitionFlags, error) {
 	}
 	if flags.toPhase != "" && !isKnownGoalRunPhase(flags.toPhase) {
 		return goalTransitionFlags{}, fmt.Errorf("unknown --to phase %q", flags.toPhase)
+	}
+	return flags, nil
+}
+
+func parseGoalReadinessFlags(args []string) (goalReadinessFlags, error) {
+	var flags goalReadinessFlags
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--goal-run":
+			value, next, err := readFlagValue(args, i, "--goal-run")
+			if err != nil {
+				return goalReadinessFlags{}, err
+			}
+			flags.goalRunPath = value
+			i = next
+		case "--to":
+			value, next, err := readFlagValue(args, i, "--to")
+			if err != nil {
+				return goalReadinessFlags{}, err
+			}
+			flags.toPhase = value
+			i = next
+		case "--now":
+			value, next, err := readFlagValue(args, i, "--now")
+			if err != nil {
+				return goalReadinessFlags{}, err
+			}
+			flags.now = value
+			i = next
+		case "--json":
+			flags.json = true
+		case "--help", "-h":
+			return goalReadinessFlags{}, fmt.Errorf("help is available with `forge --help`")
+		default:
+			if strings.HasPrefix(args[i], "--") {
+				return goalReadinessFlags{}, fmt.Errorf("unknown flag %s", args[i])
+			}
+			return goalReadinessFlags{}, fmt.Errorf("unexpected argument %s", args[i])
+		}
+	}
+	if flags.goalRunPath == "" {
+		return goalReadinessFlags{}, fmt.Errorf("missing required --goal-run")
+	}
+	if flags.toPhase != "" && !isKnownGoalRunPhase(flags.toPhase) {
+		return goalReadinessFlags{}, fmt.Errorf("unknown --to phase %q", flags.toPhase)
+	}
+	if flags.now != "" {
+		if _, err := time.Parse(time.RFC3339, flags.now); err != nil {
+			return goalReadinessFlags{}, fmt.Errorf("--now must be RFC3339: %w", err)
+		}
 	}
 	return flags, nil
 }
@@ -5003,6 +5083,86 @@ func runGoalTransitions(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func runGoalReadiness(args []string, stdout, stderr io.Writer) int {
+	flags, err := parseGoalReadinessFlags(args)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge goal readiness: %v\n", err)
+		return 2
+	}
+
+	now := time.Now().UTC()
+	if flags.now != "" {
+		parsedNow, err := time.Parse(time.RFC3339, flags.now)
+		if err != nil {
+			fmt.Fprintf(stderr, "forge goal readiness: --now must be RFC3339: %v\n", err)
+			return 2
+		}
+		now = parsedNow.UTC()
+	}
+
+	summary := emptyGoalReadinessSummary(flags)
+	goal, err := validateAndReadGoalRun(flags.goalRunPath)
+	if err != nil {
+		markGoalReadinessFailed(&summary, "goal_validate", fmt.Sprintf("goal run validation failed: %v", err))
+		writeGoalReadinessSummary(stdout, summary, flags.json)
+		fmt.Fprintf(stderr, "forge goal readiness: goal run validation failed: %v\n", err)
+		return 1
+	}
+
+	summary.GoalID = goal.GoalID
+	summary.CurrentPhase = goal.CurrentPhase
+	addGoalReadinessCheck(&summary, "goal_validate", "passed", "GoalRun schema validation passed")
+
+	inspect := buildGoalInspectSummary(flags.goalRunPath, goal)
+	if !inspect.NextActionGuard.Enabled {
+		markGoalReadinessFailed(&summary, "goal_inspect", "next action guard is disabled")
+	} else {
+		addGoalReadinessCheck(&summary, "goal_inspect", "passed", "next action guard is enabled")
+	}
+
+	transition := buildGoalTransitionSummary(flags.goalRunPath, goal, flags.toPhase)
+	if flags.toPhase != "" && transition.Status != "allowed" {
+		markGoalReadinessFailed(&summary, "goal_transition", transition.Reason)
+	} else {
+		addGoalReadinessCheck(&summary, "goal_transition", "passed", transition.Reason)
+	}
+
+	summary.EvidenceLint = buildGoalEvidenceLintSummaryForGoal(flags.goalRunPath, goal)
+	if summary.EvidenceLint.Status != "passed" {
+		markGoalReadinessFailed(&summary, "evidence_lint", strings.Join(summary.EvidenceLint.Errors, "; "))
+	} else {
+		addGoalReadinessCheck(&summary, "evidence_lint", "passed", fmt.Sprintf("linted %d evidence path(s)", summary.EvidenceLint.EvidenceLinted))
+	}
+
+	summary.EvidenceVerify = buildGoalEvidenceVerifySummary(flags.goalRunPath, goal)
+	if summary.EvidenceVerify.Status != "passed" {
+		markGoalReadinessFailed(&summary, "evidence_verify", strings.Join(summary.EvidenceVerify.Errors, "; "))
+	} else {
+		addGoalReadinessCheck(&summary, "evidence_verify", "passed", fmt.Sprintf("verified %d evidence artifact(s)", summary.EvidenceVerify.EvidenceVerified))
+	}
+
+	retainedEvidence := retainedGoalRunEvidence(goal)
+	for _, evidence := range retainedEvidence {
+		retention := buildGoalEvidenceRetentionSummary(evidence.Path, now)
+		summary.RetentionAudits = append(summary.RetentionAudits, retention)
+		if retention.Status != "passed" {
+			markGoalReadinessFailed(&summary, "retained_evidence", strings.Join(retention.Errors, "; "))
+		}
+	}
+	if len(retainedEvidence) == 0 {
+		addGoalReadinessCheck(&summary, "retained_evidence", "passed", "no retained evidence artifacts to audit")
+	} else if allGoalRetentionAuditsPassed(summary.RetentionAudits) {
+		addGoalReadinessCheck(&summary, "retained_evidence", "passed", fmt.Sprintf("audited %d retained evidence artifact(s)", len(summary.RetentionAudits)))
+	}
+
+	writeGoalReadinessSummary(stdout, summary, flags.json)
+	if summary.Status != "passed" {
+		fmt.Fprintf(stderr, "forge goal readiness: readiness audit failed for %s\n", summary.GoalRun)
+		return 1
+	}
+	return 0
+}
+
 func runGoalUpdate(args []string, stdout, stderr io.Writer) int {
 	flags, err := parseGoalUpdateFlags(args)
 	if err != nil {
@@ -5054,13 +5214,7 @@ func runGoalEvidenceVerify(args []string, stdout, stderr io.Writer) int {
 	}
 
 	goal, err := validateAndReadGoalRun(flags.goalRunPath)
-	summary := goalEvidenceVerifySummary{
-		VerifySchemaVersion: "ao.forge.goal-run-evidence-verify.v0.1",
-		GoalRun:             displayPath(flags.goalRunPath),
-		Status:              "passed",
-		Evidence:            []goalEvidenceVerifyResult{},
-		Errors:              []string{},
-	}
+	summary := emptyGoalEvidenceVerifySummary(flags.goalRunPath)
 	if err != nil {
 		summary.Status = "failed"
 		summary.Errors = []string{err.Error()}
@@ -5068,20 +5222,7 @@ func runGoalEvidenceVerify(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "forge goal evidence verify: goal run validation failed: %v\n", err)
 		return 1
 	}
-	summary.GoalID = goal.GoalID
-
-	if goal.LastIteration != nil {
-		for _, evidence := range goal.LastIteration.Evidence {
-			result := verifyGoalRunEvidence(evidence)
-			summary.Evidence = append(summary.Evidence, result)
-			if result.Status == "passed" {
-				summary.EvidenceVerified++
-			} else {
-				summary.Status = "failed"
-				summary.Errors = append(summary.Errors, fmt.Sprintf("%s: %s", result.Path, result.Error))
-			}
-		}
-	}
+	summary = buildGoalEvidenceVerifySummary(flags.goalRunPath, goal)
 
 	writeGoalEvidenceVerifySummary(stdout, summary, flags.json)
 	if summary.Status != "passed" {
@@ -5106,20 +5247,17 @@ func runGoalEvidenceLint(args []string, stdout, stderr io.Writer) int {
 	}
 	var evidence []goalRunEvidence
 	if flags.goalRunPath != "" {
-		summary.Document = displayPath(flags.goalRunPath)
-		summary.DocumentType = "goal_run"
 		goal, err := validateAndReadGoalRun(flags.goalRunPath)
 		if err != nil {
+			summary.Document = displayPath(flags.goalRunPath)
+			summary.DocumentType = "goal_run"
 			summary.Status = "failed"
 			summary.Errors = []string{err.Error()}
 			writeGoalEvidenceLintSummary(stdout, summary, flags.json)
 			fmt.Fprintf(stderr, "forge goal evidence lint: goal run validation failed: %v\n", err)
 			return 1
 		}
-		summary.GoalID = goal.GoalID
-		if goal.LastIteration != nil {
-			evidence = goal.LastIteration.Evidence
-		}
+		summary = buildGoalEvidenceLintSummaryForGoal(flags.goalRunPath, goal)
 	} else {
 		summary.Document = displayPath(flags.updateAuditPath)
 		summary.DocumentType = "goal_run_update_audit"
@@ -5133,16 +5271,16 @@ func runGoalEvidenceLint(args []string, stdout, stderr io.Writer) int {
 		}
 		summary.GoalID = audit.GoalID
 		evidence = audit.Evidence
-	}
 
-	for _, item := range evidence {
-		result := lintGoalRunEvidencePath(item)
-		summary.Evidence = append(summary.Evidence, result)
-		if result.Status == "passed" {
-			summary.EvidenceLinted++
-		} else {
-			summary.Status = "failed"
-			summary.Errors = append(summary.Errors, fmt.Sprintf("%s: %s", result.Path, result.Error))
+		for _, item := range evidence {
+			result := lintGoalRunEvidencePath(item)
+			summary.Evidence = append(summary.Evidence, result)
+			if result.Status == "passed" {
+				summary.EvidenceLinted++
+			} else {
+				summary.Status = "failed"
+				summary.Errors = append(summary.Errors, fmt.Sprintf("%s: %s", result.Path, result.Error))
+			}
 		}
 	}
 
@@ -5171,66 +5309,16 @@ func runGoalEvidenceRetention(args []string, stdout, stderr io.Writer) int {
 		now = parsedNow.UTC()
 	}
 
-	summary := goalEvidenceRetentionSummary{
-		RetentionAuditSchemaVersion: "ao.forge.goal-run-retained-evidence-audit.v0.1",
-		Artifact:                    displayPath(flags.artifactPath),
-		Now:                         now.Format(time.RFC3339),
-		Status:                      "passed",
-		RetentionStatus:             "unknown",
-		CleanupReviewStatus:         "unknown",
-		Errors:                      []string{},
-	}
-
-	artifact, err := validateAndReadGoalRetainedEvidence(flags.artifactPath)
-	if err != nil {
-		summary.Status = "failed"
-		summary.Errors = []string{err.Error()}
-		writeGoalEvidenceRetentionSummary(stdout, summary, flags.json)
-		fmt.Fprintf(stderr, "forge goal evidence retention: retained evidence validation failed: %v\n", err)
-		return 1
-	}
-
-	applyGoalEvidenceRetentionArtifact(&summary, artifact)
-	retainedAt, err := time.Parse(time.RFC3339, artifact.RetentionMetadata.RetainedAt)
-	if err != nil {
-		summary.Status = "failed"
-		summary.RetentionStatus = "unknown"
-		summary.CleanupReviewStatus = "unknown"
-		summary.Errors = []string{fmt.Sprintf("retained_at must be RFC3339: %v", err)}
-		writeGoalEvidenceRetentionSummary(stdout, summary, flags.json)
-		fmt.Fprintf(stderr, "forge goal evidence retention: retained evidence audit failed for %s\n", summary.Artifact)
-		return 1
-	}
-
-	retainedAt = retainedAt.UTC()
-	summary.RetainedAt = retainedAt.Format(time.RFC3339)
-	if retainedAt.After(now) {
-		summary.Status = "failed"
-		summary.RetentionStatus = "unknown"
-		summary.CleanupReviewStatus = "unknown"
-		summary.Errors = []string{fmt.Sprintf("retained_at %s is after now %s", summary.RetainedAt, summary.Now)}
-		writeGoalEvidenceRetentionSummary(stdout, summary, flags.json)
-		fmt.Fprintf(stderr, "forge goal evidence retention: retained evidence audit failed for %s\n", summary.Artifact)
-		return 1
-	}
-
-	summary.AgeDays = int(now.Sub(retainedAt).Hours() / 24)
-	if isTerminalGoalRunPhase(artifact.Phase) {
-		mandatoryUntil := retainedAt.AddDate(0, 0, artifact.RetentionPolicy.MinimumRetentionDaysAfterTerminalPhase)
-		summary.MandatoryRetentionUntil = mandatoryUntil.UTC().Format(time.RFC3339)
-		if now.Before(mandatoryUntil) {
-			summary.RetentionStatus = "mandatory_retention"
-			summary.CleanupReviewStatus = "not_eligible_minimum_window"
-		} else {
-			summary.RetentionStatus = "cleanup_review_eligible"
-			summary.CleanupReviewStatus = "eligible_after_review"
-		}
-	} else {
-		summary.RetentionStatus = "active_retention"
-		summary.CleanupReviewStatus = "not_eligible_active_goal"
-	}
-
+	summary := buildGoalEvidenceRetentionSummary(flags.artifactPath, now)
 	writeGoalEvidenceRetentionSummary(stdout, summary, flags.json)
+	if summary.Status != "passed" {
+		if summary.GoalID == "" && len(summary.Errors) > 0 {
+			fmt.Fprintf(stderr, "forge goal evidence retention: retained evidence validation failed: %s\n", summary.Errors[0])
+			return 1
+		}
+		fmt.Fprintf(stderr, "forge goal evidence retention: retained evidence audit failed for %s\n", summary.Artifact)
+		return 1
+	}
 	return 0
 }
 
@@ -5283,6 +5371,173 @@ func applyGoalEvidenceRetentionArtifact(summary *goalEvidenceRetentionSummary, a
 	summary.RetentionClass = artifact.RetentionMetadata.RetentionClass
 	summary.RetainedAt = artifact.RetentionMetadata.RetainedAt
 	summary.MinimumRetentionDaysAfterTerminalPhase = artifact.RetentionPolicy.MinimumRetentionDaysAfterTerminalPhase
+}
+
+func emptyGoalReadinessSummary(flags goalReadinessFlags) goalReadinessSummary {
+	return goalReadinessSummary{
+		ReadinessSchemaVersion: "ao.forge.goal-run-readiness-audit.v0.1",
+		GoalRun:                displayPath(flags.goalRunPath),
+		RequestedPhase:         flags.toPhase,
+		Status:                 "passed",
+		Checks:                 []goalReadinessCheck{},
+		EvidenceLint:           emptyGoalEvidenceLintSummary(flags.goalRunPath),
+		EvidenceVerify:         emptyGoalEvidenceVerifySummary(flags.goalRunPath),
+		RetentionAudits:        []goalEvidenceRetentionSummary{},
+		Errors:                 []string{},
+	}
+}
+
+func addGoalReadinessCheck(summary *goalReadinessSummary, checkID, status, checkSummary string) {
+	summary.Checks = append(summary.Checks, goalReadinessCheck{
+		CheckID: checkID,
+		Status:  status,
+		Summary: checkSummary,
+	})
+}
+
+func markGoalReadinessFailed(summary *goalReadinessSummary, checkID, checkSummary string) {
+	summary.Status = "failed"
+	if strings.TrimSpace(checkSummary) == "" {
+		checkSummary = "check failed"
+	}
+	addGoalReadinessCheck(summary, checkID, "failed", checkSummary)
+	summary.Errors = append(summary.Errors, fmt.Sprintf("%s: %s", checkID, checkSummary))
+}
+
+func allGoalRetentionAuditsPassed(audits []goalEvidenceRetentionSummary) bool {
+	for _, audit := range audits {
+		if audit.Status != "passed" {
+			return false
+		}
+	}
+	return true
+}
+
+func retainedGoalRunEvidence(goal goalRun) []goalRunEvidence {
+	if goal.LastIteration == nil {
+		return nil
+	}
+	var retained []goalRunEvidence
+	for _, evidence := range goal.LastIteration.Evidence {
+		if strings.HasPrefix(strings.ReplaceAll(evidence.Path, `\`, "/"), "docs/evidence/goals/") {
+			retained = append(retained, evidence)
+		}
+	}
+	return retained
+}
+
+func emptyGoalEvidenceVerifySummary(path string) goalEvidenceVerifySummary {
+	return goalEvidenceVerifySummary{
+		VerifySchemaVersion: "ao.forge.goal-run-evidence-verify.v0.1",
+		GoalRun:             displayPath(path),
+		Status:              "passed",
+		Evidence:            []goalEvidenceVerifyResult{},
+		Errors:              []string{},
+	}
+}
+
+func buildGoalEvidenceVerifySummary(path string, goal goalRun) goalEvidenceVerifySummary {
+	summary := emptyGoalEvidenceVerifySummary(path)
+	summary.GoalID = goal.GoalID
+	if goal.LastIteration != nil {
+		for _, evidence := range goal.LastIteration.Evidence {
+			result := verifyGoalRunEvidence(evidence)
+			summary.Evidence = append(summary.Evidence, result)
+			if result.Status == "passed" {
+				summary.EvidenceVerified++
+			} else {
+				summary.Status = "failed"
+				summary.Errors = append(summary.Errors, fmt.Sprintf("%s: %s", result.Path, result.Error))
+			}
+		}
+	}
+	return summary
+}
+
+func emptyGoalEvidenceLintSummary(path string) goalEvidenceLintSummary {
+	return goalEvidenceLintSummary{
+		LintSchemaVersion: "ao.forge.goal-run-evidence-lint.v0.1",
+		Document:          displayPath(path),
+		DocumentType:      "goal_run",
+		Status:            "passed",
+		Evidence:          []goalEvidenceLintResult{},
+		Errors:            []string{},
+	}
+}
+
+func buildGoalEvidenceLintSummaryForGoal(path string, goal goalRun) goalEvidenceLintSummary {
+	summary := emptyGoalEvidenceLintSummary(path)
+	summary.GoalID = goal.GoalID
+	if goal.LastIteration == nil {
+		return summary
+	}
+	for _, item := range goal.LastIteration.Evidence {
+		result := lintGoalRunEvidencePath(item)
+		summary.Evidence = append(summary.Evidence, result)
+		if result.Status == "passed" {
+			summary.EvidenceLinted++
+		} else {
+			summary.Status = "failed"
+			summary.Errors = append(summary.Errors, fmt.Sprintf("%s: %s", result.Path, result.Error))
+		}
+	}
+	return summary
+}
+
+func buildGoalEvidenceRetentionSummary(path string, now time.Time) goalEvidenceRetentionSummary {
+	summary := goalEvidenceRetentionSummary{
+		RetentionAuditSchemaVersion: "ao.forge.goal-run-retained-evidence-audit.v0.1",
+		Artifact:                    displayPath(path),
+		Now:                         now.UTC().Format(time.RFC3339),
+		Status:                      "passed",
+		RetentionStatus:             "unknown",
+		CleanupReviewStatus:         "unknown",
+		Errors:                      []string{},
+	}
+
+	artifact, err := validateAndReadGoalRetainedEvidence(resolveGoalRunEvidencePath(path))
+	if err != nil {
+		summary.Status = "failed"
+		summary.Errors = []string{err.Error()}
+		return summary
+	}
+
+	applyGoalEvidenceRetentionArtifact(&summary, artifact)
+	retainedAt, err := time.Parse(time.RFC3339, artifact.RetentionMetadata.RetainedAt)
+	if err != nil {
+		summary.Status = "failed"
+		summary.RetentionStatus = "unknown"
+		summary.CleanupReviewStatus = "unknown"
+		summary.Errors = []string{fmt.Sprintf("retained_at must be RFC3339: %v", err)}
+		return summary
+	}
+
+	retainedAt = retainedAt.UTC()
+	summary.RetainedAt = retainedAt.Format(time.RFC3339)
+	if retainedAt.After(now) {
+		summary.Status = "failed"
+		summary.RetentionStatus = "unknown"
+		summary.CleanupReviewStatus = "unknown"
+		summary.Errors = []string{fmt.Sprintf("retained_at %s is after now %s", summary.RetainedAt, summary.Now)}
+		return summary
+	}
+
+	summary.AgeDays = int(now.Sub(retainedAt).Hours() / 24)
+	if isTerminalGoalRunPhase(artifact.Phase) {
+		mandatoryUntil := retainedAt.AddDate(0, 0, artifact.RetentionPolicy.MinimumRetentionDaysAfterTerminalPhase)
+		summary.MandatoryRetentionUntil = mandatoryUntil.UTC().Format(time.RFC3339)
+		if now.Before(mandatoryUntil) {
+			summary.RetentionStatus = "mandatory_retention"
+			summary.CleanupReviewStatus = "not_eligible_minimum_window"
+		} else {
+			summary.RetentionStatus = "cleanup_review_eligible"
+			summary.CleanupReviewStatus = "eligible_after_review"
+		}
+	} else {
+		summary.RetentionStatus = "active_retention"
+		summary.CleanupReviewStatus = "not_eligible_active_goal"
+	}
+	return summary
 }
 
 func verifyGoalRunEvidence(evidence goalRunEvidence) goalEvidenceVerifyResult {
@@ -5817,6 +6072,38 @@ func writeGoalEvidenceRetentionSummary(stdout io.Writer, summary goalEvidenceRet
 	}
 	for _, auditErr := range summary.Errors {
 		fmt.Fprintf(stdout, "error=%s\n", auditErr)
+	}
+}
+
+func writeGoalReadinessSummary(stdout io.Writer, summary goalReadinessSummary, asJSON bool) {
+	if asJSON {
+		data, err := marshalIndented(summary)
+		if err != nil {
+			fmt.Fprintf(stdout, "{\"readiness_schema_version\":\"ao.forge.goal-run-readiness-audit.v0.1\",\"status\":\"failed\",\"errors\":[%q]}\n", err.Error())
+			return
+		}
+		_, _ = stdout.Write(data)
+		return
+	}
+	fmt.Fprintf(stdout, "goal_readiness=%s\n", summary.Status)
+	fmt.Fprintf(stdout, "goal_run=%s\n", summary.GoalRun)
+	if summary.GoalID != "" {
+		fmt.Fprintf(stdout, "goal_id=%s\n", summary.GoalID)
+	}
+	if summary.CurrentPhase != "" {
+		fmt.Fprintf(stdout, "current_phase=%s\n", summary.CurrentPhase)
+	}
+	if summary.RequestedPhase != "" {
+		fmt.Fprintf(stdout, "requested_phase=%s\n", summary.RequestedPhase)
+	}
+	for _, check := range summary.Checks {
+		fmt.Fprintf(stdout, "check=%s status=%s summary=%s\n", check.CheckID, check.Status, check.Summary)
+	}
+	fmt.Fprintf(stdout, "evidence_linted=%d\n", summary.EvidenceLint.EvidenceLinted)
+	fmt.Fprintf(stdout, "evidence_verified=%d\n", summary.EvidenceVerify.EvidenceVerified)
+	fmt.Fprintf(stdout, "retention_audits=%d\n", len(summary.RetentionAudits))
+	for _, readinessErr := range summary.Errors {
+		fmt.Fprintf(stdout, "error=%s\n", readinessErr)
 	}
 }
 

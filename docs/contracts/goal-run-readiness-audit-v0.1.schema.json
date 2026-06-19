@@ -10,6 +10,7 @@
     "checks",
     "evidence_lint",
     "evidence_verify",
+    "provenance",
     "retention_audits",
     "errors"
   ],
@@ -88,6 +89,46 @@
         "errors"
       ],
       "additionalProperties": true
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["goal_run", "evidence"],
+      "properties": {
+        "goal_run": {
+          "type": "object",
+          "required": ["path"],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "additionalProperties": false
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
     },
     "retention_audits": {
       "type": "array",

@@ -70,6 +70,18 @@
     ],
     "errors": []
   },
+  "provenance": {
+    "goal_run": {
+      "path": "examples/goals/ao2-retained-evidence.goal-run.json",
+      "sha256": "558e9503b85a32ca36e5f46dbdc2169f1ba20f8526418eb54fbb0349b15334c2"
+    },
+    "evidence": [
+      {
+        "path": "docs/evidence/goals/ao2-weekend-hardening/20260619T143000Z-implementation/ao2-pulse-handoff-retention-proof.json",
+        "sha256": "dc28391a22a1ead221ee82f7d3c80d1f3766badf977722dddb147b4484e2f528"
+      }
+    ]
+  },
   "retention_audits": [
     {
       "retention_audit_schema_version": "ao.forge.goal-run-retained-evidence-audit.v0.1",

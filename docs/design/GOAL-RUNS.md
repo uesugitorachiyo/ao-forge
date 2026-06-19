@@ -206,6 +206,9 @@ Retained readiness audit JSON, such as
 `docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/goal-run-readiness-audit.json`,
 is validated separately against
 `docs/contracts/goal-run-readiness-audit-v0.1.schema.json`.
+Retained readiness audits must include provenance hashes for the GoalRun and
+evidence bytes they summarize; `scripts/verify-goal-fixtures.sh` recomputes
+those hashes from the checked-in files before accepting the audit.
 Tampered readiness audits are rejected by
 `examples/goals/invalid/tampered-readiness-audit.goal-run-readiness-audit.invalid.json`.
 Retained artifacts must include machine-readable retention metadata: when the

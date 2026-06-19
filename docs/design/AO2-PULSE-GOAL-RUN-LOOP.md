@@ -148,7 +148,9 @@ hash, including this handoff pair. The same smoke test also verifies that
 for positive fixtures and fails closed while preserving failed readiness JSON for
 negative fixtures. It validates retained readiness audit JSON under
 `docs/evidence/goals/` against
-`docs/contracts/goal-run-readiness-audit-v0.1.schema.json`. The same smoke test
+`docs/contracts/goal-run-readiness-audit-v0.1.schema.json` and recomputes
+readiness provenance hashes for the referenced GoalRun and evidence files. The
+same smoke test
 inspects the failed readiness audit for
 `examples/goals/invalid/stale-evidence.goal-run.invalid.json`, confirms the
 failed `evidence_verify` result and errors were preserved, and proves

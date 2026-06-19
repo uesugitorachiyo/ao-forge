@@ -29,6 +29,13 @@
     "evidence": [],
     "errors": []
   },
+  "provenance": {
+    "goal_run": {
+      "path": "examples/goals/ao2-retained-evidence.goal-run.json",
+      "sha256": "558e9503b85a32ca36e5f46dbdc2169f1ba20f8526418eb54fbb0349b15334c2"
+    },
+    "evidence": []
+  },
   "retention_audits": [],
   "errors": [],
   "tampered_after_validation": true

@@ -28,13 +28,17 @@ Require these status checks before merge:
 - `Go macos-latest`
 - `Go windows-latest`
 - `Workflow lint`
+- `GoalRun fixture smoke`
 - `Release preview dry-run audit`
 
-The Go checks and Workflow lint check come from `.github/workflows/ci.yml`.
-Workflow lint runs `actionlint` against `.github/workflows/*.yml` so GitHub
-Actions context and expression errors are caught before merge. Optional external
-shell and Python linters are disabled for this gate so local and hosted results
-stay deterministic. The release preview check
+The Go checks, Workflow lint check, and GoalRun fixture smoke check come from
+`.github/workflows/ci.yml`. Workflow lint runs `actionlint` against
+`.github/workflows/*.yml` so GitHub Actions context and expression errors are
+caught before merge. GoalRun fixture smoke validates checked-in GoalRun
+fixtures, update-audit fixtures, evidence verifier JSON, and stale-evidence
+failure behavior before merge. Optional external shell and Python linters are
+disabled for this gate so local and hosted results stay deterministic. The
+release preview check
 comes from `.github/workflows/release-preview.yml` and verifies the non-mutating
 release rehearsal, human inspect output, JSON inspect output, and uploaded
 release evidence artifacts.

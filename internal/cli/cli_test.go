@@ -1111,6 +1111,7 @@ func TestReleaseVerifyWorkflowChecksPublishedReleaseEvidence(t *testing.T) {
 		{name: "stable concurrency group", doc: workflow, want: "group: release-verify-${{ github.workflow }}-${{ github.ref }}"},
 		{name: "setup go", doc: workflow, want: "actions/setup-go@v6"},
 		{name: "resolve release tag", doc: workflow, want: "Resolve release tag"},
+		{name: "runtime temp initialization", doc: workflow, want: "AO_FORGE_RELEASE_VERIFY_DIR=${RUNNER_TEMP}/ao-forge-release-verify"},
 		{name: "release view", doc: workflow, want: "gh release view"},
 		{name: "release must be public", doc: workflow, want: "release must be published, not draft"},
 		{name: "download release", doc: workflow, want: "gh release download"},
@@ -1147,6 +1148,7 @@ func TestReleaseVerifyWorkflowChecksPublishedReleaseEvidence(t *testing.T) {
 		"actions/upload-artifact@v4",
 		"actions/upload-artifact@v5",
 		"github.event.release.tag_name || github.event.inputs.tag",
+		"AO_FORGE_RELEASE_VERIFY_DIR: ${{ runner.temp }}/ao-forge-release-verify",
 	} {
 		if strings.Contains(workflow, forbidden) {
 			t.Fatalf("release verify workflow must not contain %q\n%s", forbidden, workflow)

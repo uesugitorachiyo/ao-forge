@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/uesugitorachiyo/ao-forge/docs/contracts/goal-run-retained-evidence-v0.1.schema.json",
+  "title": "AO Forge GoalRun Retained Evidence v0.1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "goal_id",
+    "iteration",
+    "phase",
+    "summary",
+    "retention_policy"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "ao.forge.goal-run-retained-evidence.v0.1"
+    },
+    "goal_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"
+    },
+    "iteration": {
+      "type": "string",
+      "pattern": "^[0-9]{8}T[0-9]{6}Z-(planning|implementation|verification|blocked|backoff|stopped|complete)$"
+    },
+    "phase": {
+      "type": "string",
+      "enum": [
+        "planning",
+        "implementation",
+        "verification",
+        "blocked",
+        "backoff",
+        "stopped",
+        "complete"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "retention_policy": {
+      "type": "object",
+      "required": [
+        "layout",
+        "temporary_paths_allowed",
+        "minimum_retention_days_after_terminal_phase"
+      ],
+      "properties": {
+        "layout": {
+          "const": "docs/evidence/goals/<goal_id>/<YYYYMMDDTHHMMSSZ>-<phase>/"
+        },
+        "temporary_paths_allowed": {
+          "const": false
+        },
+        "minimum_retention_days_after_terminal_phase": {
+          "type": "integer",
+          "minimum": 90
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -28,6 +28,8 @@ audit schema is `docs/contracts/goal-run-update-audit-v0.1.schema.json`. The
 evidence verification schema is
 `docs/contracts/goal-run-evidence-verify-v0.1.schema.json`. The evidence path
 lint schema is `docs/contracts/goal-run-evidence-lint-v0.1.schema.json`. The
+retained evidence artifact schema is
+`docs/contracts/goal-run-retained-evidence-v0.1.schema.json`. The
 examples are `examples/goals/ao2-weekend-hardening.goal-run.json` and
 `examples/goals/ao2-weekend-hardening.goal-run-update-audit.json`.
 AO2 Pulse integration rules live in
@@ -182,7 +184,9 @@ they are part of the iteration directory.
 `examples/goals/ao2-retained-evidence.goal-run.json` is the checked-in fixture
 for this policy. Its retained artifact lives under `docs/evidence/goals/`, and
 `scripts/verify-goal-fixtures.sh` fails if no positive GoalRun fixture uses that
-durable layout.
+durable layout. The same fixture smoke validates every retained artifact JSON
+under `docs/evidence/goals/` against
+`docs/contracts/goal-run-retained-evidence-v0.1.schema.json`.
 
 The same fixture smoke runs `forge goal evidence lint` against every checked-in
 GoalRun and GoalRun update-audit evidence path. The checked-in negative fixtures

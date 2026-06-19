@@ -45,6 +45,11 @@ while IFS= read -r invalid_path_update_audit; do
   invalid_path_update_audits+=("$invalid_path_update_audit")
 done < <(find examples -type f -name '*.goal-run-update-audit.path-invalid.json' | sort)
 
+retained_evidence_artifacts=()
+while IFS= read -r retained_evidence_artifact; do
+  retained_evidence_artifacts+=("$retained_evidence_artifact")
+done < <(find docs/evidence/goals -type f -name '*.json' | sort)
+
 if [[ "${#goal_runs[@]}" -eq 0 ]]; then
   echo "no GoalRun fixtures found under examples/" >&2
   exit 1
@@ -90,6 +95,17 @@ if [[ "$retained_evidence_count" -eq 0 ]]; then
   echo "no retained GoalRun evidence fixture found under docs/evidence/goals/" >&2
   exit 1
 fi
+
+if [[ "${#retained_evidence_artifacts[@]}" -eq 0 ]]; then
+  echo "no retained GoalRun evidence artifacts found under docs/evidence/goals/" >&2
+  exit 1
+fi
+
+for retained_evidence_artifact in "${retained_evidence_artifacts[@]}"; do
+  "$forge_bin" contract validate \
+    --schema docs/contracts/goal-run-retained-evidence-v0.1.schema.json \
+    --document "$retained_evidence_artifact"
+done
 
 for update_audit in "${update_audits[@]}"; do
   "$forge_bin" goal evidence lint --update-audit "$update_audit"
@@ -159,3 +175,4 @@ echo "goal_run_invalid_fixtures_rejected=${#invalid_goal_runs[@]}"
 echo "goal_run_invalid_path_fixtures_rejected=${#invalid_path_goal_runs[@]}"
 echo "goal_run_update_audit_invalid_path_fixtures_rejected=${#invalid_path_update_audits[@]}"
 echo "goal_run_retained_evidence_fixtures=${retained_evidence_count}"
+echo "goal_run_retained_evidence_artifacts_validated=${#retained_evidence_artifacts[@]}"

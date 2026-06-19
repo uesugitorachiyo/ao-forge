@@ -9,7 +9,8 @@
     "iteration",
     "phase",
     "summary",
-    "retention_policy"
+    "retention_policy",
+    "retention_metadata"
   ],
   "properties": {
     "schema_version": {
@@ -56,6 +57,57 @@
         "minimum_retention_days_after_terminal_phase": {
           "type": "integer",
           "minimum": 90
+        }
+      },
+      "additionalProperties": false
+    },
+    "retention_metadata": {
+      "type": "object",
+      "required": [
+        "retained_at",
+        "retention_class",
+        "retain_while_goal_active",
+        "deletion_requires_review",
+        "cleanup_change_must_name"
+      ],
+      "properties": {
+        "retained_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "retention_class": {
+          "type": "string",
+          "enum": ["loop_evidence", "release_provenance", "promotion_provenance"]
+        },
+        "retain_while_goal_active": {
+          "const": true
+        },
+        "deletion_requires_review": {
+          "const": true
+        },
+        "cleanup_change_must_name": {
+          "type": "array",
+          "minItems": 3,
+          "uniqueItems": true,
+          "contains": {
+            "const": "goal_id"
+          },
+          "items": {
+            "type": "string",
+            "enum": ["goal_id", "iteration", "reason"]
+          },
+          "allOf": [
+            {
+              "contains": {
+                "const": "iteration"
+              }
+            },
+            {
+              "contains": {
+                "const": "reason"
+              }
+            }
+          ]
         }
       },
       "additionalProperties": false

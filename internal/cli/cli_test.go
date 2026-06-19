@@ -459,6 +459,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	}
 
 	readme := readText("README.md")
+	ao2PulseGoalRunLoopDocs := readText("docs", "design", "AO2-PULSE-GOAL-RUN-LOOP.md")
 	goalRunSchema := readText("docs", "contracts", "goal-run-v0.1.schema.json")
 	goalRunUpdateAuditSchema := readText("docs", "contracts", "goal-run-update-audit-v0.1.schema.json")
 	goalRunDocs := readText("docs", "design", "GOAL-RUNS.md")
@@ -482,6 +483,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		want string
 	}{
 		{name: "README goal run docs link", doc: readme, want: "[GoalRun Contract](docs/design/GOAL-RUNS.md)"},
+		{name: "README AO2 Pulse goal run loop link", doc: readme, want: "[AO2 Pulse GoalRun Loop](docs/design/AO2-PULSE-GOAL-RUN-LOOP.md)"},
 		{name: "README goal run schema link", doc: readme, want: "[GoalRun v0.1 Schema](docs/contracts/goal-run-v0.1.schema.json)"},
 		{name: "README goal run update audit schema link", doc: readme, want: "[GoalRun Update Audit v0.1 Schema](docs/contracts/goal-run-update-audit-v0.1.schema.json)"},
 		{name: "README goal run example link", doc: readme, want: "[Example GoalRun](examples/goals/ao2-weekend-hardening.goal-run.json)"},
@@ -535,6 +537,16 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run docs update no in-place", doc: goalRunDocs, want: "refuses to write over the input file"},
 		{name: "goal run docs update audit schema", doc: goalRunDocs, want: "docs/contracts/goal-run-update-audit-v0.1.schema.json"},
 		{name: "goal run docs update audit validate command", doc: goalRunDocs, want: "forge contract validate"},
+		{name: "goal run docs AO2 Pulse link", doc: goalRunDocs, want: "docs/design/AO2-PULSE-GOAL-RUN-LOOP.md"},
+		{name: "AO2 Pulse docs title", doc: ao2PulseGoalRunLoopDocs, want: "# AO2 Pulse GoalRun Loop"},
+		{name: "AO2 Pulse docs scheduler boundary", doc: ao2PulseGoalRunLoopDocs, want: "codex-cron may invoke AO2 Pulse on a schedule"},
+		{name: "AO2 Pulse docs validate command", doc: ao2PulseGoalRunLoopDocs, want: "forge goal validate --goal-run examples/goals/ao2-weekend-hardening.goal-run.json"},
+		{name: "AO2 Pulse docs inspect command", doc: ao2PulseGoalRunLoopDocs, want: "forge goal inspect --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --json"},
+		{name: "AO2 Pulse docs transitions command", doc: ao2PulseGoalRunLoopDocs, want: "forge goal transitions"},
+		{name: "AO2 Pulse docs update command", doc: ao2PulseGoalRunLoopDocs, want: "forge goal update"},
+		{name: "AO2 Pulse docs audit validate command", doc: ao2PulseGoalRunLoopDocs, want: "docs/contracts/goal-run-update-audit-v0.1.schema.json"},
+		{name: "AO2 Pulse docs candidate validate", doc: ao2PulseGoalRunLoopDocs, want: "forge goal validate --goal-run tmp/ao2-weekend-hardening.goal-run.json"},
+		{name: "AO2 Pulse docs terminal phases", doc: ao2PulseGoalRunLoopDocs, want: "complete` and `stopped`"},
 		{name: "goal run example id", doc: goalRunExample, want: `"goal_id": "ao2-weekend-hardening"`},
 		{name: "goal run example repo", doc: goalRunExample, want: `"repo": "ao2"`},
 		{name: "goal run example state owner", doc: goalRunExample, want: `"state_owner": "ao-forge"`},

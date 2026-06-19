@@ -40,6 +40,8 @@ const (
 	gateResultSchemaVersion      = "ao.forge.covenant-gate-result.v0.1"
 	releasePreviewAuditVersion   = "ao.forge.release-preview-audit.v0.1"
 	releasePreviewInspectVersion = "ao.forge.release-preview-inspect.v0.1"
+	goalRunSchemaVersion         = "ao.forge.goal-run.v0.1"
+	goalRunSchemaPath            = "docs/contracts/goal-run-v0.1.schema.json"
 )
 
 var planIDPattern = regexp.MustCompile(`^forge-plan-[a-f0-9]{12}$`)
@@ -197,6 +199,40 @@ type factoryPacket struct {
 	NextActions []nextAction `json:"next_actions"`
 }
 
+type goalRun struct {
+	SchemaVersion      string   `json:"schema_version"`
+	GoalID             string   `json:"goal_id"`
+	Repo               string   `json:"repo"`
+	Objective          string   `json:"objective"`
+	AcceptanceCriteria []string `json:"acceptance_criteria"`
+	AllowedScope       []string `json:"allowed_scope"`
+	StopConditions     []string `json:"stop_conditions"`
+	CurrentPhase       string   `json:"current_phase"`
+	NextTask           string   `json:"next_task"`
+	LastVerifiedAt     string   `json:"last_verified_at"`
+	ContinuationPrompt string   `json:"continuation_prompt"`
+	LoopOwner          struct {
+		StateOwner string `json:"state_owner"`
+		Executor   string `json:"executor"`
+		Scheduler  string `json:"scheduler"`
+	} `json:"loop_owner"`
+	NextActionGuard struct {
+		MustReadLatestGoalRun         bool   `json:"must_read_latest_goal_run"`
+		MustMatchAllowedScope         bool   `json:"must_match_allowed_scope"`
+		MustSatisfyAcceptanceCriteria bool   `json:"must_satisfy_acceptance_criteria"`
+		OnMismatch                    string `json:"on_mismatch"`
+	} `json:"next_action_guard"`
+	LastIteration *struct {
+		Status   string `json:"status"`
+		Summary  string `json:"summary"`
+		Evidence []struct {
+			Label  string `json:"label"`
+			Path   string `json:"path"`
+			SHA256 string `json:"sha256,omitempty"`
+		} `json:"evidence"`
+	} `json:"last_iteration,omitempty"`
+}
+
 // Run executes the AO Forge CLI and returns a process-style exit code.
 func Run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
@@ -221,6 +257,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runReleasePreview(args[1:], stdout, stderr)
 	case "contract":
 		return runContract(args[1:], stdout, stderr)
+	case "goal":
+		return runGoal(args[1:], stdout, stderr)
 	case "run":
 		return runRun(args[1:], stdout, stderr)
 	case "once":
@@ -255,6 +293,8 @@ Usage:
   forge release-preview --workspace <git-workspace> [--tag <vX.Y.Z>] [--artifact <path> ...] [--out <release-preview-audit.json>]
   forge release-preview inspect --audit <release-preview-audit.json> [--json]
   forge contract validate --schema <schema.json> --document <document.json> [--json]
+  forge goal validate --goal-run <goal-run.json> [--json]
+  forge goal inspect --goal-run <goal-run.json> [--json]
 
 Factory terms:
   factory brief   normalized operator objective and constraints
@@ -262,7 +302,7 @@ Factory terms:
   factory packet  operator-ready JSON summary of plan, gates, evidence, and next actions
 
 Slice 2.8 status:
-  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, release preview audits, release preview enforcement, release preview audit inspection, artifact checksums, artifact checksum verification, and contract schema validation are enabled.
+  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, release preview audits, release preview enforcement, release preview audit inspection, artifact checksums, artifact checksum verification, contract schema validation, and GoalRun validation and inspection are enabled.
 `)
 }
 
@@ -4381,6 +4421,286 @@ func writeContractValidationSummary(stdout io.Writer, summary contractValidation
 	fmt.Fprintf(stdout, "document=%s\n", summary.Document)
 	for _, validationErr := range summary.Errors {
 		fmt.Fprintf(stdout, "error=%s\n", validationErr)
+	}
+}
+
+type goalFlags struct {
+	goalRunPath string
+	json        bool
+}
+
+type goalValidationSummary struct {
+	GoalRun         string   `json:"goal_run"`
+	Schema          string   `json:"schema"`
+	SchemaVersion   string   `json:"schema_version"`
+	GoalID          string   `json:"goal_id"`
+	CurrentPhase    string   `json:"current_phase"`
+	NextActionGuard string   `json:"next_action_guard"`
+	Status          string   `json:"status"`
+	Errors          []string `json:"errors"`
+}
+
+type goalInspectSummary struct {
+	InspectSchemaVersion string `json:"inspect_schema_version"`
+	GoalRun              string `json:"goal_run"`
+	SchemaVersion        string `json:"schema_version"`
+	GoalID               string `json:"goal_id"`
+	Repo                 string `json:"repo"`
+	CurrentPhase         string `json:"current_phase"`
+	NextTask             string `json:"next_task"`
+	LastVerifiedAt       string `json:"last_verified_at"`
+	ContinuationPrompt   string `json:"continuation_prompt"`
+	AcceptanceCriteria   int    `json:"acceptance_criteria"`
+	AllowedScope         int    `json:"allowed_scope"`
+	StopConditions       int    `json:"stop_conditions"`
+	LoopOwner            struct {
+		StateOwner string `json:"state_owner"`
+		Executor   string `json:"executor"`
+		Scheduler  string `json:"scheduler"`
+	} `json:"loop_owner"`
+	NextActionGuard struct {
+		Enabled    bool   `json:"enabled"`
+		OnMismatch string `json:"on_mismatch"`
+	} `json:"next_action_guard"`
+	LastIterationStatus  string `json:"last_iteration_status,omitempty"`
+	LastIterationSummary string `json:"last_iteration_summary,omitempty"`
+}
+
+func runGoal(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "forge goal: missing subcommand validate or inspect")
+		return 2
+	}
+	switch args[0] {
+	case "validate":
+		return runGoalValidate(args[1:], stdout, stderr)
+	case "inspect":
+		return runGoalInspect(args[1:], stdout, stderr)
+	case "--help", "-h":
+		fmt.Fprintln(stderr, "forge goal: use `forge goal validate --goal-run <goal-run.json> [--json]` or `forge goal inspect --goal-run <goal-run.json> [--json]`")
+		return 0
+	default:
+		fmt.Fprintf(stderr, "forge goal: unknown subcommand %q\n", args[0])
+		return 2
+	}
+}
+
+func parseGoalFlags(args []string) (goalFlags, error) {
+	var flags goalFlags
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--goal-run":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return goalFlags{}, fmt.Errorf("--goal-run requires a value")
+			}
+			flags.goalRunPath = args[i+1]
+			i++
+		case "--json":
+			flags.json = true
+		case "--help", "-h":
+			return goalFlags{}, fmt.Errorf("help is available with `forge --help`")
+		default:
+			if strings.HasPrefix(args[i], "--") {
+				return goalFlags{}, fmt.Errorf("unknown flag %s", args[i])
+			}
+			return goalFlags{}, fmt.Errorf("unexpected argument %s", args[i])
+		}
+	}
+	if flags.goalRunPath == "" {
+		return goalFlags{}, fmt.Errorf("missing required --goal-run")
+	}
+	return flags, nil
+}
+
+func runGoalValidate(args []string, stdout, stderr io.Writer) int {
+	flags, err := parseGoalFlags(args)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge goal validate: %v\n", err)
+		return 2
+	}
+
+	summary := goalValidationSummary{
+		GoalRun: displayPath(flags.goalRunPath),
+		Schema:  displayPath(resolveDefaultContractPath(goalRunSchemaPath)),
+		Status:  "passed",
+		Errors:  []string{},
+	}
+	goal, err := validateAndReadGoalRun(flags.goalRunPath)
+	if err != nil {
+		summary.Status = "failed"
+		summary.Errors = []string{err.Error()}
+		writeGoalValidationSummary(stdout, summary, flags.json)
+		fmt.Fprintf(stderr, "forge goal validate: goal run validation failed: %v\n", err)
+		return 1
+	}
+	summary.SchemaVersion = goal.SchemaVersion
+	summary.GoalID = goal.GoalID
+	summary.CurrentPhase = goal.CurrentPhase
+	summary.NextActionGuard = goalRunGuardStatus(goal)
+
+	writeGoalValidationSummary(stdout, summary, flags.json)
+	return 0
+}
+
+func runGoalInspect(args []string, stdout, stderr io.Writer) int {
+	flags, err := parseGoalFlags(args)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge goal inspect: %v\n", err)
+		return 2
+	}
+
+	goal, err := validateAndReadGoalRun(flags.goalRunPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge goal inspect: goal run validation failed: %v\n", err)
+		return 1
+	}
+
+	summary := buildGoalInspectSummary(flags.goalRunPath, goal)
+	writeGoalInspectSummary(stdout, summary, flags.json)
+	return 0
+}
+
+func validateAndReadGoalRun(path string) (goalRun, error) {
+	if err := validateJSONSchemaDocument(resolveDefaultContractPath(goalRunSchemaPath), path); err != nil {
+		return goalRun{}, err
+	}
+	goal, err := readGoalRun(path)
+	if err != nil {
+		return goalRun{}, err
+	}
+	if goal.SchemaVersion != goalRunSchemaVersion {
+		return goalRun{}, fmt.Errorf("unsupported goal run schema_version %q", goal.SchemaVersion)
+	}
+	return goal, nil
+}
+
+func readGoalRun(path string) (goalRun, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return goalRun{}, err
+	}
+	var goal goalRun
+	if err := decodeJSONStrict(data, &goal); err != nil {
+		return goalRun{}, fmt.Errorf("parse goal run JSON: %w", err)
+	}
+	return goal, nil
+}
+
+func resolveDefaultContractPath(relativePath string) string {
+	if filepath.IsAbs(relativePath) {
+		return relativePath
+	}
+	if _, err := os.Stat(relativePath); err == nil {
+		return relativePath
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		return relativePath
+	}
+	for dir := wd; ; dir = filepath.Dir(dir) {
+		candidate := filepath.Join(dir, relativePath)
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+		next := filepath.Dir(dir)
+		if next == dir {
+			break
+		}
+	}
+	return relativePath
+}
+
+func buildGoalInspectSummary(path string, goal goalRun) goalInspectSummary {
+	var summary goalInspectSummary
+	summary.InspectSchemaVersion = "ao.forge.goal-run-inspect.v0.1"
+	summary.GoalRun = displayPath(path)
+	summary.SchemaVersion = goal.SchemaVersion
+	summary.GoalID = goal.GoalID
+	summary.Repo = goal.Repo
+	summary.CurrentPhase = goal.CurrentPhase
+	summary.NextTask = goal.NextTask
+	summary.LastVerifiedAt = goal.LastVerifiedAt
+	summary.ContinuationPrompt = goal.ContinuationPrompt
+	summary.AcceptanceCriteria = len(goal.AcceptanceCriteria)
+	summary.AllowedScope = len(goal.AllowedScope)
+	summary.StopConditions = len(goal.StopConditions)
+	summary.LoopOwner.StateOwner = goal.LoopOwner.StateOwner
+	summary.LoopOwner.Executor = goal.LoopOwner.Executor
+	summary.LoopOwner.Scheduler = goal.LoopOwner.Scheduler
+	summary.NextActionGuard.Enabled = goalRunGuardStatus(goal) == "enabled"
+	summary.NextActionGuard.OnMismatch = goal.NextActionGuard.OnMismatch
+	if goal.LastIteration != nil {
+		summary.LastIterationStatus = goal.LastIteration.Status
+		summary.LastIterationSummary = goal.LastIteration.Summary
+	}
+	return summary
+}
+
+func goalRunGuardStatus(goal goalRun) string {
+	if goal.NextActionGuard.MustReadLatestGoalRun &&
+		goal.NextActionGuard.MustMatchAllowedScope &&
+		goal.NextActionGuard.MustSatisfyAcceptanceCriteria &&
+		goal.NextActionGuard.OnMismatch == "backoff_or_stop" {
+		return "enabled"
+	}
+	return "disabled"
+}
+
+func writeGoalValidationSummary(stdout io.Writer, summary goalValidationSummary, asJSON bool) {
+	if asJSON {
+		data, err := marshalIndented(summary)
+		if err != nil {
+			fmt.Fprintf(stdout, "{\"status\":\"failed\",\"errors\":[%q]}\n", err.Error())
+			return
+		}
+		_, _ = stdout.Write(data)
+		return
+	}
+	fmt.Fprintf(stdout, "goal_run_validation=%s\n", summary.Status)
+	fmt.Fprintf(stdout, "goal_run=%s\n", summary.GoalRun)
+	fmt.Fprintf(stdout, "schema=%s\n", summary.Schema)
+	if summary.SchemaVersion != "" {
+		fmt.Fprintf(stdout, "schema_version=%s\n", summary.SchemaVersion)
+	}
+	if summary.GoalID != "" {
+		fmt.Fprintf(stdout, "goal_id=%s\n", summary.GoalID)
+	}
+	if summary.CurrentPhase != "" {
+		fmt.Fprintf(stdout, "current_phase=%s\n", summary.CurrentPhase)
+	}
+	if summary.NextActionGuard != "" {
+		fmt.Fprintf(stdout, "next_action_guard=%s\n", summary.NextActionGuard)
+	}
+	for _, validationErr := range summary.Errors {
+		fmt.Fprintf(stdout, "error=%s\n", validationErr)
+	}
+}
+
+func writeGoalInspectSummary(stdout io.Writer, summary goalInspectSummary, asJSON bool) {
+	if asJSON {
+		data, err := marshalIndented(summary)
+		if err != nil {
+			fmt.Fprintf(stdout, "{\"inspect_schema_version\":\"ao.forge.goal-run-inspect.v0.1\",\"error\":%q}\n", err.Error())
+			return
+		}
+		_, _ = stdout.Write(data)
+		return
+	}
+	fmt.Fprintf(stdout, "goal_run=%s\n", summary.GoalRun)
+	fmt.Fprintf(stdout, "schema_version=%s\n", summary.SchemaVersion)
+	fmt.Fprintf(stdout, "goal_id=%s\n", summary.GoalID)
+	fmt.Fprintf(stdout, "repo=%s\n", summary.Repo)
+	fmt.Fprintf(stdout, "current_phase=%s\n", summary.CurrentPhase)
+	fmt.Fprintf(stdout, "acceptance_criteria=%d\n", summary.AcceptanceCriteria)
+	fmt.Fprintf(stdout, "allowed_scope=%d\n", summary.AllowedScope)
+	fmt.Fprintf(stdout, "stop_conditions=%d\n", summary.StopConditions)
+	fmt.Fprintf(stdout, "loop_owner=%s/%s/%s\n", summary.LoopOwner.StateOwner, summary.LoopOwner.Executor, summary.LoopOwner.Scheduler)
+	fmt.Fprintf(stdout, "next_task=%s\n", summary.NextTask)
+	fmt.Fprintf(stdout, "continuation_prompt=%s\n", summary.ContinuationPrompt)
+	fmt.Fprintf(stdout, "next_action_guard_enabled=%t\n", summary.NextActionGuard.Enabled)
+	fmt.Fprintf(stdout, "next_action_guard_on_mismatch=%s\n", summary.NextActionGuard.OnMismatch)
+	if summary.LastIterationStatus != "" {
+		fmt.Fprintf(stdout, "last_iteration_status=%s\n", summary.LastIterationStatus)
 	}
 }
 

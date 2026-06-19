@@ -88,6 +88,13 @@ iteration; codex-cron should only trigger the loop. Before the next iteration,
 the agent must read the latest `GoalRun` and prove the next action still matches
 the objective, allowed scope, acceptance criteria, and stop conditions.
 
+Validate and inspect a durable GoalRun before a loop iteration:
+
+```sh
+./bin/forge goal validate --goal-run examples/goals/ao2-weekend-hardening.goal-run.json
+./bin/forge goal inspect --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --json
+```
+
 Build and run the current skeleton:
 
 ```sh

@@ -13,6 +13,23 @@ permissions:
   contents: read
 
 jobs:
+  workflow-lint:
+    name: Workflow lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Actionlint
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= -pyflakes= .github/workflows/*.yml
+
   go:
     name: Go ${{ matrix.os }}
     runs-on: ${{ matrix.os }}

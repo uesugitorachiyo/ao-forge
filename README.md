@@ -262,6 +262,7 @@ This repository is public. The GitHub Actions workflow runs automatically on eve
 Before pushing or merging work, you can run the local verification checks:
 
 ```sh
+go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= -pyflakes= .github/workflows/*.yml
 go test ./...
 go vet ./...
 ```

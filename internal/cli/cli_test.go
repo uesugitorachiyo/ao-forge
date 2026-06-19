@@ -896,6 +896,7 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 	readme := readText("README.md")
 	threatModel := readText("docs", "security", "RELEASE-THREAT-MODEL.md")
 	runbook := readText("docs", "release", "BRANCH-PROTECTION.md")
+	ciWorkflow := readText(".github", "workflows", "ci.yml")
 
 	for _, check := range []struct {
 		name string
@@ -912,13 +913,18 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		{name: "ubuntu check", doc: runbook, want: "`Go ubuntu-latest`"},
 		{name: "macos check", doc: runbook, want: "`Go macos-latest`"},
 		{name: "windows check", doc: runbook, want: "`Go windows-latest`"},
+		{name: "workflow lint check", doc: runbook, want: "`Workflow lint`"},
 		{name: "release preview check", doc: runbook, want: "`Release preview dry-run audit`"},
 		{name: "release preview schema validation", doc: runbook, want: "Release Preview also validates generated audit and inspect JSON against their published schemas"},
 		{name: "linear history", doc: runbook, want: "Require linear history"},
 		{name: "admin guidance", doc: runbook, want: "Do not bypass the required checks for public releases"},
 		{name: "local fallback", doc: runbook, want: "go test ./... -count=1"},
+		{name: "local actionlint fallback", doc: runbook, want: "go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= -pyflakes= .github/workflows/*.yml"},
 		{name: "checksum verification", doc: runbook, want: "artifact verify-checksums --manifest"},
 		{name: "secret scan", doc: runbook, want: "gitleaks detect --source . --redact --verbose"},
+		{name: "ci actionlint job", doc: ciWorkflow, want: "workflow-lint:"},
+		{name: "ci actionlint name", doc: ciWorkflow, want: "name: Workflow lint"},
+		{name: "ci actionlint command", doc: ciWorkflow, want: "go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= -pyflakes= .github/workflows/*.yml"},
 	} {
 		if !strings.Contains(check.doc, check.want) {
 			t.Fatalf("%s missing %q", check.name, check.want)

@@ -156,9 +156,12 @@ After publishing:
 If the public release is wrong:
 
 1. Run the `Release Rollback` workflow with `rollback_action=audit-only` to
-   capture release metadata and operator evidence before mutation.
+   capture release metadata and operator evidence before mutation. This path is
+   read-only and should complete without `production-release` environment
+   approval.
 2. If user impact requires it, rerun `Release Rollback` with
-   `rollback_action=mark-prerelease` or `rollback_action=mark-draft`.
+   `rollback_action=mark-prerelease` or `rollback_action=mark-draft`; these
+   mutating paths require `production-release` environment approval.
 3. Publish a correction note that states the affected `<tag>` and artifact names.
 4. Do not silently replace artifacts unless the replacement policy is documented
    in the release notes.

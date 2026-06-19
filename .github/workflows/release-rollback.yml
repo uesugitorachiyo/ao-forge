@@ -21,17 +21,16 @@ on:
 
 permissions:
   actions: read
-  contents: write
+  contents: read
 
 concurrency:
   group: release-rollback-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  rollback:
-    name: Guarded release rollback
+  rollback-audit:
+    name: Read-only rollback audit
     runs-on: ubuntu-latest
-    environment: production-release
     env:
       REQUESTED_ROLLBACK_TAG: ${{ github.event.inputs.tag }}
       REQUESTED_ROLLBACK_ACTION: ${{ github.event.inputs.rollback_action }}
@@ -148,14 +147,11 @@ jobs:
           set -euo pipefail
           "${RUNNER_TEMP}/forge" contract validate --schema docs/contracts/release-rollback-audit-v0.1.schema.json --document "${AO_FORGE_ROLLBACK_OUT}/release-rollback-audit.json"
 
-      - name: Append rollback correction note
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Snapshot release notes
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${AO_FORGE_ROLLBACK_ACTION}" == "audit-only" ]]; then
-            python3 - <<'PY'
+          python3 - <<'PY'
           import json
           import os
           import pathlib
@@ -164,17 +160,104 @@ jobs:
           release = json.loads((out / "release-before.json").read_text())
           (out / "release-notes-after-rollback.md").write_text(release.get("body") or "")
           PY
-            echo "release rollback audit-only: correction note not applied"
-            exit 0
+
+      - name: Read release metadata after rollback
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view "${AO_FORGE_ROLLBACK_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --json isDraft,isPrerelease,tagName,targetCommitish,url,publishedAt,assets \
+            > "${AO_FORGE_ROLLBACK_OUT}/release-after.json"
+
+      - name: Upload rollback audit
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-rollback-audit
+          path: |
+            ${{ runner.temp }}/ao-forge-release-rollback/release-before.json
+            ${{ runner.temp }}/ao-forge-release-rollback/release-after.json
+            ${{ runner.temp }}/ao-forge-release-rollback/release-rollback-audit.json
+            ${{ runner.temp }}/ao-forge-release-rollback/release-notes-after-rollback.md
+          if-no-files-found: error
+          retention-days: 90
+
+  rollback-mutation:
+    name: Guarded mutating release rollback
+    if: ${{ github.event.inputs.rollback_action != 'audit-only' }}
+    needs: rollback-audit
+    runs-on: ubuntu-latest
+    environment: production-release
+    permissions:
+      actions: read
+      contents: write
+    env:
+      REQUESTED_ROLLBACK_TAG: ${{ github.event.inputs.tag }}
+      REQUESTED_ROLLBACK_ACTION: ${{ github.event.inputs.rollback_action }}
+      ROLLBACK_REASON: ${{ github.event.inputs.reason }}
+      CONFIRM_ROLLBACK: ${{ github.event.inputs.confirm_rollback }}
+      AO_FORGE_ROLLBACK_OUT: ${{ runner.temp }}/ao-forge-release-rollback-mutation
+
+    steps:
+      - name: Resolve mutation request
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${REQUESTED_ROLLBACK_TAG:-}"
+          action="${REQUESTED_ROLLBACK_ACTION:-}"
+          reason="${ROLLBACK_REASON:-}"
+
+          if [[ "${CONFIRM_ROLLBACK}" != "true" ]]; then
+            echo "confirm_rollback must be exactly true" >&2
+            exit 1
+          fi
+          if [[ -z "$tag" || "$tag" != v* ]]; then
+            echo "rollback tag is required and must start with v" >&2
+            exit 1
+          fi
+          case "$action" in
+            mark-prerelease|mark-draft)
+              ;;
+            *)
+              echo "mutating rollback action must be one of: mark-prerelease, mark-draft" >&2
+              exit 1
+              ;;
+          esac
+          if [[ -z "${reason// }" ]]; then
+            echo "rollback reason is required" >&2
+            exit 1
           fi
 
+          mkdir -p "${AO_FORGE_ROLLBACK_OUT}"
+          echo "AO_FORGE_ROLLBACK_TAG=$tag" >> "$GITHUB_ENV"
+          echo "AO_FORGE_ROLLBACK_ACTION=$action" >> "$GITHUB_ENV"
+
+      - name: Read release metadata before mutation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view "${AO_FORGE_ROLLBACK_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --json isDraft,isPrerelease,tagName,targetCommitish,url,publishedAt,body,assets \
+            > "${AO_FORGE_ROLLBACK_OUT}/release-before-mutation.json"
+
+      - name: Append rollback correction note
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
           python3 - <<'PY'
           import json
           import os
           import pathlib
 
           out = pathlib.Path(os.environ["AO_FORGE_ROLLBACK_OUT"])
-          release = json.loads((out / "release-before.json").read_text())
+          release = json.loads((out / "release-before-mutation.json").read_text())
           body = release.get("body") or ""
           marker = f"Rollback action: `{os.environ['AO_FORGE_ROLLBACK_ACTION']}`"
           note = (
@@ -200,9 +283,6 @@ jobs:
         run: |
           set -euo pipefail
           case "${AO_FORGE_ROLLBACK_ACTION}" in
-            audit-only)
-              echo "release rollback audit-only: release state unchanged"
-              ;;
             mark-prerelease)
               gh release edit "${AO_FORGE_ROLLBACK_TAG}" --prerelease=true --repo "${GITHUB_REPOSITORY}"
               ;;
@@ -210,26 +290,3 @@ jobs:
               gh release edit "${AO_FORGE_ROLLBACK_TAG}" --draft=true --repo "${GITHUB_REPOSITORY}"
               ;;
           esac
-
-      - name: Read release metadata after rollback
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          gh release view "${AO_FORGE_ROLLBACK_TAG}" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --json isDraft,isPrerelease,tagName,targetCommitish,url,publishedAt,assets \
-            > "${AO_FORGE_ROLLBACK_OUT}/release-after.json"
-
-      - name: Upload rollback audit
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-rollback-audit
-          path: |
-            ${{ runner.temp }}/ao-forge-release-rollback/release-before.json
-            ${{ runner.temp }}/ao-forge-release-rollback/release-after.json
-            ${{ runner.temp }}/ao-forge-release-rollback/release-rollback-audit.json
-            ${{ runner.temp }}/ao-forge-release-rollback/release-notes-after-rollback.md
-          if-no-files-found: error
-          retention-days: 90

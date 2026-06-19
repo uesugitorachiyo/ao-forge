@@ -88,3 +88,15 @@ Block promotion when any of these are true:
 
 Use `Release Rollback` for public correction if a promoted release later becomes
 known-bad. Preserve all release, rollback, and promotion evidence.
+
+## Scheduled Drift Verification
+
+`Release Verify` runs weekly for the promoted `v0.1.2` release with
+`require_evidence_bundle=true` and `require_signed_tag=true`. The scheduled run
+is read-only and uploads the same contract-valid `release-verify-audit` artifact
+as manual verification.
+
+If a scheduled verification fails, treat the release as drifted until a
+maintainer reviews the failed audit. Use `Release Rollback` for public
+correction when the release is known-bad, and preserve the failed verification
+artifact with the correction evidence.

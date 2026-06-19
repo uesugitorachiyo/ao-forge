@@ -68,9 +68,13 @@ jobs:
           mkdir -p "$out"
           go run ./cmd/forge production-readiness audit | tee "$out/production-readiness-audit.txt"
           go run ./cmd/forge production-readiness audit --json > "$out/production-readiness-audit.json"
+          go run ./cmd/forge goal evidence cleanup --dry-run --json > "$out/goal-run-retained-evidence-cleanup.json"
 
       - name: Validate production readiness audit schema
         run: go run ./cmd/forge contract validate --schema docs/contracts/production-readiness-audit-v0.1.schema.json --document "${RUNNER_TEMP}/ao-forge-production-readiness/production-readiness-audit.json"
+
+      - name: Validate retained evidence cleanup schema
+        run: go run ./cmd/forge contract validate --schema docs/contracts/goal-run-retained-evidence-cleanup-v0.1.schema.json --document "${RUNNER_TEMP}/ao-forge-production-readiness/goal-run-retained-evidence-cleanup.json"
 
       - name: Upload production readiness audit
         if: always()

@@ -63,9 +63,12 @@ on pushed `v*` tags as a final non-mutating evidence check.
 
 The workflow uses `scripts/release-preview-dry-run.sh` with
 `AO_FORGE_RELEASE_PREVIEW_TAG` set to the selected tag, validates the audit and
-inspect JSON schema versions, reads back the artifact inventory and attestation plan,
-confirms the evidence is passed, local-only, and non-mutating, then uploads
-`release-rehearsal-evidence`.
+inspect JSON schema versions, requires a tag-specific release notes file such
+as `docs/release/V0.1.2-RELEASE-NOTES.md`, reads back the artifact inventory and
+attestation plan, confirms the evidence is passed, local-only, and non-mutating,
+then uploads `release-rehearsal-evidence`. In other words, it requires a
+tag-specific release notes file and reads back the artifact inventory and attestation plan
+before upload.
 
 Before publishing a real release, review the uploaded evidence artifact and
 confirm it matches the intended tag and commit. For the first public release,

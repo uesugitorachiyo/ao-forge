@@ -52,6 +52,7 @@ over provider execution, release publishing, or control-plane approval.
 - [Branch Protection Runbook](docs/release/BRANCH-PROTECTION.md)
 - [First Public Release Checklist](docs/release/FIRST-PUBLIC-RELEASE.md)
 - [v0.1.0 Release Notes Draft](docs/release/V0.1.0-RELEASE-NOTES.md)
+- [v0.1.2 Release Notes Draft](docs/release/V0.1.2-RELEASE-NOTES.md)
 - [Verified Foundation Baseline](docs/foundation/VERIFIED-BASELINE.md)
 - [Foundation Baseline JSON](docs/foundation/foundation-baseline.v0.1.json)
 - [Release Threat Model](docs/security/RELEASE-THREAT-MODEL.md)

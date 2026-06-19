@@ -191,9 +191,13 @@ are:
 - `examples/goals/invalid/tmp-evidence-path.goal-run.path-invalid.json`
 - `examples/goals/invalid/absolute-evidence-path.goal-run.path-invalid.json`
 - `examples/goals/invalid/home-evidence-path.goal-run.path-invalid.json`
+- `examples/goals/invalid/parent-traversal-evidence-path.goal-run.path-invalid.json`
+- `examples/goals/invalid/windows-absolute-evidence-path.goal-run.path-invalid.json`
 - `examples/goals/invalid/tmp-evidence-path.goal-run-update-audit.path-invalid.json`
 - `examples/goals/invalid/absolute-evidence-path.goal-run-update-audit.path-invalid.json`
 - `examples/goals/invalid/home-evidence-path.goal-run-update-audit.path-invalid.json`
+- `examples/goals/invalid/parent-traversal-evidence-path.goal-run-update-audit.path-invalid.json`
+- `examples/goals/invalid/windows-absolute-evidence-path.goal-run-update-audit.path-invalid.json`
 
 Retention rules:
 

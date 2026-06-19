@@ -62,6 +62,7 @@ func TestHelpExplainsFactoryTermsWithoutMarketingCopy(t *testing.T) {
 		"forge contract validate --schema <schema.json> --document <document.json> [--json]",
 		"forge goal validate --goal-run <goal-run.json> [--json]",
 		"forge goal inspect --goal-run <goal-run.json> [--json]",
+		"forge goal transitions --goal-run <goal-run.json> [--to <phase>] [--json]",
 		"dry-run execution",
 		"forge artifact checksums",
 		"forge release-preview inspect --audit <release-preview-audit.json> [--json]",
@@ -75,6 +76,7 @@ func TestHelpExplainsFactoryTermsWithoutMarketingCopy(t *testing.T) {
 		"artifact checksum verification",
 		"contract schema validation",
 		"GoalRun validation and inspection",
+		"GoalRun transition checks",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("help missing %q\n%s", want, stdout)
@@ -194,6 +196,102 @@ func TestGoalRunCLIValidatesAndInspectsContract(t *testing.T) {
 	}
 }
 
+func TestGoalRunCLIChecksPhaseTransitions(t *testing.T) {
+	root := repoRoot(t)
+	goalPath := filepath.Join(root, "examples", "goals", "ao2-weekend-hardening.goal-run.json")
+
+	code, stdout, stderr := runCLI("goal", "transitions", "--goal-run", goalPath)
+	if code != 0 {
+		t.Fatalf("goal transitions exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	for _, want := range []string{
+		"goal_run_transition=listed",
+		"goal_id=ao2-weekend-hardening",
+		"current_phase=planning",
+		"allowed_next_phases=implementation,blocked,backoff,stopped",
+		"reason=phase planning allows: implementation,blocked,backoff,stopped",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("goal transitions stdout missing %q\n%s", want, stdout)
+		}
+	}
+	if stderr != "" {
+		t.Fatalf("goal transitions wrote stderr: %s", stderr)
+	}
+
+	code, stdout, stderr = runCLI("goal", "transitions", "--goal-run", goalPath, "--to", "implementation")
+	if code != 0 {
+		t.Fatalf("goal transitions allowed exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	for _, want := range []string{
+		"goal_run_transition=allowed",
+		"requested_phase=implementation",
+		"reason=transition planning -> implementation is allowed",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("goal transitions allowed stdout missing %q\n%s", want, stdout)
+		}
+	}
+	if stderr != "" {
+		t.Fatalf("goal transitions allowed wrote stderr: %s", stderr)
+	}
+
+	code, stdout, stderr = runCLI("goal", "transitions", "--goal-run", goalPath, "--to", "verification", "--json")
+	if code != 1 {
+		t.Fatalf("goal transitions denied exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	var denied struct {
+		TransitionSchemaVersion string   `json:"transition_schema_version"`
+		CurrentPhase            string   `json:"current_phase"`
+		AllowedNextPhases       []string `json:"allowed_next_phases"`
+		RequestedPhase          string   `json:"requested_phase"`
+		Status                  string   `json:"status"`
+		Reason                  string   `json:"reason"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &denied); err != nil {
+		t.Fatalf("goal transitions denied emitted invalid JSON: %v\n%s", err, stdout)
+	}
+	if denied.TransitionSchemaVersion != "ao.forge.goal-run-transition.v0.1" ||
+		denied.CurrentPhase != "planning" ||
+		strings.Join(denied.AllowedNextPhases, ",") != "implementation,blocked,backoff,stopped" ||
+		denied.RequestedPhase != "verification" ||
+		denied.Status != "denied" ||
+		denied.Reason != "transition planning -> verification is not allowed" {
+		t.Fatalf("goal transitions denied JSON drifted: %+v", denied)
+	}
+	if stderr != "" {
+		t.Fatalf("goal transitions denied wrote stderr: %s", stderr)
+	}
+
+	code, stdout, stderr = runCLI("goal", "transitions", "--goal-run", goalPath, "--to", "unknown")
+	if code != 2 {
+		t.Fatalf("goal transitions unknown phase exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if !strings.Contains(stderr, `unknown --to phase "unknown"`) {
+		t.Fatalf("goal transitions unknown phase stderr drifted: %s", stderr)
+	}
+
+	terminalPath := filepath.Join(t.TempDir(), "complete.goal-run.json")
+	data, err := os.ReadFile(goalPath)
+	if err != nil {
+		t.Fatalf("read goal run example: %v", err)
+	}
+	complete := strings.Replace(string(data), `"current_phase": "planning"`, `"current_phase": "complete"`, 1)
+	if err := os.WriteFile(terminalPath, []byte(complete), 0o644); err != nil {
+		t.Fatalf("write terminal goal run: %v", err)
+	}
+	code, stdout, stderr = runCLI("goal", "transitions", "--goal-run", terminalPath)
+	if code != 0 {
+		t.Fatalf("goal transitions terminal exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "current_phase=complete") || !strings.Contains(stdout, "allowed_next_phases=none") {
+		t.Fatalf("goal transitions terminal stdout drifted:\n%s", stdout)
+	}
+	if stderr != "" {
+		t.Fatalf("goal transitions terminal wrote stderr: %s", stderr)
+	}
+}
+
 func TestReleasePreviewAuditFlagRequiresValue(t *testing.T) {
 	cases := []struct {
 		name string
@@ -254,6 +352,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "README goal run example link", doc: readme, want: "[Example GoalRun](examples/goals/ao2-weekend-hardening.goal-run.json)"},
 		{name: "README goal run validate command", doc: readme, want: "./bin/forge goal validate --goal-run examples/goals/ao2-weekend-hardening.goal-run.json"},
 		{name: "README goal run inspect command", doc: readme, want: "./bin/forge goal inspect --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --json"},
+		{name: "README goal run transitions command", doc: readme, want: "./bin/forge goal transitions --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --to implementation"},
 		{name: "README brief schema link", doc: readme, want: "[Factory Brief v0.1 Schema](docs/contracts/factory-brief-v0.1.schema.json)"},
 		{name: "README plan schema link", doc: readme, want: "[Factory Plan v0.1 Schema](docs/contracts/factory-plan-v0.1.schema.json)"},
 		{name: "README release preview schema link", doc: readme, want: "[Release Preview Audit v0.1 Schema](docs/contracts/release-preview-audit-v0.1.schema.json)"},
@@ -284,6 +383,10 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run docs ownership", doc: goalRunDocs, want: "AO Forge owns durable goal and task state"},
 		{name: "goal run docs cron boundary", doc: goalRunDocs, want: "codex-cron should only trigger the loop"},
 		{name: "goal run docs guard", doc: goalRunDocs, want: "If the next action does not match, the agent must emit backoff or stop"},
+		{name: "goal run docs transition title", doc: goalRunDocs, want: "## Phase Transitions"},
+		{name: "goal run docs implementation transition", doc: goalRunDocs, want: "| `implementation` | `verification`, `blocked`, `backoff`, `stopped` |"},
+		{name: "goal run docs terminal transition", doc: goalRunDocs, want: "| `complete` | none; terminal |"},
+		{name: "goal run docs transition gate command", doc: goalRunDocs, want: "forge goal transitions --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --to implementation"},
 		{name: "goal run example id", doc: goalRunExample, want: `"goal_id": "ao2-weekend-hardening"`},
 		{name: "goal run example repo", doc: goalRunExample, want: `"repo": "ao2"`},
 		{name: "goal run example state owner", doc: goalRunExample, want: `"state_owner": "ao-forge"`},

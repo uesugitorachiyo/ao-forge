@@ -233,6 +233,16 @@ type goalRun struct {
 	} `json:"last_iteration,omitempty"`
 }
 
+var goalRunPhaseTransitions = map[string][]string{
+	"planning":       {"implementation", "blocked", "backoff", "stopped"},
+	"implementation": {"verification", "blocked", "backoff", "stopped"},
+	"verification":   {"implementation", "complete", "blocked", "backoff", "stopped"},
+	"blocked":        {"planning", "stopped"},
+	"backoff":        {"planning", "stopped"},
+	"stopped":        {},
+	"complete":       {},
+}
+
 // Run executes the AO Forge CLI and returns a process-style exit code.
 func Run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
@@ -295,6 +305,7 @@ Usage:
   forge contract validate --schema <schema.json> --document <document.json> [--json]
   forge goal validate --goal-run <goal-run.json> [--json]
   forge goal inspect --goal-run <goal-run.json> [--json]
+  forge goal transitions --goal-run <goal-run.json> [--to <phase>] [--json]
 
 Factory terms:
   factory brief   normalized operator objective and constraints
@@ -302,7 +313,7 @@ Factory terms:
   factory packet  operator-ready JSON summary of plan, gates, evidence, and next actions
 
 Slice 2.8 status:
-  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, release preview audits, release preview enforcement, release preview audit inspection, artifact checksums, artifact checksum verification, contract schema validation, and GoalRun validation and inspection are enabled.
+  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, release preview audits, release preview enforcement, release preview audit inspection, artifact checksums, artifact checksum verification, contract schema validation, GoalRun validation and inspection, and GoalRun transition checks are enabled.
 `)
 }
 
@@ -4429,6 +4440,12 @@ type goalFlags struct {
 	json        bool
 }
 
+type goalTransitionFlags struct {
+	goalRunPath string
+	toPhase     string
+	json        bool
+}
+
 type goalValidationSummary struct {
 	GoalRun         string   `json:"goal_run"`
 	Schema          string   `json:"schema"`
@@ -4466,9 +4483,20 @@ type goalInspectSummary struct {
 	LastIterationSummary string `json:"last_iteration_summary,omitempty"`
 }
 
+type goalTransitionSummary struct {
+	TransitionSchemaVersion string   `json:"transition_schema_version"`
+	GoalRun                 string   `json:"goal_run"`
+	GoalID                  string   `json:"goal_id"`
+	CurrentPhase            string   `json:"current_phase"`
+	AllowedNextPhases       []string `json:"allowed_next_phases"`
+	RequestedPhase          string   `json:"requested_phase,omitempty"`
+	Status                  string   `json:"status"`
+	Reason                  string   `json:"reason"`
+}
+
 func runGoal(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "forge goal: missing subcommand validate or inspect")
+		fmt.Fprintln(stderr, "forge goal: missing subcommand validate, inspect, or transitions")
 		return 2
 	}
 	switch args[0] {
@@ -4476,8 +4504,10 @@ func runGoal(args []string, stdout, stderr io.Writer) int {
 		return runGoalValidate(args[1:], stdout, stderr)
 	case "inspect":
 		return runGoalInspect(args[1:], stdout, stderr)
+	case "transitions":
+		return runGoalTransitions(args[1:], stdout, stderr)
 	case "--help", "-h":
-		fmt.Fprintln(stderr, "forge goal: use `forge goal validate --goal-run <goal-run.json> [--json]` or `forge goal inspect --goal-run <goal-run.json> [--json]`")
+		fmt.Fprintln(stderr, "forge goal: use `forge goal validate --goal-run <goal-run.json> [--json]`, `forge goal inspect --goal-run <goal-run.json> [--json]`, or `forge goal transitions --goal-run <goal-run.json> [--to <phase>] [--json]`")
 		return 0
 	default:
 		fmt.Fprintf(stderr, "forge goal: unknown subcommand %q\n", args[0])
@@ -4508,6 +4538,42 @@ func parseGoalFlags(args []string) (goalFlags, error) {
 	}
 	if flags.goalRunPath == "" {
 		return goalFlags{}, fmt.Errorf("missing required --goal-run")
+	}
+	return flags, nil
+}
+
+func parseGoalTransitionFlags(args []string) (goalTransitionFlags, error) {
+	var flags goalTransitionFlags
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--goal-run":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return goalTransitionFlags{}, fmt.Errorf("--goal-run requires a value")
+			}
+			flags.goalRunPath = args[i+1]
+			i++
+		case "--to":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return goalTransitionFlags{}, fmt.Errorf("--to requires a value")
+			}
+			flags.toPhase = args[i+1]
+			i++
+		case "--json":
+			flags.json = true
+		case "--help", "-h":
+			return goalTransitionFlags{}, fmt.Errorf("help is available with `forge --help`")
+		default:
+			if strings.HasPrefix(args[i], "--") {
+				return goalTransitionFlags{}, fmt.Errorf("unknown flag %s", args[i])
+			}
+			return goalTransitionFlags{}, fmt.Errorf("unexpected argument %s", args[i])
+		}
+	}
+	if flags.goalRunPath == "" {
+		return goalTransitionFlags{}, fmt.Errorf("missing required --goal-run")
+	}
+	if flags.toPhase != "" && !isKnownGoalRunPhase(flags.toPhase) {
+		return goalTransitionFlags{}, fmt.Errorf("unknown --to phase %q", flags.toPhase)
 	}
 	return flags, nil
 }
@@ -4560,6 +4626,27 @@ func runGoalInspect(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func runGoalTransitions(args []string, stdout, stderr io.Writer) int {
+	flags, err := parseGoalTransitionFlags(args)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge goal transitions: %v\n", err)
+		return 2
+	}
+
+	goal, err := validateAndReadGoalRun(flags.goalRunPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge goal transitions: goal run validation failed: %v\n", err)
+		return 1
+	}
+
+	summary := buildGoalTransitionSummary(flags.goalRunPath, goal, flags.toPhase)
+	writeGoalTransitionSummary(stdout, summary, flags.json)
+	if flags.toPhase != "" && summary.Status == "denied" {
+		return 1
+	}
+	return 0
+}
+
 func validateAndReadGoalRun(path string) (goalRun, error) {
 	if err := validateJSONSchemaDocument(resolveDefaultContractPath(goalRunSchemaPath), path); err != nil {
 		return goalRun{}, err
@@ -4572,6 +4659,31 @@ func validateAndReadGoalRun(path string) (goalRun, error) {
 		return goalRun{}, fmt.Errorf("unsupported goal run schema_version %q", goal.SchemaVersion)
 	}
 	return goal, nil
+}
+
+func buildGoalTransitionSummary(path string, goal goalRun, toPhase string) goalTransitionSummary {
+	allowed := allowedGoalRunNextPhases(goal.CurrentPhase)
+	summary := goalTransitionSummary{
+		TransitionSchemaVersion: "ao.forge.goal-run-transition.v0.1",
+		GoalRun:                 displayPath(path),
+		GoalID:                  goal.GoalID,
+		CurrentPhase:            goal.CurrentPhase,
+		AllowedNextPhases:       allowed,
+		RequestedPhase:          toPhase,
+		Status:                  "listed",
+		Reason:                  fmt.Sprintf("phase %s allows: %s", goal.CurrentPhase, formatGoalRunPhaseList(allowed)),
+	}
+	if toPhase == "" {
+		return summary
+	}
+	if containsString(allowed, toPhase) {
+		summary.Status = "allowed"
+		summary.Reason = fmt.Sprintf("transition %s -> %s is allowed", goal.CurrentPhase, toPhase)
+		return summary
+	}
+	summary.Status = "denied"
+	summary.Reason = fmt.Sprintf("transition %s -> %s is not allowed", goal.CurrentPhase, toPhase)
+	return summary
 }
 
 func readGoalRun(path string) (goalRun, error) {
@@ -4636,6 +4748,35 @@ func buildGoalInspectSummary(path string, goal goalRun) goalInspectSummary {
 	return summary
 }
 
+func allowedGoalRunNextPhases(phase string) []string {
+	allowed, ok := goalRunPhaseTransitions[phase]
+	if !ok {
+		return nil
+	}
+	return append([]string(nil), allowed...)
+}
+
+func isKnownGoalRunPhase(phase string) bool {
+	_, ok := goalRunPhaseTransitions[phase]
+	return ok
+}
+
+func formatGoalRunPhaseList(phases []string) string {
+	if len(phases) == 0 {
+		return "none"
+	}
+	return strings.Join(phases, ",")
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
 func goalRunGuardStatus(goal goalRun) string {
 	if goal.NextActionGuard.MustReadLatestGoalRun &&
 		goal.NextActionGuard.MustMatchAllowedScope &&
@@ -4674,6 +4815,27 @@ func writeGoalValidationSummary(stdout io.Writer, summary goalValidationSummary,
 	for _, validationErr := range summary.Errors {
 		fmt.Fprintf(stdout, "error=%s\n", validationErr)
 	}
+}
+
+func writeGoalTransitionSummary(stdout io.Writer, summary goalTransitionSummary, asJSON bool) {
+	if asJSON {
+		data, err := marshalIndented(summary)
+		if err != nil {
+			fmt.Fprintf(stdout, "{\"transition_schema_version\":\"ao.forge.goal-run-transition.v0.1\",\"status\":\"failed\",\"reason\":%q}\n", err.Error())
+			return
+		}
+		_, _ = stdout.Write(data)
+		return
+	}
+	fmt.Fprintf(stdout, "goal_run_transition=%s\n", summary.Status)
+	fmt.Fprintf(stdout, "goal_run=%s\n", summary.GoalRun)
+	fmt.Fprintf(stdout, "goal_id=%s\n", summary.GoalID)
+	fmt.Fprintf(stdout, "current_phase=%s\n", summary.CurrentPhase)
+	fmt.Fprintf(stdout, "allowed_next_phases=%s\n", formatGoalRunPhaseList(summary.AllowedNextPhases))
+	if summary.RequestedPhase != "" {
+		fmt.Fprintf(stdout, "requested_phase=%s\n", summary.RequestedPhase)
+	}
+	fmt.Fprintf(stdout, "reason=%s\n", summary.Reason)
 }
 
 func writeGoalInspectSummary(stdout io.Writer, summary goalInspectSummary, asJSON bool) {

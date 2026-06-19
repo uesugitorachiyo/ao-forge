@@ -142,14 +142,14 @@ jobs:
           set -euo pipefail
           if [[ "${AO_FORGE_ROLLBACK_ACTION}" == "audit-only" ]]; then
             python3 - <<'PY'
-            import json
-            import os
-            import pathlib
+          import json
+          import os
+          import pathlib
 
-            out = pathlib.Path(os.environ["AO_FORGE_ROLLBACK_OUT"])
-            release = json.loads((out / "release-before.json").read_text())
-            (out / "release-notes-after-rollback.md").write_text(release.get("body") or "")
-            PY
+          out = pathlib.Path(os.environ["AO_FORGE_ROLLBACK_OUT"])
+          release = json.loads((out / "release-before.json").read_text())
+          (out / "release-notes-after-rollback.md").write_text(release.get("body") or "")
+          PY
             echo "release rollback audit-only: correction note not applied"
             exit 0
           fi

@@ -1225,6 +1225,10 @@ func TestReleaseRollbackWorkflowGuardsReleaseYankActions(t *testing.T) {
 			t.Fatalf("release rollback workflow must not contain %q\n%s", forbidden, workflow)
 		}
 	}
+
+	if strings.Contains(workflow, "\n            PY\n") {
+		t.Fatalf("release rollback workflow contains an indented heredoc terminator that bash will not close")
+	}
 }
 
 func TestArtifactChecksumsWritesStableSHA256Manifest(t *testing.T) {

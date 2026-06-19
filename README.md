@@ -267,6 +267,9 @@ Pull requests and pushes to `main` also run the non-mutating release preview
 audit workflow. It uploads `release-preview-audit.json`,
 `release-preview-inspect.txt`, `release-preview-inspect.json`, and
 `checksums.txt` as CI artifacts.
+The CI production-readiness artifact also includes
+`goal-run-retained-evidence-cleanup.json`, a schema-valid cleanup dry-run for
+reviewing retained GoalRun evidence eligibility without deleting files.
 
 The `Release Rehearsal` workflow provides a tagged release rehearsal without
 publishing. Run it manually with the intended tag, or let it run on pushed `v*`

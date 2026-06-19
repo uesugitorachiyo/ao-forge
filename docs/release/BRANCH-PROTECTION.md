@@ -41,8 +41,10 @@ fixtures, update-audit fixtures, evidence verifier JSON, and stale-evidence
 failure behavior before merge. Optional external shell and Python linters are
 disabled for this gate so local and hosted results stay deterministic.
 Production readiness audit runs `forge production-readiness audit`, validates
-the JSON output against its published schema, and uploads the machine-readable
-score artifact before merge. The release preview check
+the JSON output against its published schema, runs
+`forge goal evidence cleanup --dry-run --json`, validates that cleanup dry-run
+against `docs/contracts/goal-run-retained-evidence-cleanup-v0.1.schema.json`,
+and uploads both machine-readable artifacts before merge. The release preview check
 comes from `.github/workflows/release-preview.yml` and verifies the non-mutating
 release rehearsal, human inspect output, JSON inspect output, and uploaded
 release evidence artifacts.

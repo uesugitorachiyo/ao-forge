@@ -11,6 +11,8 @@
     "repository",
     "workflow",
     "release_before",
+    "release_after",
+    "mutation_comparison",
     "operator_rules"
   ],
   "properties": {
@@ -59,6 +61,51 @@
       "additionalProperties": false
     },
     "release_before": {
+      "$ref": "#/$defs/release_summary"
+    },
+    "release_after": {
+      "$ref": "#/$defs/release_summary"
+    },
+    "mutation_comparison": {
+      "type": "object",
+      "required": [
+        "mutation_relevant_fields_unchanged",
+        "checked_fields",
+        "before",
+        "after"
+      ],
+      "properties": {
+        "mutation_relevant_fields_unchanged": {
+          "type": "boolean"
+        },
+        "checked_fields": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "before": {
+          "$ref": "#/$defs/normalized_release"
+        },
+        "after": {
+          "$ref": "#/$defs/normalized_release"
+        }
+      },
+      "additionalProperties": false
+    },
+    "operator_rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "$defs": {
+    "release_summary": {
       "type": "object",
       "required": [
         "tag_name",
@@ -102,13 +149,69 @@
       },
       "additionalProperties": false
     },
-    "operator_rules": {
-      "type": "array",
-      "minItems": 1,
-      "items": {
-        "type": "string",
-        "minLength": 1
-      }
+    "normalized_release": {
+      "type": "object",
+      "required": [
+        "tag_name",
+        "target_commitish",
+        "is_draft",
+        "is_prerelease",
+        "published_at",
+        "url",
+        "assets"
+      ],
+      "properties": {
+        "tag_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target_commitish": {
+          "type": "string",
+          "minLength": 1
+        },
+        "is_draft": {
+          "type": "boolean"
+        },
+        "is_prerelease": {
+          "type": "boolean"
+        },
+        "published_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "assets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/normalized_asset"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "normalized_asset": {
+      "type": "object",
+      "required": ["name", "digest", "size", "state"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "digest": {
+          "type": ["string", "null"]
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "state": {
+          "type": ["string", "null"]
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

@@ -99,6 +99,17 @@ jobs:
             --json isDraft,isPrerelease,tagName,targetCommitish,url,publishedAt,body,assets \
             > "${AO_FORGE_ROLLBACK_OUT}/release-before.json"
 
+      - name: Read release metadata after rollback
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view "${AO_FORGE_ROLLBACK_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --json isDraft,isPrerelease,tagName,targetCommitish,url,publishedAt,assets \
+            > "${AO_FORGE_ROLLBACK_OUT}/release-after.json"
+
       - name: Write rollback audit
         shell: bash
         run: |
@@ -109,7 +120,42 @@ jobs:
           import pathlib
 
           out = pathlib.Path(os.environ["AO_FORGE_ROLLBACK_OUT"])
-          release = json.loads((out / "release-before.json").read_text())
+          release_before = json.loads((out / "release-before.json").read_text())
+          release_after = json.loads((out / "release-after.json").read_text())
+
+          def release_summary(release):
+              return {
+                  "tag_name": release.get("tagName"),
+                  "target_commitish": release.get("targetCommitish"),
+                  "is_draft": release.get("isDraft"),
+                  "is_prerelease": release.get("isPrerelease"),
+                  "published_at": release.get("publishedAt"),
+                  "url": release.get("url"),
+                  "asset_names": [asset.get("name") for asset in release.get("assets", [])],
+              }
+
+          def normalized_release(release):
+              assets = [
+                  {
+                      "name": asset.get("name"),
+                      "digest": asset.get("digest"),
+                      "size": asset.get("size"),
+                      "state": asset.get("state"),
+                  }
+                  for asset in release.get("assets", [])
+              ]
+              return {
+                  "tag_name": release.get("tagName"),
+                  "target_commitish": release.get("targetCommitish"),
+                  "is_draft": release.get("isDraft"),
+                  "is_prerelease": release.get("isPrerelease"),
+                  "published_at": release.get("publishedAt"),
+                  "url": release.get("url"),
+                  "assets": sorted(assets, key=lambda asset: asset.get("name") or ""),
+              }
+
+          normalized_before = normalized_release(release_before)
+          normalized_after = normalized_release(release_after)
           audit = {
               "schema_version": "ao.forge.release-rollback-audit.v0.1",
               "tag": os.environ["AO_FORGE_ROLLBACK_TAG"],
@@ -123,14 +169,24 @@ jobs:
                   "run_id": os.environ["GITHUB_RUN_ID"],
                   "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
               },
-              "release_before": {
-                  "tag_name": release.get("tagName"),
-                  "target_commitish": release.get("targetCommitish"),
-                  "is_draft": release.get("isDraft"),
-                  "is_prerelease": release.get("isPrerelease"),
-                  "published_at": release.get("publishedAt"),
-                  "url": release.get("url"),
-                  "asset_names": [asset.get("name") for asset in release.get("assets", [])],
+              "release_before": release_summary(release_before),
+              "release_after": release_summary(release_after),
+              "mutation_comparison": {
+                  "mutation_relevant_fields_unchanged": normalized_before == normalized_after,
+                  "checked_fields": [
+                      "tag_name",
+                      "target_commitish",
+                      "is_draft",
+                      "is_prerelease",
+                      "published_at",
+                      "url",
+                      "assets.name",
+                      "assets.digest",
+                      "assets.size",
+                      "assets.state",
+                  ],
+                  "before": normalized_before,
+                  "after": normalized_after,
               },
               "operator_rules": [
                   "Never delete release evidence",
@@ -160,17 +216,6 @@ jobs:
           release = json.loads((out / "release-before.json").read_text())
           (out / "release-notes-after-rollback.md").write_text(release.get("body") or "")
           PY
-
-      - name: Read release metadata after rollback
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          gh release view "${AO_FORGE_ROLLBACK_TAG}" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --json isDraft,isPrerelease,tagName,targetCommitish,url,publishedAt,assets \
-            > "${AO_FORGE_ROLLBACK_OUT}/release-after.json"
 
       - name: Upload rollback audit
         uses: actions/upload-artifact@v7

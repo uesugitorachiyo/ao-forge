@@ -51,7 +51,8 @@ A release may be called production-stable only when all criteria pass:
 - `Release Verify` completed successfully for the release;
 - `Release Install Verify` completed successfully for the release;
 - `Release Rollback` audit-only completed successfully for the release;
-- rollback audit evidence proves no release mutation was requested.
+- rollback audit evidence proves no release mutation was requested and
+  mutation-relevant release fields stayed unchanged.
 
 If any criterion fails, keep the release status language at public-preview,
 candidate, or blocked. Do not describe a release as production-stable in release
@@ -63,7 +64,8 @@ Block promotion when any of these are true:
 
 - Release Verify used legacy overrides such as `require_signed_tag=false` or
   `require_evidence_bundle=false`;
-- rollback audit evidence is missing or not audit-only;
+- rollback audit evidence is missing, not audit-only, or does not prove
+  mutation-relevant release fields stayed unchanged;
 - public assets cannot be downloaded or checksums cannot be verified;
 - a known severity-high or severity-critical issue affects the release;
 - release notes require correction;

@@ -242,10 +242,11 @@ checksums, extracts the platform archives, runs the Linux binary from the
 downloaded asset, and uploads `release-install-verify-audit.json`.
 
 The `Release Rollback` workflow is the guarded release yank path. It is
-manual-only, requires the `production-release` environment, explicit
-`confirm_rollback=true`, and a public correction reason. It can run
-`audit-only`, mark a release as prerelease, or move a release back to draft, but
-it must not delete releases, tags, assets, or evidence.
+manual-only and always requires explicit `confirm_rollback=true` plus a public
+correction reason. The `audit-only` path is read-only and emits rollback
+evidence without production environment approval; `mark-prerelease` and
+`mark-draft` require the `production-release` environment before using
+`contents: write`. Rollback must not delete releases, tags, assets, or evidence.
 
 The `Production Promotion` workflow is the read-only gate for production-stable
 release language. It requires a successful `Release Verify` run, a successful

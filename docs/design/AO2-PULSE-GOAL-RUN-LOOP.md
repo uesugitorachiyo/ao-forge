@@ -60,6 +60,12 @@ Run these commands from the repository that owns the GoalRun contract.
    Each `--evidence` path must point to a readable artifact. AO Forge records
    the path and SHA-256 in the candidate GoalRun and in the update audit, giving
    AO2 Pulse a durable handoff for the proof used to choose the next state.
+   Before preserving a candidate as durable state, move any scratch evidence out
+   of `tmp/` and into the retained evidence layout:
+
+   ```text
+   docs/evidence/goals/<goal_id>/<YYYYMMDDTHHMMSSZ>-<phase>/
+   ```
 
 6. Validate the emitted update audit before preserving it:
 
@@ -86,6 +92,12 @@ Run these commands from the repository that owns the GoalRun contract.
    verifies by SHA-256, and still proves the proposed next task. If repository
    state changed or the artifact is a live-state snapshot, AO2 Pulse must
    collect fresh evidence instead.
+
+10. Retain the handoff evidence. The durable handoff must include the candidate
+    GoalRun, update audit, evidence verification JSON, and every artifact named
+    in `last_iteration.evidence`. Persist these under
+    `docs/evidence/goals/<goal_id>/<YYYYMMDDTHHMMSSZ>-<phase>/` or stop before
+    replacing the latest GoalRun.
 
 ## Handoff Fixture
 
@@ -136,6 +148,12 @@ Each successful loop iteration must preserve:
 - the `forge contract validate` result for that audit;
 - the final `forge goal validate` result for the candidate GoalRun;
 - the final `forge goal evidence verify` result for the candidate GoalRun.
+
+Preserved evidence paths must be repository-relative and durable. Do not record
+`tmp/`, `/tmp/`, runner temp directories, home-directory paths, or other
+machine-local absolute paths in `last_iteration.evidence`. Keep retained
+evidence until the GoalRun reaches a terminal phase and for at least 90 days
+afterward; public release or promotion evidence is retained indefinitely.
 
 This keeps AO2 Pulse useful for hardening work while keeping durable goal state,
 transition policy, and mutation auditability inside AO Forge.

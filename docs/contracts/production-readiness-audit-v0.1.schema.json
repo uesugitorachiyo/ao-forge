@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/uesugitorachiyo/ao-forge/docs/contracts/production-readiness-audit-v0.1.schema.json",
+  "title": "AO Forge Production Readiness Audit v0.1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "status",
+    "generated_at_utc",
+    "readiness_percent",
+    "passed_gates",
+    "total_gates",
+    "gates",
+    "next_actions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "ao.forge.production-readiness-audit.v0.1"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["passed", "failed"]
+    },
+    "generated_at_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "readiness_percent": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "passed_gates": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "total_gates": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "gates": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["gate_id", "category", "status", "summary", "evidence"],
+        "properties": {
+          "gate_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]+$"
+          },
+          "category": {
+            "type": "string",
+            "enum": ["contracts", "ci", "release", "goalrun", "security"]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["passed", "failed"]
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evidence": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "next_actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["action_id", "description", "required"],
+        "properties": {
+          "action_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "required": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "passed"
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "readiness_percent": {
+            "const": 100
+          },
+          "next_actions": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "failed"
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "readiness_percent": {
+            "maximum": 99
+          },
+          "next_actions": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

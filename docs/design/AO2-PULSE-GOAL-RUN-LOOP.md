@@ -81,6 +81,12 @@ Run these commands from the repository that owns the GoalRun contract.
    forge goal evidence verify --goal-run tmp/ao2-weekend-hardening.goal-run.json
    ```
 
+9. Decide whether evidence may be reused. AO2 Pulse may reuse a previously
+   recorded evidence artifact only when it is intentionally immutable, still
+   verifies by SHA-256, and still proves the proposed next task. If repository
+   state changed or the artifact is a live-state snapshot, AO2 Pulse must
+   collect fresh evidence instead.
+
 ## Handoff Fixture
 
 The checked-in handoff pair shows the durable artifact AO2 Pulse should
@@ -109,6 +115,7 @@ AO2 Pulse must not continue when any of these checks fail:
 - the update audit does not validate;
 - the candidate GoalRun does not validate;
 - any recorded evidence attachment is missing or has a SHA-256 mismatch.
+- evidence is duplicated, stale, or no longer proves the next task.
 
 For a denied transition or scope mismatch, AO2 Pulse should emit a backoff or
 stopped result and leave the existing GoalRun unchanged. For terminal phases

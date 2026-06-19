@@ -112,3 +112,19 @@ forge goal evidence verify --goal-run examples/goals/ao2-pulse-handoff.goal-run.
 The verifier recalculates SHA-256 for every `last_iteration.evidence` path and
 fails if an artifact is missing, has no recorded hash, or no longer matches the
 recorded hash.
+
+## Evidence Freshness Policy
+
+AO Forge treats GoalRun evidence as immutable proof for the iteration that
+selected the next state.
+
+- A single `forge goal update` call must not attach the same evidence path more
+  than once. Duplicate paths are denied before the candidate GoalRun is written.
+- Reusing evidence from an earlier iteration is allowed only when the artifact is
+  intentionally immutable, still matches its recorded SHA-256, and still proves
+  the proposed next task. Otherwise AO2 Pulse must collect fresh evidence.
+- If `forge goal evidence verify` reports a missing artifact, missing hash, or
+  SHA-256 mismatch, AO2 Pulse must emit backoff or stop and leave the existing
+  GoalRun unchanged.
+- Evidence that depends on live repository state should be refreshed after the
+  worktree, branch, or checked commit changes.

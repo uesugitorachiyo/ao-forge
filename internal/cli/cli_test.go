@@ -60,6 +60,8 @@ func TestHelpExplainsFactoryTermsWithoutMarketingCopy(t *testing.T) {
 		"forge plan --brief",
 		"forge inspect --packet",
 		"forge contract validate --schema <schema.json> --document <document.json> [--json]",
+		"forge goal validate --goal-run <goal-run.json> [--json]",
+		"forge goal inspect --goal-run <goal-run.json> [--json]",
 		"dry-run execution",
 		"forge artifact checksums",
 		"forge release-preview inspect --audit <release-preview-audit.json> [--json]",
@@ -72,6 +74,7 @@ func TestHelpExplainsFactoryTermsWithoutMarketingCopy(t *testing.T) {
 		"artifact checksums",
 		"artifact checksum verification",
 		"contract schema validation",
+		"GoalRun validation and inspection",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("help missing %q\n%s", want, stdout)
@@ -86,6 +89,108 @@ func TestHelpExplainsFactoryTermsWithoutMarketingCopy(t *testing.T) {
 		if strings.Contains(strings.ToLower(stdout), forbidden) {
 			t.Fatalf("help contains marketing copy %q\n%s", forbidden, stdout)
 		}
+	}
+}
+
+func TestGoalRunCLIValidatesAndInspectsContract(t *testing.T) {
+	root := repoRoot(t)
+	goalPath := filepath.Join(root, "examples", "goals", "ao2-weekend-hardening.goal-run.json")
+
+	code, stdout, stderr := runCLI("goal", "validate", "--goal-run", goalPath)
+	if code != 0 {
+		t.Fatalf("goal validate exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	for _, want := range []string{
+		"goal_run_validation=passed",
+		"schema=docs/contracts/goal-run-v0.1.schema.json",
+		"schema_version=ao.forge.goal-run.v0.1",
+		"goal_id=ao2-weekend-hardening",
+		"current_phase=planning",
+		"next_action_guard=enabled",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("goal validate stdout missing %q\n%s", want, stdout)
+		}
+	}
+	if stderr != "" {
+		t.Fatalf("goal validate wrote stderr: %s", stderr)
+	}
+
+	code, stdout, stderr = runCLI("goal", "inspect", "--goal-run", goalPath)
+	if code != 0 {
+		t.Fatalf("goal inspect exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	for _, want := range []string{
+		"schema_version=ao.forge.goal-run.v0.1",
+		"goal_id=ao2-weekend-hardening",
+		"repo=ao2",
+		"current_phase=planning",
+		"acceptance_criteria=3",
+		"allowed_scope=3",
+		"stop_conditions=4",
+		"loop_owner=ao-forge/ao2-pulse/codex-cron",
+		"next_action_guard_enabled=true",
+		"next_action_guard_on_mismatch=backoff_or_stop",
+		"last_iteration_status=not_started",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("goal inspect stdout missing %q\n%s", want, stdout)
+		}
+	}
+	if stderr != "" {
+		t.Fatalf("goal inspect wrote stderr: %s", stderr)
+	}
+
+	code, stdout, stderr = runCLI("goal", "inspect", "--goal-run", goalPath, "--json")
+	if code != 0 {
+		t.Fatalf("goal inspect --json exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	var inspect struct {
+		InspectSchemaVersion string `json:"inspect_schema_version"`
+		GoalID               string `json:"goal_id"`
+		Repo                 string `json:"repo"`
+		AcceptanceCriteria   int    `json:"acceptance_criteria"`
+		NextActionGuard      struct {
+			Enabled    bool   `json:"enabled"`
+			OnMismatch string `json:"on_mismatch"`
+		} `json:"next_action_guard"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &inspect); err != nil {
+		t.Fatalf("goal inspect --json emitted invalid JSON: %v\n%s", err, stdout)
+	}
+	if inspect.InspectSchemaVersion != "ao.forge.goal-run-inspect.v0.1" ||
+		inspect.GoalID != "ao2-weekend-hardening" ||
+		inspect.Repo != "ao2" ||
+		inspect.AcceptanceCriteria != 3 ||
+		!inspect.NextActionGuard.Enabled ||
+		inspect.NextActionGuard.OnMismatch != "backoff_or_stop" {
+		t.Fatalf("goal inspect --json summary drifted: %+v", inspect)
+	}
+	if stderr != "" {
+		t.Fatalf("goal inspect --json wrote stderr: %s", stderr)
+	}
+
+	code, stdout, stderr = runCLI("goal", "validate")
+	if code != 2 {
+		t.Fatalf("goal validate missing flag exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if !strings.Contains(stderr, "missing required --goal-run") {
+		t.Fatalf("goal validate missing flag stderr drifted: %s", stderr)
+	}
+
+	invalidPath := filepath.Join(t.TempDir(), "invalid.goal-run.json")
+	if err := os.WriteFile(invalidPath, []byte(`{"schema_version":"ao.forge.goal-run.v0.1"}`), 0o644); err != nil {
+		t.Fatalf("write invalid goal run: %v", err)
+	}
+	code, stdout, stderr = runCLI("goal", "validate", "--goal-run", invalidPath)
+	if code != 1 {
+		t.Fatalf("goal validate invalid exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "goal_run_validation=failed") || !strings.Contains(stdout, "error=") {
+		t.Fatalf("goal validate invalid stdout drifted:\n%s", stdout)
+	}
+	if !strings.Contains(stderr, "goal run validation failed") {
+		t.Fatalf("goal validate invalid stderr drifted: %s", stderr)
 	}
 }
 
@@ -147,6 +252,8 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "README goal run docs link", doc: readme, want: "[GoalRun Contract](docs/design/GOAL-RUNS.md)"},
 		{name: "README goal run schema link", doc: readme, want: "[GoalRun v0.1 Schema](docs/contracts/goal-run-v0.1.schema.json)"},
 		{name: "README goal run example link", doc: readme, want: "[Example GoalRun](examples/goals/ao2-weekend-hardening.goal-run.json)"},
+		{name: "README goal run validate command", doc: readme, want: "./bin/forge goal validate --goal-run examples/goals/ao2-weekend-hardening.goal-run.json"},
+		{name: "README goal run inspect command", doc: readme, want: "./bin/forge goal inspect --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --json"},
 		{name: "README brief schema link", doc: readme, want: "[Factory Brief v0.1 Schema](docs/contracts/factory-brief-v0.1.schema.json)"},
 		{name: "README plan schema link", doc: readme, want: "[Factory Plan v0.1 Schema](docs/contracts/factory-plan-v0.1.schema.json)"},
 		{name: "README release preview schema link", doc: readme, want: "[Release Preview Audit v0.1 Schema](docs/contracts/release-preview-audit-v0.1.schema.json)"},

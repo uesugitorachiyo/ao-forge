@@ -1208,6 +1208,7 @@ func TestReleaseInstallVerifyWorkflowChecksPublicAssets(t *testing.T) {
 		{name: "darwin archive", doc: workflow, want: "ao-forge_Darwin_arm64.tar.gz"},
 		{name: "windows archive", doc: workflow, want: "ao-forge_Windows_x86_64.zip"},
 		{name: "linux smoke", doc: workflow, want: "Run Linux install smoke test"},
+		{name: "installed binary checksum verification", doc: workflow, want: `artifact verify-checksums --manifest "${assets}/checksums.txt"`},
 		{name: "windows inspection", doc: workflow, want: "ao-forge.exe"},
 		{name: "audit schema", doc: workflow, want: "ao.forge.release-install-verify.v0.1"},
 		{name: "audit output", doc: workflow, want: "release-install-verify-audit.json"},
@@ -1236,6 +1237,7 @@ func TestReleaseInstallVerifyWorkflowChecksPublicAssets(t *testing.T) {
 		"softprops/action-gh-release",
 		"actions/upload-artifact@v4",
 		"actions/upload-artifact@v5",
+		"doctor --foundation",
 	} {
 		if strings.Contains(workflow, forbidden) {
 			t.Fatalf("release install verify workflow must not contain %q\n%s", forbidden, workflow)

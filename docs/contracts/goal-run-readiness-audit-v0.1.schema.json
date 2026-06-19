@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/uesugitorachiyo/ao-forge/docs/contracts/goal-run-readiness-audit-v0.1.schema.json",
+  "title": "AO Forge GoalRun Readiness Audit v0.1",
+  "type": "object",
+  "required": [
+    "readiness_schema_version",
+    "goal_run",
+    "status",
+    "checks",
+    "evidence_lint",
+    "evidence_verify",
+    "retention_audits",
+    "errors"
+  ],
+  "properties": {
+    "readiness_schema_version": {
+      "const": "ao.forge.goal-run-readiness-audit.v0.1"
+    },
+    "goal_run": {
+      "type": "string",
+      "minLength": 1
+    },
+    "goal_id": {
+      "type": "string"
+    },
+    "current_phase": {
+      "type": "string"
+    },
+    "requested_phase": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["passed", "failed"]
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["check_id", "status", "summary"],
+        "properties": {
+          "check_id": {
+            "type": "string",
+            "enum": [
+              "goal_validate",
+              "goal_inspect",
+              "goal_transition",
+              "evidence_lint",
+              "evidence_verify",
+              "retained_evidence"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["passed", "failed"]
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "evidence_lint": {
+      "type": "object",
+      "required": [
+        "lint_schema_version",
+        "document",
+        "document_type",
+        "status",
+        "evidence_linted",
+        "evidence",
+        "errors"
+      ],
+      "additionalProperties": true
+    },
+    "evidence_verify": {
+      "type": "object",
+      "required": [
+        "verify_schema_version",
+        "goal_run",
+        "status",
+        "evidence_verified",
+        "evidence",
+        "errors"
+      ],
+      "additionalProperties": true
+    },
+    "retention_audits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "retention_audit_schema_version",
+          "artifact",
+          "status",
+          "retention_status",
+          "cleanup_review_status",
+          "errors"
+        ],
+        "additionalProperties": true
+      }
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "passed"
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "goal_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "current_phase": {
+            "type": "string",
+            "minLength": 1
+          },
+          "errors": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "failed"
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "errors": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

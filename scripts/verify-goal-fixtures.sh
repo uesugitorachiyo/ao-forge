@@ -67,6 +67,12 @@ fi
 
 for goal_run in "${goal_runs[@]}"; do
   "$forge_bin" goal validate --goal-run "$goal_run"
+  "$forge_bin" goal readiness --goal-run "$goal_run" --now 2026-06-19T18:00:00Z
+  readiness_json="$verify_dir/$(basename "$goal_run").readiness-audit.json"
+  "$forge_bin" goal readiness --goal-run "$goal_run" --now 2026-06-19T18:00:00Z --json > "$readiness_json"
+  "$forge_bin" contract validate \
+    --schema docs/contracts/goal-run-readiness-audit-v0.1.schema.json \
+    --document "$readiness_json"
   "$forge_bin" goal evidence lint --goal-run "$goal_run"
   lint_json="$verify_dir/$(basename "$goal_run").evidence-lint.json"
   "$forge_bin" goal evidence lint --goal-run "$goal_run" --json > "$lint_json"
@@ -200,6 +206,7 @@ for invalid_path_update_audit in "${invalid_path_update_audits[@]}"; do
 done
 
 echo "goal_run_fixtures_validated=${#goal_runs[@]}"
+echo "goal_run_readiness_audits_validated=${#goal_runs[@]}"
 echo "goal_run_update_audits_validated=${#update_audits[@]}"
 echo "goal_run_invalid_fixtures_rejected=${#invalid_goal_runs[@]}"
 echo "goal_run_invalid_path_fixtures_rejected=${#invalid_path_goal_runs[@]}"

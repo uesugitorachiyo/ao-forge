@@ -1,0 +1,212 @@
+name: Production Promotion
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Published release tag to audit for production-stable promotion"
+        required: true
+        default: "v0.1.0"
+      release_verify_run_id:
+        description: "Successful Release Verify run ID for this tag"
+        required: true
+      release_rollback_audit_run_id:
+        description: "Successful Release Rollback audit-only run ID for this tag"
+        required: true
+      min_soak_hours:
+        description: "Minimum published-release soak window in hours"
+        required: true
+        default: "24"
+      confirm_promotion_audit:
+        description: "Type true to run the production-stable promotion audit"
+        required: true
+        default: "false"
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: production-promotion-${{ github.event.inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  promotion-audit:
+    name: Production-stable promotion audit
+    runs-on: ubuntu-latest
+    env:
+      REQUESTED_PROMOTION_TAG: ${{ github.event.inputs.tag }}
+      RELEASE_VERIFY_RUN_ID: ${{ github.event.inputs.release_verify_run_id }}
+      RELEASE_ROLLBACK_AUDIT_RUN_ID: ${{ github.event.inputs.release_rollback_audit_run_id }}
+      MIN_SOAK_HOURS: ${{ github.event.inputs.min_soak_hours }}
+      CONFIRM_PROMOTION_AUDIT: ${{ github.event.inputs.confirm_promotion_audit }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve promotion request
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${REQUESTED_PROMOTION_TAG:-}"
+          if [[ "${CONFIRM_PROMOTION_AUDIT}" != "true" ]]; then
+            echo "confirm_promotion_audit must be exactly true" >&2
+            exit 1
+          fi
+          if [[ -z "$tag" || "$tag" != v* ]]; then
+            echo "promotion tag is required and must start with v" >&2
+            exit 1
+          fi
+          if [[ -z "${RELEASE_VERIFY_RUN_ID:-}" || -z "${RELEASE_ROLLBACK_AUDIT_RUN_ID:-}" ]]; then
+            echo "release_verify_run_id and release_rollback_audit_run_id are required" >&2
+            exit 1
+          fi
+          if ! [[ "${MIN_SOAK_HOURS}" =~ ^[0-9]+$ ]]; then
+            echo "min_soak_hours must be a non-negative integer" >&2
+            exit 1
+          fi
+
+          echo "AO_FORGE_PROMOTION_TAG=$tag" >> "$GITHUB_ENV"
+          echo "AO_FORGE_PROMOTION_OUT=${RUNNER_TEMP}/ao-forge-production-promotion" >> "$GITHUB_ENV"
+          echo "promotion_tag=$tag" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Read release metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${AO_FORGE_PROMOTION_OUT}/runs" "${AO_FORGE_PROMOTION_OUT}/rollback"
+          gh release view "${AO_FORGE_PROMOTION_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --json isDraft,isPrerelease,tagName,targetCommitish,url,publishedAt,assets \
+            > "${AO_FORGE_PROMOTION_OUT}/release.json"
+
+      - name: Read evidence workflow runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run view "${RELEASE_VERIFY_RUN_ID}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --json conclusion,createdAt,databaseId,event,headSha,status,url,workflowName \
+            > "${AO_FORGE_PROMOTION_OUT}/runs/release-verify-run.json"
+          gh run view "${RELEASE_ROLLBACK_AUDIT_RUN_ID}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --json conclusion,createdAt,databaseId,event,headSha,status,url,workflowName \
+            > "${AO_FORGE_PROMOTION_OUT}/runs/release-rollback-audit-run.json"
+
+      - name: Download rollback audit evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download "${RELEASE_ROLLBACK_AUDIT_RUN_ID}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --name release-rollback-audit \
+            --dir "${AO_FORGE_PROMOTION_OUT}/rollback"
+
+      - name: Validate production-stable criteria
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import datetime as dt
+          import json
+          import os
+          import pathlib
+          import sys
+
+          out = pathlib.Path(os.environ["AO_FORGE_PROMOTION_OUT"])
+          tag = os.environ["AO_FORGE_PROMOTION_TAG"]
+          min_soak_hours = int(os.environ["MIN_SOAK_HOURS"])
+          release = json.loads((out / "release.json").read_text())
+          verify_run = json.loads((out / "runs" / "release-verify-run.json").read_text())
+          rollback_run = json.loads((out / "runs" / "release-rollback-audit-run.json").read_text())
+          rollback_audit = json.loads((out / "rollback" / "release-rollback-audit.json").read_text())
+
+          published_at_text = release.get("publishedAt")
+          published_at = dt.datetime.fromisoformat(published_at_text.replace("Z", "+00:00")) if published_at_text else None
+          now = dt.datetime.now(dt.timezone.utc)
+          soak_hours = (now - published_at).total_seconds() / 3600 if published_at else -1
+
+          criteria = {
+              "release_is_published": release.get("isDraft") is False,
+              "release_is_not_prerelease": release.get("isPrerelease") is False,
+              "tag_matches_release": release.get("tagName") == tag,
+              "soak_window_met": soak_hours >= min_soak_hours,
+              "release_verify_succeeded": verify_run.get("workflowName") == "Release Verify" and verify_run.get("conclusion") == "success",
+              "rollback_audit_succeeded": rollback_run.get("workflowName") == "Release Rollback" and rollback_run.get("conclusion") == "success",
+              "rollback_audit_only": rollback_audit.get("tag") == tag and rollback_audit.get("rollback_action") == "audit-only",
+          }
+          failed = [name for name, ok in criteria.items() if not ok]
+
+          audit = {
+              "schema_version": "ao.forge.production-promotion-audit.v0.1",
+              "status": "passed" if not failed else "blocked",
+              "tag": tag,
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "workflow": {
+                  "name": "Production Promotion",
+                  "path": ".github/workflows/production-promotion.yml",
+                  "ref": os.environ["GITHUB_REF"],
+                  "run_id": os.environ["GITHUB_RUN_ID"],
+                  "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              },
+              "release": {
+                  "url": release.get("url"),
+                  "target_commitish": release.get("targetCommitish"),
+                  "published_at": published_at_text,
+                  "soak_hours": round(soak_hours, 2),
+                  "min_soak_hours": min_soak_hours,
+              },
+              "evidence_runs": {
+                  "release_verify": {
+                      "run_id": str(verify_run.get("databaseId")),
+                      "url": verify_run.get("url"),
+                      "conclusion": verify_run.get("conclusion"),
+                  },
+                  "release_rollback_audit": {
+                      "run_id": str(rollback_run.get("databaseId")),
+                      "url": rollback_run.get("url"),
+                      "conclusion": rollback_run.get("conclusion"),
+                  },
+              },
+              "criteria": criteria,
+              "failed_criteria": failed,
+              "allowed_status_language": [
+                  "production-stable",
+                  "stable for production adoption",
+              ],
+              "operator_rules": [
+                  "Do not describe a release as production-stable until this audit passes.",
+                  "Do not use legacy Release Verify overrides for production-stable promotion.",
+                  "Keep rollback evidence before promotion.",
+              ],
+          }
+          (out / "production-promotion-audit.json").write_text(json.dumps(audit, indent=2, sort_keys=True) + "\n")
+
+          if failed:
+              for name in failed:
+                  print(f"::error::production-stable criterion failed: {name}")
+              sys.exit(1)
+
+          print("production_promotion_audit=passed")
+          PY
+
+      - name: Upload production promotion audit
+        uses: actions/upload-artifact@v7
+        with:
+          name: production-promotion-audit
+          path: |
+            ${{ runner.temp }}/ao-forge-production-promotion/release.json
+            ${{ runner.temp }}/ao-forge-production-promotion/runs/*.json
+            ${{ runner.temp }}/ao-forge-production-promotion/rollback/release-rollback-audit.json
+            ${{ runner.temp }}/ao-forge-production-promotion/production-promotion-audit.json
+          if-no-files-found: error
+          retention-days: 90

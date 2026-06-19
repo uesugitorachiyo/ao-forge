@@ -230,6 +230,12 @@ host-compatible binary smoke test. Future releases require the evidence bundle
 by default; use the explicit legacy override only for releases published before
 that asset existed.
 
+The `Release Rollback` workflow is the guarded release yank path. It is
+manual-only, requires the `production-release` environment, explicit
+`confirm_rollback=true`, and a public correction reason. It can run
+`audit-only`, mark a release as prerelease, or move a release back to draft, but
+it must not delete releases, tags, assets, or evidence.
+
 ## Continuous Integration
 
 This repository is public. The GitHub Actions workflow runs automatically on every push to a branch and every pull request targeting `main`.

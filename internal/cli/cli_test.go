@@ -1156,6 +1156,77 @@ func TestReleaseVerifyWorkflowChecksPublishedReleaseEvidence(t *testing.T) {
 	}
 }
 
+func TestReleaseRollbackWorkflowGuardsReleaseYankActions(t *testing.T) {
+	root := repoRoot(t)
+	readText := func(path ...string) string {
+		t.Helper()
+		bytes, err := os.ReadFile(filepath.Join(append([]string{root}, path...)...))
+		if err != nil {
+			t.Fatalf("read %s: %v", filepath.Join(path...), err)
+		}
+		return string(bytes)
+	}
+
+	workflow := readText(".github", "workflows", "release-rollback.yml")
+	readme := readText("README.md")
+	firstRelease := readText("docs", "release", "FIRST-PUBLIC-RELEASE.md")
+	threatModel := readText("docs", "security", "RELEASE-THREAT-MODEL.md")
+
+	for _, check := range []struct {
+		name string
+		doc  string
+		want string
+	}{
+		{name: "workflow name", doc: workflow, want: "name: Release Rollback"},
+		{name: "manual trigger", doc: workflow, want: "workflow_dispatch:"},
+		{name: "tag input", doc: workflow, want: "tag:"},
+		{name: "action input", doc: workflow, want: "rollback_action:"},
+		{name: "reason input", doc: workflow, want: "reason:"},
+		{name: "confirm input", doc: workflow, want: "confirm_rollback:"},
+		{name: "environment approval", doc: workflow, want: "environment: production-release"},
+		{name: "contents write", doc: workflow, want: "contents: write"},
+		{name: "actions read", doc: workflow, want: "actions: read"},
+		{name: "resolve rollback request", doc: workflow, want: "Resolve rollback request"},
+		{name: "confirmation gate", doc: workflow, want: "confirm_rollback must be exactly true"},
+		{name: "reason gate", doc: workflow, want: "rollback reason is required"},
+		{name: "allowed audit action", doc: workflow, want: "audit-only"},
+		{name: "allowed prerelease action", doc: workflow, want: "mark-prerelease"},
+		{name: "allowed draft action", doc: workflow, want: "mark-draft"},
+		{name: "release metadata", doc: workflow, want: "gh release view"},
+		{name: "preserve evidence", doc: workflow, want: "Never delete release evidence"},
+		{name: "no silent replacement", doc: workflow, want: "Do not replace release assets in rollback"},
+		{name: "audit file", doc: workflow, want: "release-rollback-audit.json"},
+		{name: "append correction note", doc: workflow, want: "Append rollback correction note"},
+		{name: "prerelease mutation", doc: workflow, want: "gh release edit \"${AO_FORGE_ROLLBACK_TAG}\" --prerelease=true"},
+		{name: "draft mutation", doc: workflow, want: "gh release edit \"${AO_FORGE_ROLLBACK_TAG}\" --draft=true"},
+		{name: "upload audit", doc: workflow, want: "release-rollback-audit"},
+		{name: "summary", doc: workflow, want: "release_rollback_audit="},
+		{name: "readme workflow", doc: readme, want: "`Release Rollback`"},
+		{name: "first release workflow", doc: firstRelease, want: "`Release Rollback` workflow"},
+		{name: "threat model workflow", doc: threatModel, want: "`Release Rollback`"},
+	} {
+		if !strings.Contains(check.doc, check.want) {
+			t.Fatalf("%s missing %q", check.name, check.want)
+		}
+	}
+
+	for _, forbidden := range []string{
+		"push:",
+		"pull_request:",
+		"gh release delete",
+		"gh release upload",
+		"gh release create",
+		"git push --delete",
+		"delete-asset",
+		"actions/upload-artifact@v4",
+		"actions/upload-artifact@v5",
+	} {
+		if strings.Contains(workflow, forbidden) {
+			t.Fatalf("release rollback workflow must not contain %q\n%s", forbidden, workflow)
+		}
+	}
+}
+
 func TestArtifactChecksumsWritesStableSHA256Manifest(t *testing.T) {
 	tmpDir := t.TempDir()
 	firstPath := filepath.Join(tmpDir, "ao-forge_Darwin_arm64.tar.gz")

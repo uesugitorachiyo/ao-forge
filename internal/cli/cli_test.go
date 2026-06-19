@@ -63,6 +63,7 @@ func TestHelpExplainsFactoryTermsWithoutMarketingCopy(t *testing.T) {
 		"forge goal validate --goal-run <goal-run.json> [--json]",
 		"forge goal inspect --goal-run <goal-run.json> [--json]",
 		"forge goal transitions --goal-run <goal-run.json> [--to <phase>] [--json]",
+		"forge goal update --goal-run <goal-run.json> --out <goal-run.json>",
 		"dry-run execution",
 		"forge artifact checksums",
 		"forge release-preview inspect --audit <release-preview-audit.json> [--json]",
@@ -77,6 +78,7 @@ func TestHelpExplainsFactoryTermsWithoutMarketingCopy(t *testing.T) {
 		"contract schema validation",
 		"GoalRun validation and inspection",
 		"GoalRun transition checks",
+		"guarded GoalRun updates",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("help missing %q\n%s", want, stdout)
@@ -292,6 +294,110 @@ func TestGoalRunCLIChecksPhaseTransitions(t *testing.T) {
 	}
 }
 
+func TestGoalRunCLIUpdatesWithTransitionGuardAndAudit(t *testing.T) {
+	root := repoRoot(t)
+	goalPath := filepath.Join(root, "examples", "goals", "ao2-weekend-hardening.goal-run.json")
+	outPath := filepath.Join(t.TempDir(), "updated.goal-run.json")
+
+	code, stdout, stderr := runCLI(
+		"goal", "update",
+		"--goal-run", goalPath,
+		"--out", outPath,
+		"--phase", "implementation",
+		"--next-task", "Implement the smallest verified AO2 hardening task.",
+		"--last-verified-at", "2026-06-19T14:30:00Z",
+		"--last-iteration-status", "passed",
+		"--last-iteration-summary", "Transitioned from planning with a bounded implementation task.",
+		"--json",
+	)
+	if code != 0 {
+		t.Fatalf("goal update exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if stderr != "" {
+		t.Fatalf("goal update wrote stderr: %s", stderr)
+	}
+	var audit struct {
+		AuditSchemaVersion  string   `json:"audit_schema_version"`
+		GoalID              string   `json:"goal_id"`
+		PreviousPhase       string   `json:"previous_phase"`
+		CurrentPhase        string   `json:"current_phase"`
+		PhaseTransition     string   `json:"phase_transition"`
+		UpdatedFields       []string `json:"updated_fields"`
+		LastIterationStatus string   `json:"last_iteration_status"`
+		Status              string   `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &audit); err != nil {
+		t.Fatalf("goal update emitted invalid JSON audit: %v\n%s", err, stdout)
+	}
+	if audit.AuditSchemaVersion != "ao.forge.goal-run-update-audit.v0.1" ||
+		audit.GoalID != "ao2-weekend-hardening" ||
+		audit.PreviousPhase != "planning" ||
+		audit.CurrentPhase != "implementation" ||
+		audit.PhaseTransition != "planning->implementation" ||
+		strings.Join(audit.UpdatedFields, ",") != "current_phase,next_task,last_verified_at,last_iteration.status,last_iteration.summary" ||
+		audit.LastIterationStatus != "passed" ||
+		audit.Status != "updated" {
+		t.Fatalf("goal update audit drifted: %+v", audit)
+	}
+
+	code, stdout, stderr = runCLI("goal", "validate", "--goal-run", outPath)
+	if code != 0 {
+		t.Fatalf("updated goal validate exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	updatedBytes, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read updated goal run: %v", err)
+	}
+	var updated struct {
+		CurrentPhase   string `json:"current_phase"`
+		NextTask       string `json:"next_task"`
+		LastVerifiedAt string `json:"last_verified_at"`
+		LastIteration  struct {
+			Status  string `json:"status"`
+			Summary string `json:"summary"`
+		} `json:"last_iteration"`
+	}
+	if err := json.Unmarshal(updatedBytes, &updated); err != nil {
+		t.Fatalf("updated goal run invalid JSON: %v\n%s", err, string(updatedBytes))
+	}
+	if updated.CurrentPhase != "implementation" ||
+		updated.NextTask != "Implement the smallest verified AO2 hardening task." ||
+		updated.LastVerifiedAt != "2026-06-19T14:30:00Z" ||
+		updated.LastIteration.Status != "passed" ||
+		updated.LastIteration.Summary != "Transitioned from planning with a bounded implementation task." {
+		t.Fatalf("updated goal run drifted: %+v", updated)
+	}
+
+	deniedOut := filepath.Join(t.TempDir(), "denied.goal-run.json")
+	code, stdout, stderr = runCLI("goal", "update", "--goal-run", goalPath, "--out", deniedOut, "--phase", "verification")
+	if code != 1 {
+		t.Fatalf("goal update denied exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if !strings.Contains(stderr, "phase transition denied: transition planning -> verification is not allowed") {
+		t.Fatalf("goal update denied stderr drifted: %s", stderr)
+	}
+	if _, err := os.Stat(deniedOut); !os.IsNotExist(err) {
+		t.Fatalf("denied update wrote output file: %v", err)
+	}
+
+	code, stdout, stderr = runCLI("goal", "update", "--goal-run", goalPath, "--out", goalPath, "--phase", "implementation")
+	if code != 2 {
+		t.Fatalf("goal update in-place exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if !strings.Contains(stderr, "--out must differ from --goal-run") {
+		t.Fatalf("goal update in-place stderr drifted: %s", stderr)
+	}
+
+	noopOut := filepath.Join(t.TempDir(), "noop.goal-run.json")
+	code, stdout, stderr = runCLI("goal", "update", "--goal-run", goalPath, "--out", noopOut, "--phase", "planning")
+	if code != 1 {
+		t.Fatalf("goal update no-op exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if !strings.Contains(stderr, "update produced no changes") {
+		t.Fatalf("goal update no-op stderr drifted: %s", stderr)
+	}
+}
+
 func TestReleasePreviewAuditFlagRequiresValue(t *testing.T) {
 	cases := []struct {
 		name string
@@ -353,6 +459,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "README goal run validate command", doc: readme, want: "./bin/forge goal validate --goal-run examples/goals/ao2-weekend-hardening.goal-run.json"},
 		{name: "README goal run inspect command", doc: readme, want: "./bin/forge goal inspect --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --json"},
 		{name: "README goal run transitions command", doc: readme, want: "./bin/forge goal transitions --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --to implementation"},
+		{name: "README goal run update command", doc: readme, want: `./bin/forge goal update --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --out tmp/ao2-weekend-hardening.goal-run.json --phase implementation`},
 		{name: "README brief schema link", doc: readme, want: "[Factory Brief v0.1 Schema](docs/contracts/factory-brief-v0.1.schema.json)"},
 		{name: "README plan schema link", doc: readme, want: "[Factory Plan v0.1 Schema](docs/contracts/factory-plan-v0.1.schema.json)"},
 		{name: "README release preview schema link", doc: readme, want: "[Release Preview Audit v0.1 Schema](docs/contracts/release-preview-audit-v0.1.schema.json)"},
@@ -387,6 +494,9 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run docs implementation transition", doc: goalRunDocs, want: "| `implementation` | `verification`, `blocked`, `backoff`, `stopped` |"},
 		{name: "goal run docs terminal transition", doc: goalRunDocs, want: "| `complete` | none; terminal |"},
 		{name: "goal run docs transition gate command", doc: goalRunDocs, want: "forge goal transitions --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --to implementation"},
+		{name: "goal run docs update title", doc: goalRunDocs, want: "## Guarded Updates"},
+		{name: "goal run docs update audit", doc: goalRunDocs, want: "ao.forge.goal-run-update-audit.v0.1"},
+		{name: "goal run docs update no in-place", doc: goalRunDocs, want: "refuses to write over the input file"},
 		{name: "goal run example id", doc: goalRunExample, want: `"goal_id": "ao2-weekend-hardening"`},
 		{name: "goal run example repo", doc: goalRunExample, want: `"repo": "ao2"`},
 		{name: "goal run example state owner", doc: goalRunExample, want: `"state_owner": "ao-forge"`},

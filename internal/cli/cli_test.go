@@ -204,6 +204,7 @@ func TestGoalRunCLIValidatesAndInspectsContract(t *testing.T) {
 func TestGoalRunCLIVerifiesEvidenceHashes(t *testing.T) {
 	root := repoRoot(t)
 	handoffPath := filepath.Join(root, "examples", "goals", "ao2-pulse-handoff.goal-run.json")
+	stalePath := filepath.Join(root, "examples", "goals", "invalid", "stale-evidence.goal-run.invalid.json")
 	verifySchemaPath := filepath.Join(root, "docs", "contracts", "goal-run-evidence-verify-v0.1.schema.json")
 
 	code, stdout, stderr := runCLI("goal", "evidence", "verify", "--goal-run", handoffPath)
@@ -271,15 +272,6 @@ func TestGoalRunCLIVerifiesEvidenceHashes(t *testing.T) {
 		t.Fatalf("goal evidence verify missing flag stderr drifted: %s", stderr)
 	}
 
-	stalePath := filepath.Join(t.TempDir(), "stale.goal-run.json")
-	data, err := os.ReadFile(handoffPath)
-	if err != nil {
-		t.Fatalf("read handoff goal run: %v", err)
-	}
-	stale := strings.Replace(string(data), "4777f6ccb640707eab3e6ab731ac2dcf3b7a196e9aa307ccf0b45fd325429341", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", 1)
-	if err := os.WriteFile(stalePath, []byte(stale), 0o644); err != nil {
-		t.Fatalf("write stale goal run: %v", err)
-	}
 	code, stdout, stderr = runCLI("goal", "evidence", "verify", "--goal-run", stalePath)
 	if code != 1 {
 		t.Fatalf("goal evidence verify stale exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
@@ -622,6 +614,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	goalRunUpdateAuditExample := readText("examples", "goals", "ao2-weekend-hardening.goal-run-update-audit.json")
 	ao2PulseHandoffGoalRunExample := readText("examples", "goals", "ao2-pulse-handoff.goal-run.json")
 	ao2PulseHandoffAuditExample := readText("examples", "goals", "ao2-pulse-handoff.goal-run-update-audit.json")
+	staleEvidenceGoalRunExample := readText("examples", "goals", "invalid", "stale-evidence.goal-run.invalid.json")
 	briefSchema := readText("docs", "contracts", "factory-brief-v0.1.schema.json")
 	planSchema := readText("docs", "contracts", "factory-plan-v0.1.schema.json")
 	releasePreviewSchema := readText("docs", "contracts", "release-preview-audit-v0.1.schema.json")
@@ -709,6 +702,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run docs evidence verify", doc: goalRunDocs, want: "forge goal evidence verify --goal-run examples/goals/ao2-pulse-handoff.goal-run.json"},
 		{name: "goal run docs evidence verify schema", doc: goalRunDocs, want: "docs/contracts/goal-run-evidence-verify-v0.1.schema.json"},
 		{name: "goal run docs evidence verify schema version", doc: goalRunDocs, want: "ao.forge.goal-run-evidence-verify.v0.1"},
+		{name: "goal run docs stale fixture", doc: goalRunDocs, want: "examples/goals/invalid/stale-evidence.goal-run.invalid.json"},
 		{name: "goal run docs evidence mismatch", doc: goalRunDocs, want: "has no recorded hash"},
 		{name: "goal run docs evidence freshness title", doc: goalRunDocs, want: "## Evidence Freshness Policy"},
 		{name: "goal run docs duplicate evidence denied", doc: goalRunDocs, want: "Duplicate paths are denied before the candidate GoalRun is written"},
@@ -734,6 +728,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "AO2 Pulse docs handoff fixture", doc: ao2PulseGoalRunLoopDocs, want: "## Handoff Fixture"},
 		{name: "AO2 Pulse docs handoff goal run", doc: ao2PulseGoalRunLoopDocs, want: "examples/goals/ao2-pulse-handoff.goal-run.json"},
 		{name: "AO2 Pulse docs handoff audit", doc: ao2PulseGoalRunLoopDocs, want: "examples/goals/ao2-pulse-handoff.goal-run-update-audit.json"},
+		{name: "AO2 Pulse docs stale fixture", doc: ao2PulseGoalRunLoopDocs, want: "examples/goals/invalid/stale-evidence.goal-run.invalid.json"},
 		{name: "AO2 Pulse docs audit validate command", doc: ao2PulseGoalRunLoopDocs, want: "docs/contracts/goal-run-update-audit-v0.1.schema.json"},
 		{name: "AO2 Pulse docs candidate validate", doc: ao2PulseGoalRunLoopDocs, want: "forge goal validate --goal-run tmp/ao2-weekend-hardening.goal-run.json"},
 		{name: "AO2 Pulse docs terminal phases", doc: ao2PulseGoalRunLoopDocs, want: "complete` and `stopped`"},
@@ -752,6 +747,9 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "AO2 Pulse handoff audit out", doc: ao2PulseHandoffAuditExample, want: `"out": "examples/goals/ao2-pulse-handoff.goal-run.json"`},
 		{name: "AO2 Pulse handoff audit evidence field", doc: ao2PulseHandoffAuditExample, want: `"last_iteration.evidence"`},
 		{name: "AO2 Pulse handoff audit status", doc: ao2PulseHandoffAuditExample, want: `"status": "updated"`},
+		{name: "stale evidence fixture schema valid", doc: staleEvidenceGoalRunExample, want: `"schema_version": "ao.forge.goal-run.v0.1"`},
+		{name: "stale evidence fixture stale hash", doc: staleEvidenceGoalRunExample, want: `"sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"`},
+		{name: "stale evidence fixture summary", doc: staleEvidenceGoalRunExample, want: "intentionally stale and must fail closed"},
 		{name: "brief schema id", doc: briefSchema, want: `"ao.forge.factory-brief.v0.1"`},
 		{name: "brief strict root", doc: briefSchema, want: `"additionalProperties": false`},
 		{name: "brief objective", doc: briefSchema, want: `"objective"`},
@@ -1753,6 +1751,9 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		{name: "goal fixture verifier update audit glob", doc: goalFixtureVerifier, want: "*.goal-run-update-audit.json"},
 		{name: "goal fixture verifier goal validate", doc: goalFixtureVerifier, want: "goal validate --goal-run"},
 		{name: "goal fixture verifier evidence verify", doc: goalFixtureVerifier, want: "goal evidence verify --goal-run"},
+		{name: "goal fixture verifier invalid glob", doc: goalFixtureVerifier, want: "*.goal-run.invalid.json"},
+		{name: "goal fixture verifier stale failure", doc: goalFixtureVerifier, want: "expected stale GoalRun evidence fixture to fail"},
+		{name: "goal fixture verifier rejected count", doc: goalFixtureVerifier, want: "goal_run_invalid_fixtures_rejected"},
 		{name: "goal fixture verifier audit validate", doc: goalFixtureVerifier, want: "goal-run-update-audit-v0.1.schema.json"},
 		{name: "ci actionlint job", doc: ciWorkflow, want: "workflow-lint:"},
 		{name: "ci actionlint name", doc: ciWorkflow, want: "name: Workflow lint"},

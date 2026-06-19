@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/uesugitorachiyo/ao-forge/docs/contracts/goal-run-update-audit-v0.1.schema.json",
+  "title": "AO Forge GoalRun Update Audit v0.1",
+  "type": "object",
+  "required": [
+    "audit_schema_version",
+    "goal_run",
+    "out",
+    "goal_id",
+    "previous_phase",
+    "current_phase",
+    "phase_transition",
+    "updated_fields",
+    "last_verified_at",
+    "status"
+  ],
+  "properties": {
+    "audit_schema_version": {
+      "const": "ao.forge.goal-run-update-audit.v0.1"
+    },
+    "goal_run": {
+      "type": "string",
+      "minLength": 1
+    },
+    "out": {
+      "type": "string",
+      "minLength": 1
+    },
+    "goal_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"
+    },
+    "previous_phase": {
+      "$ref": "#/$defs/goal_phase"
+    },
+    "current_phase": {
+      "$ref": "#/$defs/goal_phase"
+    },
+    "phase_transition": {
+      "type": "string",
+      "pattern": "^(unchanged|[a-z]+->[a-z]+)$"
+    },
+    "updated_fields": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "enum": [
+          "current_phase",
+          "next_task",
+          "last_verified_at",
+          "last_iteration.status",
+          "last_iteration.summary"
+        ]
+      }
+    },
+    "last_verified_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "last_iteration_status": {
+      "type": "string",
+      "enum": ["not_started", "passed", "failed", "blocked", "backoff", "stopped"]
+    },
+    "last_iteration_summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "const": "updated"
+    }
+  },
+  "$defs": {
+    "goal_phase": {
+      "type": "string",
+      "enum": [
+        "planning",
+        "implementation",
+        "verification",
+        "blocked",
+        "backoff",
+        "stopped",
+        "complete"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

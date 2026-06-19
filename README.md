@@ -59,6 +59,7 @@ over provider execution, release publishing, or control-plane approval.
 - [Release Threat Model](docs/security/RELEASE-THREAT-MODEL.md)
 - [GoalRun Contract](docs/design/GOAL-RUNS.md)
 - [GoalRun v0.1 Schema](docs/contracts/goal-run-v0.1.schema.json)
+- [GoalRun Update Audit v0.1 Schema](docs/contracts/goal-run-update-audit-v0.1.schema.json)
 - [Factory Brief v0.1 Schema](docs/contracts/factory-brief-v0.1.schema.json)
 - [Factory Plan v0.1 Schema](docs/contracts/factory-plan-v0.1.schema.json)
 - [Factory Packet v0.1 Schema](docs/contracts/factory-packet-v0.1.schema.json)
@@ -74,6 +75,7 @@ over provider execution, release publishing, or control-plane approval.
 - [Release Rollback Audit v0.1 Schema](docs/contracts/release-rollback-audit-v0.1.schema.json)
 - [Production Promotion Audit v0.1 Schema](docs/contracts/production-promotion-audit-v0.1.schema.json)
 - [Example GoalRun](examples/goals/ao2-weekend-hardening.goal-run.json)
+- [Example GoalRun Update Audit](examples/goals/ao2-weekend-hardening.goal-run-update-audit.json)
 - [Release Preview Fixtures](examples/release-preview/)
 - [Example Vertical Slice](examples/vertical-slices/risky-pr-factory.factory.json)
 - [Example Deterministic Plan](examples/plans/risky-pr-factory-plan.json)
@@ -95,6 +97,7 @@ Validate and inspect a durable GoalRun before a loop iteration:
 ./bin/forge goal inspect --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --json
 ./bin/forge goal transitions --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --to implementation
 ./bin/forge goal update --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --out tmp/ao2-weekend-hardening.goal-run.json --phase implementation --next-task "Implement the smallest verified AO2 hardening task."
+./bin/forge contract validate --schema docs/contracts/goal-run-update-audit-v0.1.schema.json --document examples/goals/ao2-weekend-hardening.goal-run-update-audit.json
 ```
 
 Build and run the current skeleton:

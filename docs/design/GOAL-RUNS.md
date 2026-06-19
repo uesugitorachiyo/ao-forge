@@ -27,6 +27,8 @@ The GoalRun schema is `docs/contracts/goal-run-v0.1.schema.json`. The update
 audit schema is `docs/contracts/goal-run-update-audit-v0.1.schema.json`. The
 examples are `examples/goals/ao2-weekend-hardening.goal-run.json` and
 `examples/goals/ao2-weekend-hardening.goal-run-update-audit.json`.
+AO2 Pulse integration rules live in
+`docs/design/AO2-PULSE-GOAL-RUN-LOOP.md`.
 
 ## Loop Rule
 

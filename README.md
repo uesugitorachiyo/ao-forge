@@ -58,6 +58,7 @@ over provider execution, release publishing, or control-plane approval.
 - [Foundation Baseline JSON](docs/foundation/foundation-baseline.v0.1.json)
 - [Release Threat Model](docs/security/RELEASE-THREAT-MODEL.md)
 - [GoalRun Contract](docs/design/GOAL-RUNS.md)
+- [AO2 Pulse GoalRun Loop](docs/design/AO2-PULSE-GOAL-RUN-LOOP.md)
 - [GoalRun v0.1 Schema](docs/contracts/goal-run-v0.1.schema.json)
 - [GoalRun Update Audit v0.1 Schema](docs/contracts/goal-run-update-audit-v0.1.schema.json)
 - [Factory Brief v0.1 Schema](docs/contracts/factory-brief-v0.1.schema.json)

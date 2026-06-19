@@ -57,6 +57,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build verification CLI
+        run: go build -o "${RUNNER_TEMP}/forge" ./cmd/forge
+
       - name: Resolve promotion request
         shell: bash
         run: |
@@ -220,6 +229,11 @@ jobs:
 
           print("production_promotion_audit=passed")
           PY
+
+      - name: Validate production promotion audit contract
+        run: |
+          set -euo pipefail
+          "${RUNNER_TEMP}/forge" contract validate --schema docs/contracts/production-promotion-audit-v0.1.schema.json --document "${AO_FORGE_PROMOTION_OUT}/production-promotion-audit.json"
 
       - name: Upload production promotion audit
         uses: actions/upload-artifact@v7

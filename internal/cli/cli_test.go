@@ -1254,6 +1254,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	}
 
 	readme := readText("README.md")
+	aoCommandDocs := readText("docs", "design", "AO-COMMAND-V0.1.md")
 	ao2PulseGoalRunLoopDocs := readText("docs", "design", "AO2-PULSE-GOAL-RUN-LOOP.md")
 	ao2PulseReadinessScript := readText("scripts", "ao2-pulse-goal-readiness.sh")
 	goalRunSchema := readText("docs", "contracts", "goal-run-v0.1.schema.json")
@@ -1308,6 +1309,9 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		doc  string
 		want string
 	}{
+		{name: "README current status", doc: readme, want: "AO Forge v0.1.x now has schema-backed factory contracts"},
+		{name: "README governed execution status", doc: readme, want: "Mutating paths remain fail-closed behind Covenant"},
+		{name: "README AO Command design link", doc: readme, want: "[AO Command v0.1 Design](docs/design/AO-COMMAND-V0.1.md)"},
 		{name: "README goal run docs link", doc: readme, want: "[GoalRun Contract](docs/design/GOAL-RUNS.md)"},
 		{name: "README AO2 Pulse goal run loop link", doc: readme, want: "[AO2 Pulse GoalRun Loop](docs/design/AO2-PULSE-GOAL-RUN-LOOP.md)"},
 		{name: "README goal run schema link", doc: readme, want: "[GoalRun v0.1 Schema](docs/contracts/goal-run-v0.1.schema.json)"},
@@ -1358,6 +1362,16 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "README production readiness audit schema link", doc: readme, want: "[Production Readiness Audit v0.1 Schema](docs/contracts/production-readiness-audit-v0.1.schema.json)"},
 		{name: "README production readiness audit command", doc: readme, want: "./bin/forge production-readiness audit --json"},
 		{name: "README production readiness cleanup artifact", doc: readme, want: "goal-run-retained-evidence-cleanup.json"},
+		{name: "AO Command docs title", doc: aoCommandDocs, want: "# AO Command v0.1"},
+		{name: "AO Command docs read-only default", doc: aoCommandDocs, want: "read-only by default"},
+		{name: "AO Command docs next recommendation", doc: aoCommandDocs, want: "what should happen next"},
+		{name: "AO Command docs Covenant decisions", doc: aoCommandDocs, want: "Covenant allow, deny, and block decisions"},
+		{name: "AO Command docs production readiness", doc: aoCommandDocs, want: "production-readiness percentage"},
+		{name: "AO Command docs release preview", doc: aoCommandDocs, want: "release-preview"},
+		{name: "AO Command docs GoalRun", doc: aoCommandDocs, want: "GoalRun"},
+		{name: "AO Command docs ao2 control plane", doc: aoCommandDocs, want: "ao2-control-plane"},
+		{name: "AO Command docs no policy reimplementation", doc: aoCommandDocs, want: "must not reimplement policy"},
+		{name: "AO Command docs dry run rehearsal", doc: aoCommandDocs, want: "without creating or pushing a tag"},
 		{name: "goal run schema id", doc: goalRunSchema, want: `"ao.forge.goal-run.v0.1"`},
 		{name: "goal run strict root", doc: goalRunSchema, want: `"additionalProperties": false`},
 		{name: "goal run id", doc: goalRunSchema, want: `"goal_id"`},
@@ -1686,6 +1700,16 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	} {
 		if !strings.Contains(check.doc, check.want) {
 			t.Fatalf("%s missing %q", check.name, check.want)
+		}
+	}
+
+	for _, forbidden := range []string{
+		"Slice 0.2 CLI skeleton in progress",
+		"Execution remains disabled until the Covenant",
+		"Execution remains disabled after an allow decision",
+	} {
+		if strings.Contains(readme, forbidden) {
+			t.Fatalf("README contains stale production status phrase %q", forbidden)
 		}
 	}
 

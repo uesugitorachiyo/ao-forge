@@ -14,10 +14,12 @@ factory:
 
 ## Status
 
-Phase 0 foundation with the Slice 0.2 CLI skeleton in progress. The repository
-now includes design, contracts, fixtures, and a small Go CLI for deterministic
-planning and packet inspection. Execution remains disabled until the Covenant
-gate and AO2 adapter slices land.
+AO Forge v0.1.x now has schema-backed factory contracts, guarded dry-run and
+live execution paths, durable GoalRun state, release preview, rehearsal,
+publish, verify, install, rollback, promotion, retained-evidence, and
+production-readiness gates. Mutating paths remain fail-closed behind Covenant
+decisions, clean-workspace checks, explicit operator confirmation, release
+preview evidence, and release or promotion workflow gates.
 
 ## Product Thesis
 
@@ -48,6 +50,7 @@ over provider execution, release publishing, or control-plane approval.
 ## Design Documents
 
 - [AO Forge v0.1 Design](docs/design/AO-FORGE-V0.1.md)
+- [AO Command v0.1 Design](docs/design/AO-COMMAND-V0.1.md)
 - [Phase 0 Roadmap](docs/roadmap/PHASE-0.md)
 - [Branch Protection Runbook](docs/release/BRANCH-PROTECTION.md)
 - [Branch Protection Evidence](docs/release/BRANCH-PROTECTION-EVIDENCE.md)
@@ -156,8 +159,9 @@ Apply the local Covenant decision fixture gate:
 ```
 
 The gate can allow, deny, or block a plan. Deny and malformed decisions return
-non-zero and still emit a machine-readable gate result. Execution remains
-disabled after an allow decision until the AO2 adapter slice lands.
+non-zero and still emit a machine-readable gate result. Allowed plans still fail
+closed unless the selected execution mode, clean workspace, and required
+operator or release confirmations are present.
 
 Inspect the example operator packet:
 

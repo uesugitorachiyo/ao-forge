@@ -51,10 +51,18 @@ jobs:
             echo "release rehearsal tag is required" >&2
             exit 1
           fi
+          notes_tag="${tag^^}"
+          notes_path="docs/release/${notes_tag}-RELEASE-NOTES.md"
+          if [[ ! -f "${notes_path}" ]]; then
+            echo "release notes file is required before release rehearsal: ${notes_path}" >&2
+            exit 1
+          fi
 
           echo "AO_FORGE_RELEASE_PREVIEW_TAG=$tag" >> "$GITHUB_ENV"
           echo "AO_FORGE_RELEASE_PREVIEW_OUT=${RUNNER_TEMP}/ao-forge-release-rehearsal" >> "$GITHUB_ENV"
+          echo "AO_FORGE_RELEASE_NOTES_PATH=${notes_path}" >> "$GITHUB_ENV"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "release_notes=${notes_path}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run tagged release rehearsal
         run: scripts/release-preview-dry-run.sh

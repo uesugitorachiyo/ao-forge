@@ -6,14 +6,14 @@ on:
       tag:
         description: "Release tag to publish as a draft"
         required: true
-        default: "v0.1.0"
+        default: "v0.1.2"
       release_rehearsal_run_id:
         description: "Successful Release Rehearsal run ID for this tag"
         required: true
       notes_path:
         description: "Public-safe release notes file"
         required: true
-        default: "docs/release/V0.1.0-RELEASE-NOTES.md"
+        default: "docs/release/V0.1.2-RELEASE-NOTES.md"
       confirm_publish:
         description: "Type true to create a draft GitHub release"
         required: true

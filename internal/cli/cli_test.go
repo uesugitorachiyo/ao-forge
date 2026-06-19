@@ -882,6 +882,67 @@ func TestV010ReleaseNotesDraftIsPublicSafeAndEvidenceBacked(t *testing.T) {
 	}
 }
 
+func TestV012ReleaseNotesDraftIsPublicSafeAndEvidenceBacked(t *testing.T) {
+	root := repoRoot(t)
+	readText := func(path ...string) string {
+		t.Helper()
+		bytes, err := os.ReadFile(filepath.Join(append([]string{root}, path...)...))
+		if err != nil {
+			t.Fatalf("read %s: %v", filepath.Join(path...), err)
+		}
+		return string(bytes)
+	}
+
+	readme := readText("README.md")
+	notesPath := filepath.Join(root, "docs", "release", "V0.1.2-RELEASE-NOTES.md")
+	notes := readText("docs", "release", "V0.1.2-RELEASE-NOTES.md")
+
+	if !strings.Contains(readme, "[v0.1.2 Release Notes Draft](docs/release/V0.1.2-RELEASE-NOTES.md)") {
+		t.Fatalf("README missing v0.1.2 release notes draft link")
+	}
+	if filepath.Base(notesPath) != "V0.1.2-RELEASE-NOTES.md" {
+		t.Fatalf("unexpected release notes path: %s", notesPath)
+	}
+
+	for _, want := range []string{
+		"# AO Forge v0.1.2 Release Notes",
+		"v0.1.2",
+		"Commit: supplied by the generated Release Publish notes",
+		"Release evidence assets include `release-preview-inspect.json`,",
+		"linux-amd64",
+		"darwin-arm64",
+		"windows-amd64",
+		"controlled preview",
+		"not production-stable",
+		"Release Preview",
+		"Release Rehearsal",
+		"Release Verify",
+		"Release Install Verify",
+		"Release Rollback",
+		"Production Promotion",
+		"checksums.txt",
+		"release-attestation-plan.v0.1.example.json",
+		"v0.1.1 was rehearsal-only",
+	} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("release notes draft missing %q", want)
+		}
+	}
+
+	for _, forbidden := range []string{
+		"/Users/",
+		"/tmp/",
+		"gho_",
+		"Bearer ",
+		"Authorization:",
+		"excluded handoff",
+	} {
+		if strings.Contains(notes, forbidden) {
+			t.Fatalf("release notes draft contains public-unsafe text %q", forbidden)
+		}
+	}
+}
+
 func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 	root := repoRoot(t)
 	readText := func(path ...string) string {
@@ -1034,6 +1095,9 @@ func TestReleaseRehearsalWorkflowValidatesTaggedEvidenceWithoutPublishing(t *tes
 		{name: "dispatch input via event context", doc: workflow, want: "REQUESTED_REHEARSAL_TAG: ${{ github.event.inputs.tag }}"},
 		{name: "tag env", doc: workflow, want: "AO_FORGE_RELEASE_PREVIEW_TAG"},
 		{name: "runner temp via shell env", doc: workflow, want: "AO_FORGE_RELEASE_PREVIEW_OUT=${RUNNER_TEMP}/ao-forge-release-rehearsal"},
+		{name: "release notes env", doc: workflow, want: "AO_FORGE_RELEASE_NOTES_PATH"},
+		{name: "release notes tag path", doc: workflow, want: "docs/release/${notes_tag}-RELEASE-NOTES.md"},
+		{name: "release notes guard", doc: workflow, want: "release notes file is required before release rehearsal"},
 		{name: "dry run script", doc: workflow, want: "scripts/release-preview-dry-run.sh"},
 		{name: "validate evidence step", doc: workflow, want: "Validate rehearsal evidence"},
 		{name: "audit schema validation", doc: workflow, want: "ao.forge.release-preview-audit.v0.1"},
@@ -1048,6 +1112,7 @@ func TestReleaseRehearsalWorkflowValidatesTaggedEvidenceWithoutPublishing(t *tes
 		{name: "upload evidence artifact", doc: workflow, want: "release-rehearsal-evidence"},
 		{name: "runbook section", doc: previewRunbook, want: "## Tagged Release Rehearsal"},
 		{name: "runbook workflow name", doc: previewRunbook, want: "`Release Rehearsal`"},
+		{name: "runbook release notes guard", doc: previewRunbook, want: "requires a tag-specific release notes file"},
 		{name: "runbook contract readback", doc: previewRunbook, want: "reads back the artifact inventory and attestation plan"},
 		{name: "runbook artifact name", doc: previewRunbook, want: "`release-rehearsal-evidence`"},
 		{name: "readme mentions rehearsal", doc: readme, want: "tagged release rehearsal"},
@@ -1087,7 +1152,7 @@ func TestReleaseAttestationWorkflowProducesSignedEvidenceWithoutPublishing(t *te
 	workflow := readText(".github", "workflows", "release-attestation.yml")
 	gitignore := readText(".gitignore")
 	previewRunbook := readText("docs", "release", "PREVIEW-RELEASE.md")
-	releaseNotes := readText("docs", "release", "V0.1.0-RELEASE-NOTES.md")
+	releaseNotes := readText("docs", "release", "V0.1.2-RELEASE-NOTES.md")
 	readme := readText("README.md")
 
 	for _, check := range []struct {
@@ -1187,7 +1252,9 @@ func TestReleasePublishWorkflowCreatesDraftReleaseOnlyAfterEvidenceGates(t *test
 		{name: "workflow name", doc: workflow, want: "name: Release Publish"},
 		{name: "manual trigger", doc: workflow, want: "workflow_dispatch:"},
 		{name: "tag input", doc: workflow, want: "tag:"},
+		{name: "tag default", doc: workflow, want: "default: \"v0.1.2\""},
 		{name: "rehearsal run input", doc: workflow, want: "release_rehearsal_run_id:"},
+		{name: "release notes default", doc: workflow, want: "default: \"docs/release/V0.1.2-RELEASE-NOTES.md\""},
 		{name: "confirmation input", doc: workflow, want: "confirm_publish:"},
 		{name: "confirmation true gate", doc: workflow, want: "confirm_publish must be exactly true"},
 		{name: "environment approval", doc: workflow, want: "environment: production-release"},

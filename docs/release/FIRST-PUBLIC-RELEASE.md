@@ -143,13 +143,16 @@ After publishing:
 
 If the public release is wrong:
 
-1. Mark the GitHub release as pre-release or draft if that reduces user impact.
-2. Publish a correction note that states the affected `<tag>` and artifact names.
-3. Do not silently replace artifacts unless the replacement policy is documented
+1. Run the `Release Rollback` workflow with `rollback_action=audit-only` to
+   capture release metadata and operator evidence before mutation.
+2. If user impact requires it, rerun `Release Rollback` with
+   `rollback_action=mark-prerelease` or `rollback_action=mark-draft`.
+3. Publish a correction note that states the affected `<tag>` and artifact names.
+4. Do not silently replace artifacts unless the replacement policy is documented
    in the release notes.
-4. Create a new corrective tag when artifacts or checksums changed.
-5. Rerun Release Preview and Release Rehearsal for the corrective tag.
-6. Keep the original evidence for auditability.
+5. Create a new corrective tag when artifacts or checksums changed.
+6. Rerun Release Preview and Release Rehearsal for the corrective tag.
+7. Keep the original evidence for auditability.
 
 Never delete evidence merely to hide a bad release. Preserve the trail, then
 ship a corrected release.

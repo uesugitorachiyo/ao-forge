@@ -166,6 +166,52 @@ for retained_readiness_audit in "${retained_readiness_audits[@]}"; do
   "$forge_bin" contract validate \
     --schema docs/contracts/goal-run-readiness-audit-v0.1.schema.json \
     --document "$retained_readiness_audit"
+  python3 - "$retained_readiness_audit" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+audit_path = pathlib.Path(sys.argv[1])
+audit = json.loads(audit_path.read_text())
+provenance = audit.get("provenance", {})
+goal_run = provenance.get("goal_run", {})
+goal_path = pathlib.Path(goal_run.get("path", ""))
+if not goal_path.is_file():
+    raise SystemExit(f"readiness audit provenance goal_run is not readable: {goal_path}")
+actual_goal_sha = hashlib.sha256(goal_path.read_bytes()).hexdigest()
+if goal_run.get("sha256") != actual_goal_sha:
+    raise SystemExit(
+        f"readiness audit provenance goal_run sha256 mismatch: {goal_path}: "
+        f"expected {goal_run.get('sha256')}, got {actual_goal_sha}"
+    )
+
+evidence_by_path = {
+    item.get("path"): item
+    for item in provenance.get("evidence", [])
+}
+for evidence in audit.get("evidence_verify", {}).get("evidence", []):
+    evidence_path = pathlib.Path(evidence.get("path", ""))
+    if evidence.get("status") != "passed":
+        continue
+    if not evidence_path.is_file():
+        raise SystemExit(f"readiness audit provenance evidence is not readable: {evidence_path}")
+    provenance_evidence = evidence_by_path.get(str(evidence_path))
+    if provenance_evidence is None:
+        raise SystemExit(f"readiness audit provenance missing evidence: {evidence_path}")
+    actual_evidence_sha = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+    expected_sha = provenance_evidence.get("sha256")
+    if expected_sha != actual_evidence_sha:
+        raise SystemExit(
+            f"readiness audit provenance evidence sha256 mismatch: {evidence_path}: "
+            f"expected {expected_sha}, got {actual_evidence_sha}"
+        )
+    if evidence.get("actual_sha256") != actual_evidence_sha:
+        raise SystemExit(
+            f"readiness audit evidence_verify sha256 mismatch: {evidence_path}: "
+            f"expected {evidence.get('actual_sha256')}, got {actual_evidence_sha}"
+        )
+PY
 done
 
 for invalid_retained_evidence_artifact in "${invalid_retained_evidence_artifacts[@]}"; do
@@ -301,6 +347,7 @@ echo "goal_run_retained_evidence_fixtures=${retained_evidence_count}"
 echo "goal_run_retained_evidence_artifacts_validated=${#retained_evidence_artifacts[@]}"
 echo "goal_run_retained_evidence_audits_validated=${#retained_evidence_artifacts[@]}"
 echo "goal_run_retained_readiness_audits_validated=${#retained_readiness_audits[@]}"
+echo "goal_run_retained_readiness_provenance_verified=${#retained_readiness_audits[@]}"
 echo "goal_run_retained_evidence_invalid_fixtures_rejected=${#invalid_retained_evidence_artifacts[@]}"
 echo "goal_run_readiness_audit_invalid_fixtures_rejected=${#invalid_readiness_audits[@]}"
 echo "ao2_pulse_failed_readiness_audits_preserved=${#invalid_goal_runs[@]}"

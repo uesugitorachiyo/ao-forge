@@ -4643,8 +4643,19 @@ type goalReadinessSummary struct {
 	Checks                 []goalReadinessCheck           `json:"checks"`
 	EvidenceLint           goalEvidenceLintSummary        `json:"evidence_lint"`
 	EvidenceVerify         goalEvidenceVerifySummary      `json:"evidence_verify"`
+	Provenance             goalReadinessProvenance        `json:"provenance"`
 	RetentionAudits        []goalEvidenceRetentionSummary `json:"retention_audits"`
 	Errors                 []string                       `json:"errors"`
+}
+
+type goalReadinessProvenance struct {
+	GoalRun  goalReadinessProvenanceArtifact   `json:"goal_run"`
+	Evidence []goalReadinessProvenanceArtifact `json:"evidence"`
+}
+
+type goalReadinessProvenanceArtifact struct {
+	Path   string `json:"path"`
+	SHA256 string `json:"sha256,omitempty"`
 }
 
 type goalReadinessCheck struct {
@@ -5101,6 +5112,9 @@ func runGoalReadiness(args []string, stdout, stderr io.Writer) int {
 	}
 
 	summary := emptyGoalReadinessSummary(flags)
+	if sha, err := sha256File(flags.goalRunPath); err == nil {
+		summary.Provenance.GoalRun.SHA256 = sha
+	}
 	goal, err := validateAndReadGoalRun(flags.goalRunPath)
 	if err != nil {
 		markGoalReadinessFailed(&summary, "goal_validate", fmt.Sprintf("goal run validation failed: %v", err))
@@ -5135,6 +5149,7 @@ func runGoalReadiness(args []string, stdout, stderr io.Writer) int {
 	}
 
 	summary.EvidenceVerify = buildGoalEvidenceVerifySummary(flags.goalRunPath, goal)
+	summary.Provenance.Evidence = goalReadinessEvidenceProvenance(summary.EvidenceVerify)
 	if summary.EvidenceVerify.Status != "passed" {
 		markGoalReadinessFailed(&summary, "evidence_verify", strings.Join(summary.EvidenceVerify.Errors, "; "))
 	} else {
@@ -5386,8 +5401,12 @@ func emptyGoalReadinessSummary(flags goalReadinessFlags) goalReadinessSummary {
 		Checks:                 []goalReadinessCheck{},
 		EvidenceLint:           emptyGoalEvidenceLintSummary(flags.goalRunPath),
 		EvidenceVerify:         emptyGoalEvidenceVerifySummary(flags.goalRunPath),
-		RetentionAudits:        []goalEvidenceRetentionSummary{},
-		Errors:                 []string{},
+		Provenance: goalReadinessProvenance{
+			GoalRun:  goalReadinessProvenanceArtifact{Path: displayPath(flags.goalRunPath)},
+			Evidence: []goalReadinessProvenanceArtifact{},
+		},
+		RetentionAudits: []goalEvidenceRetentionSummary{},
+		Errors:          []string{},
 	}
 }
 
@@ -5684,6 +5703,15 @@ func applyGoalRunUpdate(goal *goalRun, flags goalUpdateFlags) ([]string, error) 
 	return updated, nil
 }
 
+func sha256File(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
+}
+
 func ensureGoalRunEvidenceReadyForUpdate(path string, goal goalRun) error {
 	lint := buildGoalEvidenceLintSummaryForGoal(path, goal)
 	if lint.Status != "passed" {
@@ -5694,6 +5722,18 @@ func ensureGoalRunEvidenceReadyForUpdate(path string, goal goalRun) error {
 		return fmt.Errorf("existing GoalRun evidence verification failed: %s", strings.Join(verify.Errors, "; "))
 	}
 	return nil
+}
+
+func goalReadinessEvidenceProvenance(summary goalEvidenceVerifySummary) []goalReadinessProvenanceArtifact {
+	provenance := make([]goalReadinessProvenanceArtifact, 0, len(summary.Evidence))
+	for _, evidence := range summary.Evidence {
+		artifact := goalReadinessProvenanceArtifact{Path: evidence.Path}
+		if evidence.ActualSHA256 != "" {
+			artifact.SHA256 = evidence.ActualSHA256
+		}
+		provenance = append(provenance, artifact)
+	}
+	return provenance
 }
 
 func buildGoalRunEvidence(path string) (goalRunEvidence, error) {

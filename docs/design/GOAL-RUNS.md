@@ -81,13 +81,17 @@ forge goal update \
   --goal-run examples/goals/ao2-weekend-hardening.goal-run.json \
   --out tmp/ao2-weekend-hardening.goal-run.json \
   --phase implementation \
-  --next-task "Implement the smallest verified AO2 hardening task."
+  --next-task "Implement the smallest verified AO2 hardening task." \
+  --evidence examples/goals/ao2-weekend-hardening.goal-run.json
 ```
 
 The command validates the source GoalRun, checks any requested phase change
 against the transition policy, validates the updated GoalRun against the schema,
 writes the candidate to `--out`, and emits an `ao.forge.goal-run-update-audit.v0.1`
 summary. A denied transition exits non-zero and writes no output file.
+Each `--evidence` path must be readable. AO Forge records the evidence path and
+SHA-256 in both `last_iteration.evidence` and the emitted update audit, so AO2
+Pulse can preserve the artifacts that prove why the next state was selected.
 
 Validate an emitted or stored update audit before preserving it as loop
 evidence:

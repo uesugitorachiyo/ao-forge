@@ -16,5 +16,12 @@
   "last_verified_at": "2026-06-19T14:30:00Z",
   "last_iteration_status": "passed",
   "last_iteration_summary": "Transitioned from planning with a bounded implementation task.",
+  "evidence": [
+    {
+      "label": "ao2-weekend-hardening.goal-run.json",
+      "path": "examples/goals/ao2-weekend-hardening.goal-run.json",
+      "sha256": "4777f6ccb640707eab3e6ab731ac2dcf3b7a196e9aa307ccf0b45fd325429341"
+    }
+  ],
   "status": "updated"
 }

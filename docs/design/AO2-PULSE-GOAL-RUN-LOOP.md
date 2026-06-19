@@ -53,8 +53,13 @@ Run these commands from the repository that owns the GoalRun contract.
      --phase implementation \
      --next-task "Implement the smallest verified AO2 hardening task." \
      --last-verified-at 2026-06-19T14:30:00Z \
+     --evidence examples/goals/ao2-weekend-hardening.goal-run.json \
      --json > tmp/ao2-weekend-hardening.goal-run-update-audit.json
    ```
+
+   Each `--evidence` path must point to a readable artifact. AO Forge records
+   the path and SHA-256 in the candidate GoalRun and in the update audit, giving
+   AO2 Pulse a durable handoff for the proof used to choose the next state.
 
 6. Validate the emitted update audit before preserving it:
 
@@ -96,6 +101,7 @@ Each successful loop iteration must preserve:
 - the inspected `current_phase` and proposed next phase;
 - the `forge goal transitions` result;
 - the `forge goal update` audit JSON;
+- every hashed evidence attachment listed by the update audit;
 - the `forge contract validate` result for that audit;
 - the final `forge goal validate` result for the candidate GoalRun.
 

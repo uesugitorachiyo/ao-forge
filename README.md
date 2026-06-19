@@ -253,9 +253,10 @@ releases, tags, assets, or evidence.
 
 The `Production Promotion` workflow is the read-only gate for production-stable
 release language. It requires a successful `Release Verify` run, a successful
-`Release Install Verify` run, a successful `Release Rollback` audit-only run,
-rollback evidence proving mutation-relevant release fields stayed unchanged,
-and a completed soak window before it uploads `production-promotion-audit.json`.
+`Release Install Verify` run with contract-valid install audit evidence for the
+same release, a successful `Release Rollback` audit-only run, rollback evidence
+proving mutation-relevant release fields stayed unchanged, and a completed soak
+window before it uploads `production-promotion-audit.json`.
 Until that audit passes, releases should stay described as public-preview or
 candidate releases.
 

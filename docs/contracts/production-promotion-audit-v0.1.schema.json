@@ -110,8 +110,12 @@
         "soak_window_met",
         "release_verify_succeeded",
         "release_install_verify_succeeded",
+        "install_verify_audit_run_matches",
+        "install_verify_audit_tag_matches",
+        "install_verify_audit_release_matches",
         "rollback_audit_succeeded",
-        "rollback_audit_only"
+        "rollback_audit_only",
+        "rollback_release_unchanged"
       ],
       "properties": {
         "release_is_published": {
@@ -132,10 +136,22 @@
         "release_install_verify_succeeded": {
           "type": "boolean"
         },
+        "install_verify_audit_run_matches": {
+          "type": "boolean"
+        },
+        "install_verify_audit_tag_matches": {
+          "type": "boolean"
+        },
+        "install_verify_audit_release_matches": {
+          "type": "boolean"
+        },
         "rollback_audit_succeeded": {
           "type": "boolean"
         },
         "rollback_audit_only": {
+          "type": "boolean"
+        },
+        "rollback_release_unchanged": {
           "type": "boolean"
         }
       },
@@ -152,8 +168,12 @@
           "soak_window_met",
           "release_verify_succeeded",
           "release_install_verify_succeeded",
+          "install_verify_audit_run_matches",
+          "install_verify_audit_tag_matches",
+          "install_verify_audit_release_matches",
           "rollback_audit_succeeded",
-          "rollback_audit_only"
+          "rollback_audit_only",
+          "rollback_release_unchanged"
         ]
       }
     },

@@ -26,9 +26,14 @@ Require these status checks before merge:
 - `Go ubuntu-latest`
 - `Go macos-latest`
 - `Go windows-latest`
+- `Workflow lint`
 - `Release preview dry-run audit`
 
-The Go checks come from `.github/workflows/ci.yml`. The release preview check
+The Go checks and Workflow lint check come from `.github/workflows/ci.yml`.
+Workflow lint runs `actionlint` against `.github/workflows/*.yml` so GitHub
+Actions context and expression errors are caught before merge. Optional external
+shell and Python linters are disabled for this gate so local and hosted results
+stay deterministic. The release preview check
 comes from `.github/workflows/release-preview.yml` and verifies the non-mutating
 release rehearsal, human inspect output, JSON inspect output, and uploaded
 release evidence artifacts.
@@ -52,6 +57,7 @@ Before pushing public changes, run the local release-readiness gate:
 
 ```sh
 git diff --check
+go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= -pyflakes= .github/workflows/*.yml
 go test ./... -count=1
 go vet ./...
 go build -o /tmp/ao-forge-smoke ./cmd/forge

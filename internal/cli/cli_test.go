@@ -67,6 +67,7 @@ func TestHelpExplainsFactoryTermsWithoutMarketingCopy(t *testing.T) {
 		"forge goal evidence verify --goal-run <goal-run.json> [--json]",
 		"forge goal evidence lint --goal-run <goal-run.json> [--json]",
 		"forge goal evidence lint --update-audit <goal-run-update-audit.json> [--json]",
+		"forge goal evidence retention --artifact <retained-evidence.json> [--now <RFC3339>] [--json]",
 		"dry-run execution",
 		"forge artifact checksums",
 		"forge release-preview inspect --audit <release-preview-audit.json> [--json]",
@@ -85,6 +86,7 @@ func TestHelpExplainsFactoryTermsWithoutMarketingCopy(t *testing.T) {
 		"GoalRun update evidence attachments",
 		"GoalRun evidence verification",
 		"GoalRun evidence path linting",
+		"GoalRun retained evidence retention audits",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("help missing %q\n%s", want, stdout)
@@ -486,6 +488,132 @@ func TestGoalRunCLILintsEvidencePaths(t *testing.T) {
 	}
 }
 
+func TestGoalRunCLIAuditsRetainedEvidenceRetention(t *testing.T) {
+	root := repoRoot(t)
+	artifactPath := filepath.Join(root, "docs", "evidence", "goals", "ao2-weekend-hardening", "20260619T143000Z-implementation", "ao2-pulse-handoff-retention-proof.json")
+	auditSchemaPath := filepath.Join(root, "docs", "contracts", "goal-run-retained-evidence-audit-v0.1.schema.json")
+	now := "2026-06-19T18:00:00Z"
+
+	code, stdout, stderr := runCLI("goal", "evidence", "retention", "--artifact", artifactPath, "--now", now)
+	if code != 0 {
+		t.Fatalf("goal evidence retention exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	for _, want := range []string{
+		"goal_evidence_retention=passed",
+		"artifact=docs/evidence/goals/ao2-weekend-hardening/20260619T143000Z-implementation/ao2-pulse-handoff-retention-proof.json",
+		"goal_id=ao2-weekend-hardening",
+		"phase=implementation",
+		"retention_class=loop_evidence",
+		"retained_at=2026-06-19T14:30:00Z",
+		"retention_status=active_retention",
+		"cleanup_review_status=not_eligible_active_goal",
+		"age_days=0",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("goal evidence retention stdout missing %q\n%s", want, stdout)
+		}
+	}
+	if stderr != "" {
+		t.Fatalf("goal evidence retention wrote stderr: %s", stderr)
+	}
+
+	code, stdout, stderr = runCLI("goal", "evidence", "retention", "--artifact", artifactPath, "--now", now, "--json")
+	if code != 0 {
+		t.Fatalf("goal evidence retention --json exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	var summary struct {
+		RetentionAuditSchemaVersion string `json:"retention_audit_schema_version"`
+		Status                      string `json:"status"`
+		RetentionStatus             string `json:"retention_status"`
+		CleanupReviewStatus         string `json:"cleanup_review_status"`
+		AgeDays                     int    `json:"age_days"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &summary); err != nil {
+		t.Fatalf("goal evidence retention --json emitted invalid JSON: %v\n%s", err, stdout)
+	}
+	var auditDocument any
+	if err := json.Unmarshal([]byte(stdout), &auditDocument); err != nil {
+		t.Fatalf("goal evidence retention --json emitted invalid JSON document: %v\n%s", err, stdout)
+	}
+	if err := validateJSONSchemaValue(auditSchemaPath, auditDocument); err != nil {
+		t.Fatalf("goal evidence retention --json failed schema validation: %v\n%s", err, stdout)
+	}
+	if summary.RetentionAuditSchemaVersion != "ao.forge.goal-run-retained-evidence-audit.v0.1" ||
+		summary.Status != "passed" ||
+		summary.RetentionStatus != "active_retention" ||
+		summary.CleanupReviewStatus != "not_eligible_active_goal" ||
+		summary.AgeDays != 0 {
+		t.Fatalf("goal evidence retention JSON drifted: %+v", summary)
+	}
+	if stderr != "" {
+		t.Fatalf("goal evidence retention --json wrote stderr: %s", stderr)
+	}
+
+	terminalPath := filepath.Join(t.TempDir(), "terminal-retained-evidence.json")
+	terminalArtifact := strings.ReplaceAll(`{
+  "schema_version": "ao.forge.goal-run-retained-evidence.v0.1",
+  "goal_id": "ao2-weekend-hardening",
+  "iteration": "20260101T000000Z-complete",
+  "phase": "complete",
+  "summary": "Terminal retained evidence fixture for cleanup eligibility auditing.",
+  "retention_policy": {
+    "layout": "docs/evidence/goals/<goal_id>/<YYYYMMDDTHHMMSSZ>-<phase>/",
+    "temporary_paths_allowed": false,
+    "minimum_retention_days_after_terminal_phase": 90
+  },
+  "retention_metadata": {
+    "retained_at": "2026-01-01T00:00:00Z",
+    "retention_class": "loop_evidence",
+    "retain_while_goal_active": true,
+    "deletion_requires_review": true,
+    "cleanup_change_must_name": ["goal_id", "iteration", "reason"]
+  }
+}`, "\n", "\n")
+	if err := os.WriteFile(terminalPath, []byte(terminalArtifact), 0o644); err != nil {
+		t.Fatalf("write terminal retained evidence fixture: %v", err)
+	}
+	code, stdout, stderr = runCLI("goal", "evidence", "retention", "--artifact", terminalPath, "--now", now)
+	if code != 0 {
+		t.Fatalf("goal evidence retention terminal exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	for _, want := range []string{
+		"phase=complete",
+		"retention_status=cleanup_review_eligible",
+		"cleanup_review_status=eligible_after_review",
+		"mandatory_retention_until=2026-04-01T00:00:00Z",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("goal evidence retention terminal stdout missing %q\n%s", want, stdout)
+		}
+	}
+	if stderr != "" {
+		t.Fatalf("goal evidence retention terminal wrote stderr: %s", stderr)
+	}
+
+	futurePath := filepath.Join(t.TempDir(), "future-retained-evidence.json")
+	futureArtifact := strings.ReplaceAll(terminalArtifact, `"retained_at": "2026-01-01T00:00:00Z"`, `"retained_at": "2026-06-20T00:00:00Z"`)
+	if err := os.WriteFile(futurePath, []byte(futureArtifact), 0o644); err != nil {
+		t.Fatalf("write future retained evidence fixture: %v", err)
+	}
+	code, stdout, stderr = runCLI("goal", "evidence", "retention", "--artifact", futurePath, "--now", now, "--json")
+	if code != 1 {
+		t.Fatalf("goal evidence retention future exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if err := json.Unmarshal([]byte(stdout), &auditDocument); err != nil {
+		t.Fatalf("goal evidence retention future --json emitted invalid JSON: %v\n%s", err, stdout)
+	}
+	if err := validateJSONSchemaValue(auditSchemaPath, auditDocument); err != nil {
+		t.Fatalf("goal evidence retention future --json failed schema validation: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stdout, `"status": "failed"`) ||
+		!strings.Contains(stdout, "is after now") {
+		t.Fatalf("goal evidence retention future stdout drifted:\n%s", stdout)
+	}
+	if !strings.Contains(stderr, "retained evidence audit failed") {
+		t.Fatalf("goal evidence retention future stderr drifted: %s", stderr)
+	}
+}
+
 func TestGoalRunCLIChecksPhaseTransitions(t *testing.T) {
 	root := repoRoot(t)
 	goalPath := filepath.Join(root, "examples", "goals", "ao2-weekend-hardening.goal-run.json")
@@ -798,6 +926,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	goalRunEvidenceVerifySchema := readText("docs", "contracts", "goal-run-evidence-verify-v0.1.schema.json")
 	goalRunEvidenceLintSchema := readText("docs", "contracts", "goal-run-evidence-lint-v0.1.schema.json")
 	goalRunRetainedEvidenceSchema := readText("docs", "contracts", "goal-run-retained-evidence-v0.1.schema.json")
+	goalRunRetainedEvidenceAuditSchema := readText("docs", "contracts", "goal-run-retained-evidence-audit-v0.1.schema.json")
 	goalRunDocs := readText("docs", "design", "GOAL-RUNS.md")
 	goalRunExample := readText("examples", "goals", "ao2-weekend-hardening.goal-run.json")
 	goalRunUpdateAuditExample := readText("examples", "goals", "ao2-weekend-hardening.goal-run-update-audit.json")
@@ -842,6 +971,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "README goal run evidence verify schema link", doc: readme, want: "[GoalRun Evidence Verify v0.1 Schema](docs/contracts/goal-run-evidence-verify-v0.1.schema.json)"},
 		{name: "README goal run evidence lint schema link", doc: readme, want: "[GoalRun Evidence Lint v0.1 Schema](docs/contracts/goal-run-evidence-lint-v0.1.schema.json)"},
 		{name: "README goal run retained evidence schema link", doc: readme, want: "[GoalRun Retained Evidence v0.1 Schema](docs/contracts/goal-run-retained-evidence-v0.1.schema.json)"},
+		{name: "README goal run retained evidence audit schema link", doc: readme, want: "[GoalRun Retained Evidence Audit v0.1 Schema](docs/contracts/goal-run-retained-evidence-audit-v0.1.schema.json)"},
 		{name: "README goal run example link", doc: readme, want: "[Example GoalRun](examples/goals/ao2-weekend-hardening.goal-run.json)"},
 		{name: "README goal run update audit example link", doc: readme, want: "[Example GoalRun Update Audit](examples/goals/ao2-weekend-hardening.goal-run-update-audit.json)"},
 		{name: "README AO2 Pulse handoff goal run link", doc: readme, want: "[AO2 Pulse Handoff GoalRun](examples/goals/ao2-pulse-handoff.goal-run.json)"},
@@ -857,6 +987,8 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "README goal evidence lint audit command", doc: readme, want: "forge goal evidence lint --update-audit examples/goals/ao2-pulse-handoff.goal-run-update-audit.json"},
 		{name: "README goal evidence lint schema validate command", doc: readme, want: "forge contract validate --schema docs/contracts/goal-run-evidence-lint-v0.1.schema.json --document tmp/goal-run-evidence-lint.json"},
 		{name: "README goal retained evidence schema validate command", doc: readme, want: "forge contract validate --schema docs/contracts/goal-run-retained-evidence-v0.1.schema.json --document docs/evidence/goals/ao2-weekend-hardening/20260619T143000Z-implementation/ao2-pulse-handoff-retention-proof.json"},
+		{name: "README goal retained evidence audit command", doc: readme, want: "forge goal evidence retention --artifact docs/evidence/goals/ao2-weekend-hardening/20260619T143000Z-implementation/ao2-pulse-handoff-retention-proof.json --json > tmp/goal-run-retained-evidence-audit.json"},
+		{name: "README goal retained evidence audit schema validate command", doc: readme, want: "forge contract validate --schema docs/contracts/goal-run-retained-evidence-audit-v0.1.schema.json --document tmp/goal-run-retained-evidence-audit.json"},
 		{name: "README goal evidence verify schema validate command", doc: readme, want: "forge contract validate --schema docs/contracts/goal-run-evidence-verify-v0.1.schema.json --document tmp/goal-run-evidence-verify.json"},
 		{name: "README goal evidence retained paths", doc: readme, want: "Persisted GoalRun evidence is retained under repository-relative durable paths"},
 		{name: "README goal evidence path lint", doc: readme, want: "The GoalRun fixture smoke rejects retained"},
@@ -914,6 +1046,11 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run retained evidence retention class", doc: goalRunRetainedEvidenceSchema, want: `"loop_evidence"`},
 		{name: "goal run retained evidence active retention", doc: goalRunRetainedEvidenceSchema, want: `"retain_while_goal_active"`},
 		{name: "goal run retained evidence deletion review", doc: goalRunRetainedEvidenceSchema, want: `"deletion_requires_review"`},
+		{name: "goal run retained evidence audit schema id", doc: goalRunRetainedEvidenceAuditSchema, want: `"ao.forge.goal-run-retained-evidence-audit.v0.1"`},
+		{name: "goal run retained evidence audit strict root", doc: goalRunRetainedEvidenceAuditSchema, want: `"additionalProperties": false`},
+		{name: "goal run retained evidence audit active status", doc: goalRunRetainedEvidenceAuditSchema, want: `"active_retention"`},
+		{name: "goal run retained evidence audit cleanup eligible", doc: goalRunRetainedEvidenceAuditSchema, want: `"cleanup_review_eligible"`},
+		{name: "goal run retained evidence audit cleanup review status", doc: goalRunRetainedEvidenceAuditSchema, want: `"eligible_after_review"`},
 		{name: "goal run docs title", doc: goalRunDocs, want: "# AO Forge GoalRun Contract"},
 		{name: "goal run docs ownership", doc: goalRunDocs, want: "AO Forge owns durable goal and task state"},
 		{name: "goal run docs cron boundary", doc: goalRunDocs, want: "codex-cron should only trigger the loop"},
@@ -932,6 +1069,9 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run docs evidence lint schema", doc: goalRunDocs, want: "docs/contracts/goal-run-evidence-lint-v0.1.schema.json"},
 		{name: "goal run docs evidence lint schema version", doc: goalRunDocs, want: "ao.forge.goal-run-evidence-lint.v0.1"},
 		{name: "goal run docs retained evidence schema", doc: goalRunDocs, want: "docs/contracts/goal-run-retained-evidence-v0.1.schema.json"},
+		{name: "goal run docs retained evidence audit schema", doc: goalRunDocs, want: "docs/contracts/goal-run-retained-evidence-audit-v0.1.schema.json"},
+		{name: "goal run docs retained evidence audit command", doc: goalRunDocs, want: "forge goal evidence retention --artifact <retained-evidence.json>"},
+		{name: "goal run docs retained evidence audit terminal windows", doc: goalRunDocs, want: "`complete` and `stopped` artifacts are classified as mandatory retention"},
 		{name: "goal run docs retention metadata", doc: goalRunDocs, want: "Retained artifacts must include machine-readable retention metadata"},
 		{name: "goal run docs stale fixture", doc: goalRunDocs, want: "examples/goals/invalid/stale-evidence.goal-run.invalid.json"},
 		{name: "goal run docs evidence mismatch", doc: goalRunDocs, want: "has no recorded hash"},
@@ -2058,6 +2198,7 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		{name: "goal fixture verifier evidence lint update audit", doc: goalFixtureVerifier, want: "goal evidence lint --update-audit"},
 		{name: "goal fixture verifier evidence lint schema", doc: goalFixtureVerifier, want: "goal-run-evidence-lint-v0.1.schema.json"},
 		{name: "goal fixture verifier retained evidence schema", doc: goalFixtureVerifier, want: "goal-run-retained-evidence-v0.1.schema.json"},
+		{name: "goal fixture verifier retained evidence audit schema", doc: goalFixtureVerifier, want: "goal-run-retained-evidence-audit-v0.1.schema.json"},
 		{name: "goal fixture verifier invalid glob", doc: goalFixtureVerifier, want: "*.goal-run.invalid.json"},
 		{name: "goal fixture verifier retained invalid glob", doc: goalFixtureVerifier, want: "*.goal-run-retained-evidence.invalid.json"},
 		{name: "goal fixture verifier path invalid glob", doc: goalFixtureVerifier, want: "*.goal-run.path-invalid.json"},
@@ -2070,8 +2211,10 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		{name: "goal fixture verifier path rejected count", doc: goalFixtureVerifier, want: "goal_run_invalid_path_fixtures_rejected"},
 		{name: "goal fixture verifier update audit path rejected count", doc: goalFixtureVerifier, want: "goal_run_update_audit_invalid_path_fixtures_rejected"},
 		{name: "goal fixture verifier retained layout", doc: goalFixtureVerifier, want: "docs/evidence/goals/"},
+		{name: "goal fixture verifier retained audit command", doc: goalFixtureVerifier, want: "goal evidence retention"},
 		{name: "goal fixture verifier retained count", doc: goalFixtureVerifier, want: "goal_run_retained_evidence_fixtures"},
 		{name: "goal fixture verifier retained artifact count", doc: goalFixtureVerifier, want: "goal_run_retained_evidence_artifacts_validated"},
+		{name: "goal fixture verifier retained audit count", doc: goalFixtureVerifier, want: "goal_run_retained_evidence_audits_validated"},
 		{name: "goal fixture verifier retained artifact rejected count", doc: goalFixtureVerifier, want: "goal_run_retained_evidence_invalid_fixtures_rejected"},
 		{name: "goal fixture verifier audit validate", doc: goalFixtureVerifier, want: "goal-run-update-audit-v0.1.schema.json"},
 		{name: "ci actionlint job", doc: ciWorkflow, want: "workflow-lint:"},

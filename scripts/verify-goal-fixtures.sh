@@ -115,6 +115,17 @@ for retained_evidence_artifact in "${retained_evidence_artifacts[@]}"; do
   "$forge_bin" contract validate \
     --schema docs/contracts/goal-run-retained-evidence-v0.1.schema.json \
     --document "$retained_evidence_artifact"
+  "$forge_bin" goal evidence retention \
+    --artifact "$retained_evidence_artifact" \
+    --now 2026-06-19T18:00:00Z
+  retention_json="$verify_dir/$(basename "$retained_evidence_artifact").retention-audit.json"
+  "$forge_bin" goal evidence retention \
+    --artifact "$retained_evidence_artifact" \
+    --now 2026-06-19T18:00:00Z \
+    --json > "$retention_json"
+  "$forge_bin" contract validate \
+    --schema docs/contracts/goal-run-retained-evidence-audit-v0.1.schema.json \
+    --document "$retention_json"
 done
 
 for invalid_retained_evidence_artifact in "${invalid_retained_evidence_artifacts[@]}"; do
@@ -195,4 +206,5 @@ echo "goal_run_invalid_path_fixtures_rejected=${#invalid_path_goal_runs[@]}"
 echo "goal_run_update_audit_invalid_path_fixtures_rejected=${#invalid_path_update_audits[@]}"
 echo "goal_run_retained_evidence_fixtures=${retained_evidence_count}"
 echo "goal_run_retained_evidence_artifacts_validated=${#retained_evidence_artifacts[@]}"
+echo "goal_run_retained_evidence_audits_validated=${#retained_evidence_artifacts[@]}"
 echo "goal_run_retained_evidence_invalid_fixtures_rejected=${#invalid_retained_evidence_artifacts[@]}"

@@ -190,6 +190,13 @@ under `docs/evidence/goals/` against
 Retained artifacts must include machine-readable retention metadata: when the
 artifact was retained, its retention class, whether it must be retained while
 the GoalRun is active, and the review fields a cleanup change must name.
+Run `forge goal evidence retention --artifact <retained-evidence.json>` to
+audit `retained_at` freshness and terminal retention windows. Its JSON output is
+validated by
+`docs/contracts/goal-run-retained-evidence-audit-v0.1.schema.json`; terminal
+`complete` and `stopped` artifacts are classified as mandatory retention until
+their `minimum_retention_days_after_terminal_phase` window ends, then as cleanup
+review eligible.
 It also rejects schema-invalid retained artifact fixtures under
 `examples/goals/invalid/`:
 

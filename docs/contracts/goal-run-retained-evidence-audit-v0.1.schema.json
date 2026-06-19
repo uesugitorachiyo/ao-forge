@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/uesugitorachiyo/ao-forge/docs/contracts/goal-run-retained-evidence-audit-v0.1.schema.json",
+  "title": "AO Forge GoalRun Retained Evidence Audit v0.1",
+  "type": "object",
+  "required": [
+    "retention_audit_schema_version",
+    "artifact",
+    "goal_id",
+    "iteration",
+    "phase",
+    "retention_class",
+    "retained_at",
+    "now",
+    "status",
+    "retention_status",
+    "cleanup_review_status",
+    "age_days",
+    "minimum_retention_days_after_terminal_phase",
+    "errors"
+  ],
+  "properties": {
+    "retention_audit_schema_version": {
+      "const": "ao.forge.goal-run-retained-evidence-audit.v0.1"
+    },
+    "artifact": {
+      "type": "string",
+      "minLength": 1
+    },
+    "goal_id": {
+      "type": "string"
+    },
+    "iteration": {
+      "type": "string"
+    },
+    "phase": {
+      "type": "string"
+    },
+    "retention_class": {
+      "type": "string"
+    },
+    "retained_at": {
+      "type": "string"
+    },
+    "now": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["passed", "failed"]
+    },
+    "retention_status": {
+      "type": "string",
+      "enum": [
+        "active_retention",
+        "mandatory_retention",
+        "cleanup_review_eligible",
+        "unknown"
+      ]
+    },
+    "cleanup_review_status": {
+      "type": "string",
+      "enum": [
+        "not_eligible_active_goal",
+        "not_eligible_minimum_window",
+        "eligible_after_review",
+        "unknown"
+      ]
+    },
+    "age_days": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "minimum_retention_days_after_terminal_phase": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "mandatory_retention_until": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "passed"
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "goal_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "iteration": {
+            "type": "string",
+            "minLength": 1
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "planning",
+              "implementation",
+              "verification",
+              "blocked",
+              "backoff",
+              "stopped",
+              "complete"
+            ]
+          },
+          "retention_class": {
+            "type": "string",
+            "enum": ["loop_evidence", "release_provenance", "promotion_provenance"]
+          },
+          "retained_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "errors": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "failed"
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "retention_status": {
+            "const": "unknown"
+          },
+          "cleanup_review_status": {
+            "const": "unknown"
+          },
+          "errors": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,12 @@
+{
+  "schema_version": "ao.forge.goal-run-retained-evidence.v0.1",
+  "goal_id": "ao2-weekend-hardening",
+  "iteration": "20260619T143000Z-implementation",
+  "phase": "implementation",
+  "summary": "Negative fixture: retained evidence artifacts must declare machine-readable retention metadata.",
+  "retention_policy": {
+    "layout": "docs/evidence/goals/<goal_id>/<YYYYMMDDTHHMMSSZ>-<phase>/",
+    "temporary_paths_allowed": false,
+    "minimum_retention_days_after_terminal_phase": 90
+  }
+}

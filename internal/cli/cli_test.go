@@ -805,6 +805,8 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	ao2PulseHandoffAuditExample := readText("examples", "goals", "ao2-pulse-handoff.goal-run-update-audit.json")
 	retainedEvidenceGoalRunExample := readText("examples", "goals", "ao2-retained-evidence.goal-run.json")
 	retainedEvidenceArtifact := readText("docs", "evidence", "goals", "ao2-weekend-hardening", "20260619T143000Z-implementation", "ao2-pulse-handoff-retention-proof.json")
+	missingRetentionMetadataExample := readText("examples", "goals", "invalid", "missing-retention-metadata.goal-run-retained-evidence.invalid.json")
+	unsafeCleanupRetentionExample := readText("examples", "goals", "invalid", "unsafe-cleanup-retention.goal-run-retained-evidence.invalid.json")
 	staleEvidenceGoalRunExample := readText("examples", "goals", "invalid", "stale-evidence.goal-run.invalid.json")
 	tmpEvidencePathGoalRunExample := readText("examples", "goals", "invalid", "tmp-evidence-path.goal-run.path-invalid.json")
 	absoluteEvidencePathGoalRunExample := readText("examples", "goals", "invalid", "absolute-evidence-path.goal-run.path-invalid.json")
@@ -945,6 +947,8 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run docs cleanup reviewable", doc: goalRunDocs, want: "Cleanup must be reviewable"},
 		{name: "goal run docs retained fixture", doc: goalRunDocs, want: "examples/goals/ao2-retained-evidence.goal-run.json"},
 		{name: "goal run docs retained fixture smoke", doc: goalRunDocs, want: "fails if no positive GoalRun fixture uses that"},
+		{name: "goal run docs missing retention metadata fixture", doc: goalRunDocs, want: "examples/goals/invalid/missing-retention-metadata.goal-run-retained-evidence.invalid.json"},
+		{name: "goal run docs unsafe cleanup retention fixture", doc: goalRunDocs, want: "examples/goals/invalid/unsafe-cleanup-retention.goal-run-retained-evidence.invalid.json"},
 		{name: "goal run docs evidence lint command", doc: goalRunDocs, want: "forge goal evidence lint --goal-run examples/goals/ao2-retained-evidence.goal-run.json"},
 		{name: "goal run docs evidence lint audit command", doc: goalRunDocs, want: "forge goal evidence lint --update-audit examples/goals/ao2-pulse-handoff.goal-run-update-audit.json"},
 		{name: "goal run docs evidence path lint", doc: goalRunDocs, want: "runs `forge goal evidence lint` against every checked-in"},
@@ -1018,6 +1022,10 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "retained evidence artifact retain active", doc: retainedEvidenceArtifact, want: `"retain_while_goal_active": true`},
 		{name: "retained evidence artifact deletion review", doc: retainedEvidenceArtifact, want: `"deletion_requires_review": true`},
 		{name: "retained evidence artifact cleanup fields", doc: retainedEvidenceArtifact, want: `"cleanup_change_must_name": ["goal_id", "iteration", "reason"]`},
+		{name: "missing retention metadata fixture schema", doc: missingRetentionMetadataExample, want: `"schema_version": "ao.forge.goal-run-retained-evidence.v0.1"`},
+		{name: "missing retention metadata fixture summary", doc: missingRetentionMetadataExample, want: "must declare machine-readable retention metadata"},
+		{name: "unsafe cleanup retention fixture review disabled", doc: unsafeCleanupRetentionExample, want: `"deletion_requires_review": false`},
+		{name: "unsafe cleanup retention fixture incomplete cleanup fields", doc: unsafeCleanupRetentionExample, want: `"cleanup_change_must_name": ["goal_id", "iteration"]`},
 		{name: "stale evidence fixture schema valid", doc: staleEvidenceGoalRunExample, want: `"schema_version": "ao.forge.goal-run.v0.1"`},
 		{name: "stale evidence fixture stale hash", doc: staleEvidenceGoalRunExample, want: `"sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"`},
 		{name: "stale evidence fixture summary", doc: staleEvidenceGoalRunExample, want: "intentionally stale and must fail closed"},
@@ -2051,9 +2059,11 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		{name: "goal fixture verifier evidence lint schema", doc: goalFixtureVerifier, want: "goal-run-evidence-lint-v0.1.schema.json"},
 		{name: "goal fixture verifier retained evidence schema", doc: goalFixtureVerifier, want: "goal-run-retained-evidence-v0.1.schema.json"},
 		{name: "goal fixture verifier invalid glob", doc: goalFixtureVerifier, want: "*.goal-run.invalid.json"},
+		{name: "goal fixture verifier retained invalid glob", doc: goalFixtureVerifier, want: "*.goal-run-retained-evidence.invalid.json"},
 		{name: "goal fixture verifier path invalid glob", doc: goalFixtureVerifier, want: "*.goal-run.path-invalid.json"},
 		{name: "goal fixture verifier path invalid audit glob", doc: goalFixtureVerifier, want: "*.goal-run-update-audit.path-invalid.json"},
 		{name: "goal fixture verifier stale failure", doc: goalFixtureVerifier, want: "expected stale GoalRun evidence fixture to fail"},
+		{name: "goal fixture verifier retained artifact failure", doc: goalFixtureVerifier, want: "expected retained GoalRun evidence artifact fixture to fail"},
 		{name: "goal fixture verifier path policy failure", doc: goalFixtureVerifier, want: "expected GoalRun evidence path policy fixture to fail"},
 		{name: "goal fixture verifier update audit path policy failure", doc: goalFixtureVerifier, want: "expected GoalRun update-audit evidence path policy fixture to fail"},
 		{name: "goal fixture verifier rejected count", doc: goalFixtureVerifier, want: "goal_run_invalid_fixtures_rejected"},
@@ -2062,6 +2072,7 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		{name: "goal fixture verifier retained layout", doc: goalFixtureVerifier, want: "docs/evidence/goals/"},
 		{name: "goal fixture verifier retained count", doc: goalFixtureVerifier, want: "goal_run_retained_evidence_fixtures"},
 		{name: "goal fixture verifier retained artifact count", doc: goalFixtureVerifier, want: "goal_run_retained_evidence_artifacts_validated"},
+		{name: "goal fixture verifier retained artifact rejected count", doc: goalFixtureVerifier, want: "goal_run_retained_evidence_invalid_fixtures_rejected"},
 		{name: "goal fixture verifier audit validate", doc: goalFixtureVerifier, want: "goal-run-update-audit-v0.1.schema.json"},
 		{name: "ci actionlint job", doc: ciWorkflow, want: "workflow-lint:"},
 		{name: "ci actionlint name", doc: ciWorkflow, want: "name: Workflow lint"},

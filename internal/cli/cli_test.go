@@ -497,6 +497,7 @@ func TestGoalRunCLIAuditsRetainedEvidenceRetention(t *testing.T) {
 	root := repoRoot(t)
 	artifactPath := filepath.Join(root, "docs", "evidence", "goals", "ao2-weekend-hardening", "20260619T143000Z-implementation", "ao2-pulse-handoff-retention-proof.json")
 	releaseProvenancePath := filepath.Join(root, "docs", "evidence", "goals", "ao2-weekend-hardening", "20260101T000000Z-complete", "release-provenance-retention-proof.json")
+	promotionProvenancePath := filepath.Join(root, "docs", "evidence", "goals", "ao2-weekend-hardening", "20260101T020000Z-complete", "promotion-provenance-retention-proof.json")
 	auditSchemaPath := filepath.Join(root, "docs", "contracts", "goal-run-retained-evidence-audit-v0.1.schema.json")
 	now := "2026-06-19T18:00:00Z"
 
@@ -617,12 +618,7 @@ func TestGoalRunCLIAuditsRetainedEvidenceRetention(t *testing.T) {
 		t.Fatalf("goal evidence retention release provenance wrote stderr: %s", stderr)
 	}
 
-	promotionPath := filepath.Join(t.TempDir(), "promotion-provenance-retained-evidence.json")
-	promotionArtifact := strings.ReplaceAll(terminalArtifact, `"retention_class": "loop_evidence"`, `"retention_class": "promotion_provenance"`)
-	if err := os.WriteFile(promotionPath, []byte(promotionArtifact), 0o644); err != nil {
-		t.Fatalf("write promotion provenance retained evidence fixture: %v", err)
-	}
-	code, stdout, stderr = runCLI("goal", "evidence", "retention", "--artifact", promotionPath, "--now", now, "--json")
+	code, stdout, stderr = runCLI("goal", "evidence", "retention", "--artifact", promotionProvenancePath, "--now", now, "--json")
 	if code != 0 {
 		t.Fatalf("goal evidence retention promotion provenance exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
 	}
@@ -687,14 +683,15 @@ func TestGoalRunCLIDryRunsRetainedEvidenceCleanup(t *testing.T) {
 		"goal_evidence_cleanup=passed",
 		"mode=dry-run",
 		"root=docs/evidence/goals",
-		"artifacts_scanned=3",
+		"artifacts_scanned=4",
 		"eligible_artifacts=1",
-		"protected_artifacts=2",
+		"protected_artifacts=3",
 		"failed_artifacts=0",
-		"public_provenance_excluded=1",
+		"public_provenance_excluded=2",
 		"active_goal_excluded=1",
 		"artifact=docs/evidence/goals/ao2-weekend-hardening/20260101T010000Z-complete/old-loop-retention-proof.json retention_status=cleanup_review_eligible cleanup_review_status=eligible_after_review retention_class=loop_evidence",
 		"artifact=docs/evidence/goals/ao2-weekend-hardening/20260101T000000Z-complete/release-provenance-retention-proof.json retention_status=mandatory_retention cleanup_review_status=not_eligible_public_provenance retention_class=release_provenance",
+		"artifact=docs/evidence/goals/ao2-weekend-hardening/20260101T020000Z-complete/promotion-provenance-retention-proof.json retention_status=mandatory_retention cleanup_review_status=not_eligible_public_provenance retention_class=promotion_provenance",
 		"artifact=docs/evidence/goals/ao2-weekend-hardening/20260619T143000Z-implementation/ao2-pulse-handoff-retention-proof.json retention_status=active_retention cleanup_review_status=not_eligible_active_goal retention_class=loop_evidence",
 	} {
 		if !strings.Contains(stdout, want) {
@@ -723,13 +720,13 @@ func TestGoalRunCLIDryRunsRetainedEvidenceCleanup(t *testing.T) {
 	if summary.CleanupSchemaVersion != "ao.forge.goal-run-retained-evidence-cleanup.v0.1" ||
 		summary.Mode != "dry-run" ||
 		summary.Status != "passed" ||
-		summary.ArtifactsScanned != 3 ||
+		summary.ArtifactsScanned != 4 ||
 		summary.EligibleArtifacts != 1 ||
-		summary.ProtectedArtifacts != 2 ||
+		summary.ProtectedArtifacts != 3 ||
 		summary.FailedArtifacts != 0 ||
-		summary.PublicProvenanceExcluded != 1 ||
+		summary.PublicProvenanceExcluded != 2 ||
 		summary.ActiveGoalExcluded != 1 ||
-		len(summary.RetentionAudits) != 3 {
+		len(summary.RetentionAudits) != 4 {
 		t.Fatalf("goal evidence cleanup JSON drifted: %+v", summary)
 	}
 	if stderr != "" {
@@ -1276,6 +1273,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	retainedEvidenceArtifact := readText("docs", "evidence", "goals", "ao2-weekend-hardening", "20260619T143000Z-implementation", "ao2-pulse-handoff-retention-proof.json")
 	cleanupEligibleEvidenceArtifact := readText("docs", "evidence", "goals", "ao2-weekend-hardening", "20260101T010000Z-complete", "old-loop-retention-proof.json")
 	releaseProvenanceEvidenceArtifact := readText("docs", "evidence", "goals", "ao2-weekend-hardening", "20260101T000000Z-complete", "release-provenance-retention-proof.json")
+	promotionProvenanceEvidenceArtifact := readText("docs", "evidence", "goals", "ao2-weekend-hardening", "20260101T020000Z-complete", "promotion-provenance-retention-proof.json")
 	retainedReadinessAudit := readText("docs", "evidence", "goals", "ao2-weekend-hardening", "20260619T180000Z-verification", "goal-run-readiness-audit.json")
 	tamperedReadinessAuditExample := readText("examples", "goals", "invalid", "tampered-readiness-audit.goal-run-readiness-audit.invalid.json")
 	mismatchedProvenanceReadinessAuditExample := readText("examples", "goals", "invalid", "mismatched-provenance-readiness-audit.goal-run-readiness-audit.provenance-invalid.json")
@@ -1573,6 +1571,10 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "release provenance evidence artifact phase", doc: releaseProvenanceEvidenceArtifact, want: `"phase": "complete"`},
 		{name: "release provenance evidence artifact retention class", doc: releaseProvenanceEvidenceArtifact, want: `"retention_class": "release_provenance"`},
 		{name: "release provenance evidence artifact summary", doc: releaseProvenanceEvidenceArtifact, want: "public provenance remains mandatory retention"},
+		{name: "promotion provenance evidence artifact schema version", doc: promotionProvenanceEvidenceArtifact, want: `"schema_version": "ao.forge.goal-run-retained-evidence.v0.1"`},
+		{name: "promotion provenance evidence artifact phase", doc: promotionProvenanceEvidenceArtifact, want: `"phase": "complete"`},
+		{name: "promotion provenance evidence artifact retention class", doc: promotionProvenanceEvidenceArtifact, want: `"retention_class": "promotion_provenance"`},
+		{name: "promotion provenance evidence artifact summary", doc: promotionProvenanceEvidenceArtifact, want: "production promotion evidence remains mandatory retention"},
 		{name: "retained readiness audit schema version", doc: retainedReadinessAudit, want: `"readiness_schema_version": "ao.forge.goal-run-readiness-audit.v0.1"`},
 		{name: "retained readiness audit goal run", doc: retainedReadinessAudit, want: `"goal_run": "examples/goals/ao2-retained-evidence.goal-run.json"`},
 		{name: "retained readiness audit requested phase", doc: retainedReadinessAudit, want: `"requested_phase": "verification"`},

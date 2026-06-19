@@ -87,13 +87,20 @@ Run these commands from the repository that owns the GoalRun contract.
    forge goal evidence verify --goal-run tmp/ao2-weekend-hardening.goal-run.json
    ```
 
-9. Decide whether evidence may be reused. AO2 Pulse may reuse a previously
+9. Lint retained evidence paths before preserving the candidate:
+
+   ```sh
+   forge goal evidence lint --goal-run tmp/ao2-weekend-hardening.goal-run.json
+   forge goal evidence lint --update-audit tmp/ao2-weekend-hardening.goal-run-update-audit.json
+   ```
+
+10. Decide whether evidence may be reused. AO2 Pulse may reuse a previously
    recorded evidence artifact only when it is intentionally immutable, still
    verifies by SHA-256, and still proves the proposed next task. If repository
    state changed or the artifact is a live-state snapshot, AO2 Pulse must
    collect fresh evidence instead.
 
-10. Retain the handoff evidence. The durable handoff must include the candidate
+11. Retain the handoff evidence. The durable handoff must include the candidate
     GoalRun, update audit, evidence verification JSON, and every artifact named
     in `last_iteration.evidence`. Persist these under
     `docs/evidence/goals/<goal_id>/<YYYYMMDDTHHMMSSZ>-<phase>/` or stop before
@@ -118,9 +125,10 @@ and GoalRun update-audit fixture, and to verify every recorded GoalRun evidence
 hash, including this handoff pair. The same smoke test also verifies that
 `examples/goals/invalid/stale-evidence.goal-run.invalid.json` fails closed when
 its recorded evidence hash does not match the artifact bytes, and that at least
-one positive GoalRun fixture uses the retained evidence layout. It also rejects
-the path-policy fixtures under `examples/goals/invalid/` that record retained
-evidence in `tmp/`, `/tmp/`, or a home-directory path.
+one positive GoalRun fixture uses the retained evidence layout. It also runs
+`forge goal evidence lint` and rejects the path-policy fixtures under
+`examples/goals/invalid/` that record retained evidence in `tmp/`, `/tmp/`, or a
+home-directory path.
 
 ## Stop And Backoff
 
@@ -135,6 +143,7 @@ AO2 Pulse must not continue when any of these checks fail:
 - the update audit does not validate;
 - the candidate GoalRun does not validate;
 - any recorded evidence attachment is missing or has a SHA-256 mismatch.
+- `forge goal evidence lint` rejects a retained evidence path.
 - evidence is duplicated, stale, or no longer proves the next task.
 
 For a denied transition or scope mismatch, AO2 Pulse should emit a backoff or
@@ -153,6 +162,8 @@ Each successful loop iteration must preserve:
 - every hashed evidence attachment listed by the update audit;
 - the `forge contract validate` result for that audit;
 - the final `forge goal validate` result for the candidate GoalRun;
+- the final `forge goal evidence lint` result for the candidate GoalRun and
+  update audit;
 - the final `forge goal evidence verify` result for the candidate GoalRun.
 
 Preserved evidence paths must be repository-relative and durable. Do not record

@@ -42,9 +42,14 @@ const (
 	releasePreviewInspectVersion = "ao.forge.release-preview-inspect.v0.1"
 	goalRunSchemaVersion         = "ao.forge.goal-run.v0.1"
 	goalRunSchemaPath            = "docs/contracts/goal-run-v0.1.schema.json"
+	goalRunUpdateAuditVersion    = "ao.forge.goal-run-update-audit.v0.1"
+	goalRunUpdateAuditSchemaPath = "docs/contracts/goal-run-update-audit-v0.1.schema.json"
 )
 
-var planIDPattern = regexp.MustCompile(`^forge-plan-[a-f0-9]{12}$`)
+var (
+	planIDPattern              = regexp.MustCompile(`^forge-plan-[a-f0-9]{12}$`)
+	windowsAbsolutePathPattern = regexp.MustCompile(`^[A-Za-z]:/`)
+)
 
 type factoryBrief struct {
 	SchemaVersion string `json:"schema_version"`
@@ -312,6 +317,8 @@ Usage:
   forge goal transitions --goal-run <goal-run.json> [--to <phase>] [--json]
   forge goal update --goal-run <goal-run.json> --out <goal-run.json> [--phase <phase>] [--next-task <text>] [--last-verified-at <RFC3339>] [--last-iteration-status <status>] [--last-iteration-summary <text>] [--evidence <path> ...] [--json]
   forge goal evidence verify --goal-run <goal-run.json> [--json]
+  forge goal evidence lint --goal-run <goal-run.json> [--json]
+  forge goal evidence lint --update-audit <goal-run-update-audit.json> [--json]
 
 Factory terms:
   factory brief   normalized operator objective and constraints
@@ -319,7 +326,7 @@ Factory terms:
   factory packet  operator-ready JSON summary of plan, gates, evidence, and next actions
 
 Slice 2.8 status:
-  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, release preview audits, release preview enforcement, release preview audit inspection, artifact checksums, artifact checksum verification, contract schema validation, GoalRun validation and inspection, GoalRun transition checks, guarded GoalRun updates, GoalRun update evidence attachments, and GoalRun evidence verification are enabled.
+  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, release preview audits, release preview enforcement, release preview audit inspection, artifact checksums, artifact checksum verification, contract schema validation, GoalRun validation and inspection, GoalRun transition checks, guarded GoalRun updates, GoalRun update evidence attachments, GoalRun evidence verification, and GoalRun evidence path linting are enabled.
 `)
 }
 
@@ -4464,6 +4471,12 @@ type goalUpdateFlags struct {
 	json                 bool
 }
 
+type goalEvidenceLintFlags struct {
+	goalRunPath     string
+	updateAuditPath string
+	json            bool
+}
+
 type goalValidationSummary struct {
 	GoalRun         string   `json:"goal_run"`
 	Schema          string   `json:"schema"`
@@ -4547,6 +4560,24 @@ type goalEvidenceVerifyResult struct {
 	Error          string `json:"error,omitempty"`
 }
 
+type goalEvidenceLintSummary struct {
+	LintSchemaVersion string                   `json:"lint_schema_version"`
+	Document          string                   `json:"document"`
+	DocumentType      string                   `json:"document_type"`
+	GoalID            string                   `json:"goal_id,omitempty"`
+	Status            string                   `json:"status"`
+	EvidenceLinted    int                      `json:"evidence_linted"`
+	Evidence          []goalEvidenceLintResult `json:"evidence"`
+	Errors            []string                 `json:"errors"`
+}
+
+type goalEvidenceLintResult struct {
+	Label  string `json:"label"`
+	Path   string `json:"path"`
+	Status string `json:"status"`
+	Error  string `json:"error,omitempty"`
+}
+
 func runGoal(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, "forge goal: missing subcommand validate, inspect, transitions, update, or evidence")
@@ -4564,7 +4595,7 @@ func runGoal(args []string, stdout, stderr io.Writer) int {
 	case "evidence":
 		return runGoalEvidence(args[1:], stdout, stderr)
 	case "--help", "-h":
-		fmt.Fprintln(stderr, "forge goal: use `forge goal validate --goal-run <goal-run.json> [--json]`, `forge goal inspect --goal-run <goal-run.json> [--json]`, `forge goal transitions --goal-run <goal-run.json> [--to <phase>] [--json]`, `forge goal update --goal-run <goal-run.json> --out <goal-run.json> [--phase <phase>] [--next-task <text>] [--last-verified-at <RFC3339>] [--last-iteration-status <status>] [--last-iteration-summary <text>] [--evidence <path> ...] [--json]`, or `forge goal evidence verify --goal-run <goal-run.json> [--json]`")
+		fmt.Fprintln(stderr, "forge goal: use `forge goal validate --goal-run <goal-run.json> [--json]`, `forge goal inspect --goal-run <goal-run.json> [--json]`, `forge goal transitions --goal-run <goal-run.json> [--to <phase>] [--json]`, `forge goal update --goal-run <goal-run.json> --out <goal-run.json> [--phase <phase>] [--next-task <text>] [--last-verified-at <RFC3339>] [--last-iteration-status <status>] [--last-iteration-summary <text>] [--evidence <path> ...] [--json]`, `forge goal evidence verify --goal-run <goal-run.json> [--json]`, or `forge goal evidence lint --goal-run <goal-run.json> [--json]`")
 		return 0
 	default:
 		fmt.Fprintf(stderr, "forge goal: unknown subcommand %q\n", args[0])
@@ -4574,14 +4605,16 @@ func runGoal(args []string, stdout, stderr io.Writer) int {
 
 func runGoalEvidence(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "forge goal evidence: missing subcommand verify")
+		fmt.Fprintln(stderr, "forge goal evidence: missing subcommand verify or lint")
 		return 2
 	}
 	switch args[0] {
 	case "verify":
 		return runGoalEvidenceVerify(args[1:], stdout, stderr)
+	case "lint":
+		return runGoalEvidenceLint(args[1:], stdout, stderr)
 	case "--help", "-h":
-		fmt.Fprintln(stderr, "forge goal evidence: use `forge goal evidence verify --goal-run <goal-run.json> [--json]`")
+		fmt.Fprintln(stderr, "forge goal evidence: use `forge goal evidence verify --goal-run <goal-run.json> [--json]`, `forge goal evidence lint --goal-run <goal-run.json> [--json]`, or `forge goal evidence lint --update-audit <goal-run-update-audit.json> [--json]`")
 		return 0
 	default:
 		fmt.Fprintf(stderr, "forge goal evidence: unknown subcommand %q\n", args[0])
@@ -4612,6 +4645,44 @@ func parseGoalFlags(args []string) (goalFlags, error) {
 	}
 	if flags.goalRunPath == "" {
 		return goalFlags{}, fmt.Errorf("missing required --goal-run")
+	}
+	return flags, nil
+}
+
+func parseGoalEvidenceLintFlags(args []string) (goalEvidenceLintFlags, error) {
+	var flags goalEvidenceLintFlags
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--goal-run":
+			value, next, err := readFlagValue(args, i, "--goal-run")
+			if err != nil {
+				return goalEvidenceLintFlags{}, err
+			}
+			flags.goalRunPath = value
+			i = next
+		case "--update-audit":
+			value, next, err := readFlagValue(args, i, "--update-audit")
+			if err != nil {
+				return goalEvidenceLintFlags{}, err
+			}
+			flags.updateAuditPath = value
+			i = next
+		case "--json":
+			flags.json = true
+		case "--help", "-h":
+			return goalEvidenceLintFlags{}, fmt.Errorf("help is available with `forge --help`")
+		default:
+			if strings.HasPrefix(args[i], "--") {
+				return goalEvidenceLintFlags{}, fmt.Errorf("unknown flag %s", args[i])
+			}
+			return goalEvidenceLintFlags{}, fmt.Errorf("unexpected argument %s", args[i])
+		}
+	}
+	if flags.goalRunPath == "" && flags.updateAuditPath == "" {
+		return goalEvidenceLintFlags{}, fmt.Errorf("missing required --goal-run or --update-audit")
+	}
+	if flags.goalRunPath != "" && flags.updateAuditPath != "" {
+		return goalEvidenceLintFlags{}, fmt.Errorf("use exactly one of --goal-run or --update-audit")
 	}
 	return flags, nil
 }
@@ -4931,6 +5002,69 @@ func runGoalEvidenceVerify(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func runGoalEvidenceLint(args []string, stdout, stderr io.Writer) int {
+	flags, err := parseGoalEvidenceLintFlags(args)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge goal evidence lint: %v\n", err)
+		return 2
+	}
+
+	summary := goalEvidenceLintSummary{
+		LintSchemaVersion: "ao.forge.goal-run-evidence-lint.v0.1",
+		Status:            "passed",
+		Evidence:          []goalEvidenceLintResult{},
+		Errors:            []string{},
+	}
+	var evidence []goalRunEvidence
+	if flags.goalRunPath != "" {
+		summary.Document = displayPath(flags.goalRunPath)
+		summary.DocumentType = "goal_run"
+		goal, err := validateAndReadGoalRun(flags.goalRunPath)
+		if err != nil {
+			summary.Status = "failed"
+			summary.Errors = []string{err.Error()}
+			writeGoalEvidenceLintSummary(stdout, summary, flags.json)
+			fmt.Fprintf(stderr, "forge goal evidence lint: goal run validation failed: %v\n", err)
+			return 1
+		}
+		summary.GoalID = goal.GoalID
+		if goal.LastIteration != nil {
+			evidence = goal.LastIteration.Evidence
+		}
+	} else {
+		summary.Document = displayPath(flags.updateAuditPath)
+		summary.DocumentType = "goal_run_update_audit"
+		audit, err := validateAndReadGoalRunUpdateAudit(flags.updateAuditPath)
+		if err != nil {
+			summary.Status = "failed"
+			summary.Errors = []string{err.Error()}
+			writeGoalEvidenceLintSummary(stdout, summary, flags.json)
+			fmt.Fprintf(stderr, "forge goal evidence lint: update audit validation failed: %v\n", err)
+			return 1
+		}
+		summary.GoalID = audit.GoalID
+		evidence = audit.Evidence
+	}
+
+	for _, item := range evidence {
+		result := lintGoalRunEvidencePath(item)
+		summary.Evidence = append(summary.Evidence, result)
+		if result.Status == "passed" {
+			summary.EvidenceLinted++
+		} else {
+			summary.Status = "failed"
+			summary.Errors = append(summary.Errors, fmt.Sprintf("%s: %s", result.Path, result.Error))
+		}
+	}
+
+	writeGoalEvidenceLintSummary(stdout, summary, flags.json)
+	if summary.Status != "passed" {
+		fmt.Fprintf(stderr, "forge goal evidence lint: evidence path lint failed for %s\n", summary.Document)
+		return 1
+	}
+	return 0
+}
+
 func validateAndReadGoalRun(path string) (goalRun, error) {
 	if err := validateJSONSchemaDocument(resolveDefaultContractPath(goalRunSchemaPath), path); err != nil {
 		return goalRun{}, err
@@ -4943,6 +5077,20 @@ func validateAndReadGoalRun(path string) (goalRun, error) {
 		return goalRun{}, fmt.Errorf("unsupported goal run schema_version %q", goal.SchemaVersion)
 	}
 	return goal, nil
+}
+
+func validateAndReadGoalRunUpdateAudit(path string) (goalUpdateAudit, error) {
+	if err := validateJSONSchemaDocument(resolveDefaultContractPath(goalRunUpdateAuditSchemaPath), path); err != nil {
+		return goalUpdateAudit{}, err
+	}
+	audit, err := readGoalRunUpdateAudit(path)
+	if err != nil {
+		return goalUpdateAudit{}, err
+	}
+	if audit.AuditSchemaVersion != goalRunUpdateAuditVersion {
+		return goalUpdateAudit{}, fmt.Errorf("unsupported goal run update audit schema_version %q", audit.AuditSchemaVersion)
+	}
+	return audit, nil
 }
 
 func verifyGoalRunEvidence(evidence goalRunEvidence) goalEvidenceVerifyResult {
@@ -4971,6 +5119,45 @@ func verifyGoalRunEvidence(evidence goalRunEvidence) goalEvidenceVerifyResult {
 		result.Error = fmt.Sprintf("sha256 mismatch: expected %s, got %s", evidence.SHA256, result.ActualSHA256)
 	}
 	return result
+}
+
+func lintGoalRunEvidencePath(evidence goalRunEvidence) goalEvidenceLintResult {
+	result := goalEvidenceLintResult{
+		Label:  evidence.Label,
+		Path:   evidence.Path,
+		Status: "passed",
+	}
+	if reason := rejectedGoalRunEvidencePathReason(evidence.Path); reason != "" {
+		result.Status = "failed"
+		result.Error = reason
+	}
+	return result
+}
+
+func rejectedGoalRunEvidencePathReason(path string) string {
+	normalized := strings.ReplaceAll(path, `\`, "/")
+	if strings.HasPrefix(normalized, "/") || strings.HasPrefix(normalized, "//") {
+		return "uses an absolute path"
+	}
+	if windowsAbsolutePathPattern.MatchString(normalized) {
+		return "uses an absolute path"
+	}
+	if strings.HasPrefix(normalized, "~/") || strings.HasPrefix(normalized, "$HOME/") || strings.HasPrefix(normalized, "${HOME}/") {
+		return "uses a home-directory path"
+	}
+	parts := strings.Split(normalized, "/")
+	for _, part := range parts {
+		if part == "" || part == "." {
+			continue
+		}
+		switch part {
+		case "..":
+			return "uses a parent traversal path"
+		case "tmp", ".tmp", "temp":
+			return "uses a temporary path"
+		}
+	}
+	return ""
 }
 
 func resolveGoalRunEvidencePath(path string) string {
@@ -5132,6 +5319,18 @@ func readGoalRun(path string) (goalRun, error) {
 		return goalRun{}, fmt.Errorf("parse goal run JSON: %w", err)
 	}
 	return goal, nil
+}
+
+func readGoalRunUpdateAudit(path string) (goalUpdateAudit, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return goalUpdateAudit{}, err
+	}
+	var audit goalUpdateAudit
+	if err := decodeJSONStrict(data, &audit); err != nil {
+		return goalUpdateAudit{}, fmt.Errorf("parse goal run update audit JSON: %w", err)
+	}
+	return audit, nil
 }
 
 func samePath(left, right string) bool {
@@ -5341,6 +5540,35 @@ func writeGoalEvidenceVerifySummary(stdout io.Writer, summary goalEvidenceVerify
 	}
 	for _, verifyErr := range summary.Errors {
 		fmt.Fprintf(stdout, "error=%s\n", verifyErr)
+	}
+}
+
+func writeGoalEvidenceLintSummary(stdout io.Writer, summary goalEvidenceLintSummary, asJSON bool) {
+	if asJSON {
+		data, err := marshalIndented(summary)
+		if err != nil {
+			fmt.Fprintf(stdout, "{\"lint_schema_version\":\"ao.forge.goal-run-evidence-lint.v0.1\",\"status\":\"failed\",\"errors\":[%q]}\n", err.Error())
+			return
+		}
+		_, _ = stdout.Write(data)
+		return
+	}
+	fmt.Fprintf(stdout, "goal_evidence_lint=%s\n", summary.Status)
+	fmt.Fprintf(stdout, "document=%s\n", summary.Document)
+	fmt.Fprintf(stdout, "document_type=%s\n", summary.DocumentType)
+	if summary.GoalID != "" {
+		fmt.Fprintf(stdout, "goal_id=%s\n", summary.GoalID)
+	}
+	fmt.Fprintf(stdout, "evidence_linted=%d\n", summary.EvidenceLinted)
+	for _, evidence := range summary.Evidence {
+		fmt.Fprintf(stdout, "evidence_path=%s status=%s", evidence.Path, evidence.Status)
+		if evidence.Error != "" {
+			fmt.Fprintf(stdout, " error=%s", evidence.Error)
+		}
+		fmt.Fprintln(stdout)
+	}
+	for _, lintErr := range summary.Errors {
+		fmt.Fprintf(stdout, "error=%s\n", lintErr)
 	}
 }
 

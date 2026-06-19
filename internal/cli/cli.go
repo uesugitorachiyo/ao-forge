@@ -222,15 +222,19 @@ type goalRun struct {
 		MustSatisfyAcceptanceCriteria bool   `json:"must_satisfy_acceptance_criteria"`
 		OnMismatch                    string `json:"on_mismatch"`
 	} `json:"next_action_guard"`
-	LastIteration *struct {
-		Status   string `json:"status"`
-		Summary  string `json:"summary"`
-		Evidence []struct {
-			Label  string `json:"label"`
-			Path   string `json:"path"`
-			SHA256 string `json:"sha256,omitempty"`
-		} `json:"evidence"`
-	} `json:"last_iteration,omitempty"`
+	LastIteration *goalRunIteration `json:"last_iteration,omitempty"`
+}
+
+type goalRunIteration struct {
+	Status   string            `json:"status"`
+	Summary  string            `json:"summary"`
+	Evidence []goalRunEvidence `json:"evidence"`
+}
+
+type goalRunEvidence struct {
+	Label  string `json:"label"`
+	Path   string `json:"path"`
+	SHA256 string `json:"sha256,omitempty"`
 }
 
 var goalRunPhaseTransitions = map[string][]string{
@@ -306,6 +310,7 @@ Usage:
   forge goal validate --goal-run <goal-run.json> [--json]
   forge goal inspect --goal-run <goal-run.json> [--json]
   forge goal transitions --goal-run <goal-run.json> [--to <phase>] [--json]
+  forge goal update --goal-run <goal-run.json> --out <goal-run.json> [--phase <phase>] [--next-task <text>] [--last-verified-at <RFC3339>] [--last-iteration-status <status>] [--last-iteration-summary <text>] [--json]
 
 Factory terms:
   factory brief   normalized operator objective and constraints
@@ -313,7 +318,7 @@ Factory terms:
   factory packet  operator-ready JSON summary of plan, gates, evidence, and next actions
 
 Slice 2.8 status:
-  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, release preview audits, release preview enforcement, release preview audit inspection, artifact checksums, artifact checksum verification, contract schema validation, GoalRun validation and inspection, and GoalRun transition checks are enabled.
+  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, release preview audits, release preview enforcement, release preview audit inspection, artifact checksums, artifact checksum verification, contract schema validation, GoalRun validation and inspection, GoalRun transition checks, and guarded GoalRun updates are enabled.
 `)
 }
 
@@ -4446,6 +4451,17 @@ type goalTransitionFlags struct {
 	json        bool
 }
 
+type goalUpdateFlags struct {
+	goalRunPath          string
+	outPath              string
+	phase                string
+	nextTask             string
+	lastVerifiedAt       string
+	lastIterationStatus  string
+	lastIterationSummary string
+	json                 bool
+}
+
 type goalValidationSummary struct {
 	GoalRun         string   `json:"goal_run"`
 	Schema          string   `json:"schema"`
@@ -4494,9 +4510,24 @@ type goalTransitionSummary struct {
 	Reason                  string   `json:"reason"`
 }
 
+type goalUpdateAudit struct {
+	AuditSchemaVersion   string   `json:"audit_schema_version"`
+	GoalRun              string   `json:"goal_run"`
+	Out                  string   `json:"out"`
+	GoalID               string   `json:"goal_id"`
+	PreviousPhase        string   `json:"previous_phase"`
+	CurrentPhase         string   `json:"current_phase"`
+	PhaseTransition      string   `json:"phase_transition"`
+	UpdatedFields        []string `json:"updated_fields"`
+	LastVerifiedAt       string   `json:"last_verified_at"`
+	LastIterationStatus  string   `json:"last_iteration_status,omitempty"`
+	LastIterationSummary string   `json:"last_iteration_summary,omitempty"`
+	Status               string   `json:"status"`
+}
+
 func runGoal(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "forge goal: missing subcommand validate, inspect, or transitions")
+		fmt.Fprintln(stderr, "forge goal: missing subcommand validate, inspect, transitions, or update")
 		return 2
 	}
 	switch args[0] {
@@ -4506,8 +4537,10 @@ func runGoal(args []string, stdout, stderr io.Writer) int {
 		return runGoalInspect(args[1:], stdout, stderr)
 	case "transitions":
 		return runGoalTransitions(args[1:], stdout, stderr)
+	case "update":
+		return runGoalUpdate(args[1:], stdout, stderr)
 	case "--help", "-h":
-		fmt.Fprintln(stderr, "forge goal: use `forge goal validate --goal-run <goal-run.json> [--json]`, `forge goal inspect --goal-run <goal-run.json> [--json]`, or `forge goal transitions --goal-run <goal-run.json> [--to <phase>] [--json]`")
+		fmt.Fprintln(stderr, "forge goal: use `forge goal validate --goal-run <goal-run.json> [--json]`, `forge goal inspect --goal-run <goal-run.json> [--json]`, `forge goal transitions --goal-run <goal-run.json> [--to <phase>] [--json]`, or `forge goal update --goal-run <goal-run.json> --out <goal-run.json> [--phase <phase>] [--next-task <text>] [--last-verified-at <RFC3339>] [--last-iteration-status <status>] [--last-iteration-summary <text>] [--json]`")
 		return 0
 	default:
 		fmt.Fprintf(stderr, "forge goal: unknown subcommand %q\n", args[0])
@@ -4576,6 +4609,108 @@ func parseGoalTransitionFlags(args []string) (goalTransitionFlags, error) {
 		return goalTransitionFlags{}, fmt.Errorf("unknown --to phase %q", flags.toPhase)
 	}
 	return flags, nil
+}
+
+func parseGoalUpdateFlags(args []string) (goalUpdateFlags, error) {
+	var flags goalUpdateFlags
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--goal-run":
+			value, next, err := readFlagValue(args, i, "--goal-run")
+			if err != nil {
+				return goalUpdateFlags{}, err
+			}
+			flags.goalRunPath = value
+			i = next
+		case "--out":
+			value, next, err := readFlagValue(args, i, "--out")
+			if err != nil {
+				return goalUpdateFlags{}, err
+			}
+			flags.outPath = value
+			i = next
+		case "--phase":
+			value, next, err := readFlagValue(args, i, "--phase")
+			if err != nil {
+				return goalUpdateFlags{}, err
+			}
+			flags.phase = value
+			i = next
+		case "--next-task":
+			value, next, err := readFlagValue(args, i, "--next-task")
+			if err != nil {
+				return goalUpdateFlags{}, err
+			}
+			flags.nextTask = value
+			i = next
+		case "--last-verified-at":
+			value, next, err := readFlagValue(args, i, "--last-verified-at")
+			if err != nil {
+				return goalUpdateFlags{}, err
+			}
+			flags.lastVerifiedAt = value
+			i = next
+		case "--last-iteration-status":
+			value, next, err := readFlagValue(args, i, "--last-iteration-status")
+			if err != nil {
+				return goalUpdateFlags{}, err
+			}
+			flags.lastIterationStatus = value
+			i = next
+		case "--last-iteration-summary":
+			value, next, err := readFlagValue(args, i, "--last-iteration-summary")
+			if err != nil {
+				return goalUpdateFlags{}, err
+			}
+			flags.lastIterationSummary = value
+			i = next
+		case "--json":
+			flags.json = true
+		case "--help", "-h":
+			return goalUpdateFlags{}, fmt.Errorf("help is available with `forge --help`")
+		default:
+			if strings.HasPrefix(args[i], "--") {
+				return goalUpdateFlags{}, fmt.Errorf("unknown flag %s", args[i])
+			}
+			return goalUpdateFlags{}, fmt.Errorf("unexpected argument %s", args[i])
+		}
+	}
+	if flags.goalRunPath == "" {
+		return goalUpdateFlags{}, fmt.Errorf("missing required --goal-run")
+	}
+	if flags.outPath == "" {
+		return goalUpdateFlags{}, fmt.Errorf("missing required --out")
+	}
+	if samePath(flags.goalRunPath, flags.outPath) {
+		return goalUpdateFlags{}, fmt.Errorf("--out must differ from --goal-run")
+	}
+	if flags.phase != "" && !isKnownGoalRunPhase(flags.phase) {
+		return goalUpdateFlags{}, fmt.Errorf("unknown --phase %q", flags.phase)
+	}
+	if !flags.hasMutation() {
+		return goalUpdateFlags{}, fmt.Errorf("at least one update flag is required")
+	}
+	if flags.lastVerifiedAt != "" {
+		if _, err := time.Parse(time.RFC3339, flags.lastVerifiedAt); err != nil {
+			return goalUpdateFlags{}, fmt.Errorf("--last-verified-at must be RFC3339: %w", err)
+		}
+	}
+	return flags, nil
+}
+
+func (flags goalUpdateFlags) hasMutation() bool {
+	return flags.phase != "" ||
+		flags.nextTask != "" ||
+		flags.lastVerifiedAt != "" ||
+		flags.lastIterationStatus != "" ||
+		flags.lastIterationSummary != ""
+}
+
+func readFlagValue(args []string, index int, flag string) (string, int, error) {
+	if index+1 >= len(args) || strings.HasPrefix(args[index+1], "--") {
+		return "", index, fmt.Errorf("%s requires a value", flag)
+	}
+	return args[index+1], index + 1, nil
 }
 
 func runGoalValidate(args []string, stdout, stderr io.Writer) int {
@@ -4647,6 +4782,49 @@ func runGoalTransitions(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func runGoalUpdate(args []string, stdout, stderr io.Writer) int {
+	flags, err := parseGoalUpdateFlags(args)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge goal update: %v\n", err)
+		return 2
+	}
+
+	goal, err := validateAndReadGoalRun(flags.goalRunPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge goal update: goal run validation failed: %v\n", err)
+		return 1
+	}
+
+	previousPhase := goal.CurrentPhase
+	updatedFields, err := applyGoalRunUpdate(&goal, flags)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge goal update: %v\n", err)
+		return 1
+	}
+	if len(updatedFields) == 0 {
+		fmt.Fprintln(stderr, "forge goal update: update produced no changes")
+		return 1
+	}
+	if err := validateGoalRunValue(goal); err != nil {
+		fmt.Fprintf(stderr, "forge goal update: updated goal run validation failed: %v\n", err)
+		return 1
+	}
+
+	data, err := marshalIndented(goal)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge goal update: marshal updated goal run: %v\n", err)
+		return 1
+	}
+	if err := writeFile(flags.outPath, data); err != nil {
+		fmt.Fprintf(stderr, "forge goal update: write updated goal run: %v\n", err)
+		return 1
+	}
+
+	audit := buildGoalUpdateAudit(flags, goal, previousPhase, updatedFields)
+	writeGoalUpdateAudit(stdout, audit, flags.json)
+	return 0
+}
+
 func validateAndReadGoalRun(path string) (goalRun, error) {
 	if err := validateJSONSchemaDocument(resolveDefaultContractPath(goalRunSchemaPath), path); err != nil {
 		return goalRun{}, err
@@ -4659,6 +4837,72 @@ func validateAndReadGoalRun(path string) (goalRun, error) {
 		return goalRun{}, fmt.Errorf("unsupported goal run schema_version %q", goal.SchemaVersion)
 	}
 	return goal, nil
+}
+
+func applyGoalRunUpdate(goal *goalRun, flags goalUpdateFlags) ([]string, error) {
+	var updated []string
+	if flags.phase != "" {
+		if flags.phase != goal.CurrentPhase {
+			transition := buildGoalTransitionSummary(flags.goalRunPath, *goal, flags.phase)
+			if transition.Status != "allowed" {
+				return nil, fmt.Errorf("phase transition denied: %s", transition.Reason)
+			}
+			goal.CurrentPhase = flags.phase
+			updated = append(updated, "current_phase")
+		}
+	}
+	if flags.nextTask != "" && flags.nextTask != goal.NextTask {
+		goal.NextTask = flags.nextTask
+		updated = append(updated, "next_task")
+	}
+	if flags.lastVerifiedAt != "" && flags.lastVerifiedAt != goal.LastVerifiedAt {
+		goal.LastVerifiedAt = flags.lastVerifiedAt
+		updated = append(updated, "last_verified_at")
+	}
+	if flags.lastIterationStatus != "" || flags.lastIterationSummary != "" {
+		if goal.LastIteration == nil {
+			if flags.lastIterationStatus == "" || flags.lastIterationSummary == "" {
+				return nil, fmt.Errorf("--last-iteration-status and --last-iteration-summary are required when creating last_iteration")
+			}
+			goal.LastIteration = &goalRunIteration{Evidence: []goalRunEvidence{}}
+		}
+		if flags.lastIterationStatus != "" && flags.lastIterationStatus != goal.LastIteration.Status {
+			goal.LastIteration.Status = flags.lastIterationStatus
+			updated = append(updated, "last_iteration.status")
+		}
+		if flags.lastIterationSummary != "" && flags.lastIterationSummary != goal.LastIteration.Summary {
+			goal.LastIteration.Summary = flags.lastIterationSummary
+			updated = append(updated, "last_iteration.summary")
+		}
+		if goal.LastIteration.Evidence == nil {
+			goal.LastIteration.Evidence = []goalRunEvidence{}
+		}
+	}
+	return updated, nil
+}
+
+func buildGoalUpdateAudit(flags goalUpdateFlags, goal goalRun, previousPhase string, updatedFields []string) goalUpdateAudit {
+	phaseTransition := "unchanged"
+	if previousPhase != goal.CurrentPhase {
+		phaseTransition = previousPhase + "->" + goal.CurrentPhase
+	}
+	audit := goalUpdateAudit{
+		AuditSchemaVersion: "ao.forge.goal-run-update-audit.v0.1",
+		GoalRun:            displayPath(flags.goalRunPath),
+		Out:                displayPath(flags.outPath),
+		GoalID:             goal.GoalID,
+		PreviousPhase:      previousPhase,
+		CurrentPhase:       goal.CurrentPhase,
+		PhaseTransition:    phaseTransition,
+		UpdatedFields:      append([]string(nil), updatedFields...),
+		LastVerifiedAt:     goal.LastVerifiedAt,
+		Status:             "updated",
+	}
+	if goal.LastIteration != nil {
+		audit.LastIterationStatus = goal.LastIteration.Status
+		audit.LastIterationSummary = goal.LastIteration.Summary
+	}
+	return audit
 }
 
 func buildGoalTransitionSummary(path string, goal goalRun, toPhase string) goalTransitionSummary {
@@ -4686,6 +4930,18 @@ func buildGoalTransitionSummary(path string, goal goalRun, toPhase string) goalT
 	return summary
 }
 
+func validateGoalRunValue(goal goalRun) error {
+	var document any
+	data, err := json.Marshal(goal)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(data, &document); err != nil {
+		return err
+	}
+	return validateJSONSchemaValue(resolveDefaultContractPath(goalRunSchemaPath), document)
+}
+
 func readGoalRun(path string) (goalRun, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -4696,6 +4952,15 @@ func readGoalRun(path string) (goalRun, error) {
 		return goalRun{}, fmt.Errorf("parse goal run JSON: %w", err)
 	}
 	return goal, nil
+}
+
+func samePath(left, right string) bool {
+	leftAbs, leftErr := filepath.Abs(left)
+	rightAbs, rightErr := filepath.Abs(right)
+	if leftErr != nil || rightErr != nil {
+		return left == right
+	}
+	return leftAbs == rightAbs
 }
 
 func resolveDefaultContractPath(relativePath string) string {
@@ -4838,6 +5103,30 @@ func writeGoalTransitionSummary(stdout io.Writer, summary goalTransitionSummary,
 	fmt.Fprintf(stdout, "reason=%s\n", summary.Reason)
 }
 
+func writeGoalUpdateAudit(stdout io.Writer, audit goalUpdateAudit, asJSON bool) {
+	if asJSON {
+		data, err := marshalIndented(audit)
+		if err != nil {
+			fmt.Fprintf(stdout, "{\"audit_schema_version\":\"ao.forge.goal-run-update-audit.v0.1\",\"status\":\"failed\"}\n")
+			return
+		}
+		_, _ = stdout.Write(data)
+		return
+	}
+	fmt.Fprintf(stdout, "goal_run_update=%s\n", audit.Status)
+	fmt.Fprintf(stdout, "goal_run=%s\n", audit.GoalRun)
+	fmt.Fprintf(stdout, "out=%s\n", audit.Out)
+	fmt.Fprintf(stdout, "goal_id=%s\n", audit.GoalID)
+	fmt.Fprintf(stdout, "previous_phase=%s\n", audit.PreviousPhase)
+	fmt.Fprintf(stdout, "current_phase=%s\n", audit.CurrentPhase)
+	fmt.Fprintf(stdout, "phase_transition=%s\n", audit.PhaseTransition)
+	fmt.Fprintf(stdout, "updated_fields=%s\n", strings.Join(audit.UpdatedFields, ","))
+	fmt.Fprintf(stdout, "last_verified_at=%s\n", audit.LastVerifiedAt)
+	if audit.LastIterationStatus != "" {
+		fmt.Fprintf(stdout, "last_iteration_status=%s\n", audit.LastIterationStatus)
+	}
+}
+
 func writeGoalInspectSummary(stdout io.Writer, summary goalInspectSummary, asJSON bool) {
 	if asJSON {
 		data, err := marshalIndented(summary)
@@ -4875,7 +5164,18 @@ func validateJSONSchemaDocument(schemaPath, documentPath string) error {
 	if err != nil {
 		return fmt.Errorf("read document: %w", err)
 	}
+	return validateJSONSchemaValueWithSchema(schemaDoc, document)
+}
 
+func validateJSONSchemaValue(schemaPath string, document any) error {
+	schemaDoc, err := readJSONAny(schemaPath)
+	if err != nil {
+		return fmt.Errorf("read schema: %w", err)
+	}
+	return validateJSONSchemaValueWithSchema(schemaDoc, document)
+}
+
+func validateJSONSchemaValueWithSchema(schemaDoc any, document any) error {
 	compiler := jsonschema.NewCompiler()
 	if err := compiler.AddResource("schema.json", schemaDoc); err != nil {
 		return fmt.Errorf("load schema: %w", err)

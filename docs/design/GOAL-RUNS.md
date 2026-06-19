@@ -65,3 +65,22 @@ forge goal transitions --goal-run examples/goals/ao2-weekend-hardening.goal-run.
 A denied `--to` check returns non-zero. `stopped` and `complete` are terminal
 states, so an automated loop must not resume from them without a new operator
 approved `GoalRun`.
+
+## Guarded Updates
+
+`forge goal update` creates a validated candidate GoalRun and prints an update
+audit. It requires `--out` and refuses to write over the input file. This keeps
+agents from mutating durable goal state without a reviewable artifact.
+
+```sh
+forge goal update \
+  --goal-run examples/goals/ao2-weekend-hardening.goal-run.json \
+  --out tmp/ao2-weekend-hardening.goal-run.json \
+  --phase implementation \
+  --next-task "Implement the smallest verified AO2 hardening task."
+```
+
+The command validates the source GoalRun, checks any requested phase change
+against the transition policy, validates the updated GoalRun against the schema,
+writes the candidate to `--out`, and emits an `ao.forge.goal-run-update-audit.v0.1`
+summary. A denied transition exits non-zero and writes no output file.

@@ -30,6 +30,11 @@ while IFS= read -r update_audit; do
   update_audits+=("$update_audit")
 done < <(find examples -type f -name '*.goal-run-update-audit.json' | sort)
 
+invalid_goal_runs=()
+while IFS= read -r invalid_goal_run; do
+  invalid_goal_runs+=("$invalid_goal_run")
+done < <(find examples -type f -name '*.goal-run.invalid.json' | sort)
+
 if [[ "${#goal_runs[@]}" -eq 0 ]]; then
   echo "no GoalRun fixtures found under examples/" >&2
   exit 1
@@ -56,5 +61,22 @@ for update_audit in "${update_audits[@]}"; do
     --document "$update_audit"
 done
 
+for invalid_goal_run in "${invalid_goal_runs[@]}"; do
+  "$forge_bin" goal validate --goal-run "$invalid_goal_run"
+  if "$forge_bin" goal evidence verify --goal-run "$invalid_goal_run"; then
+    echo "expected stale GoalRun evidence fixture to fail: $invalid_goal_run" >&2
+    exit 1
+  fi
+  verify_json="$verify_dir/$(basename "$invalid_goal_run").evidence-verify.json"
+  if "$forge_bin" goal evidence verify --goal-run "$invalid_goal_run" --json > "$verify_json"; then
+    echo "expected stale GoalRun evidence JSON fixture to fail: $invalid_goal_run" >&2
+    exit 1
+  fi
+  "$forge_bin" contract validate \
+    --schema docs/contracts/goal-run-evidence-verify-v0.1.schema.json \
+    --document "$verify_json"
+done
+
 echo "goal_run_fixtures_validated=${#goal_runs[@]}"
 echo "goal_run_update_audits_validated=${#update_audits[@]}"
+echo "goal_run_invalid_fixtures_rejected=${#invalid_goal_runs[@]}"

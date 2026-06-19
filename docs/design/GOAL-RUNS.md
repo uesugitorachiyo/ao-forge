@@ -120,6 +120,10 @@ fails if an artifact is missing, has no recorded hash, or no longer matches the
 recorded hash. JSON output uses
 `ao.forge.goal-run-evidence-verify.v0.1` and must validate against the evidence
 verification schema before AO2 Pulse treats it as durable loop evidence.
+The negative fixture
+`examples/goals/invalid/stale-evidence.goal-run.invalid.json` is schema-valid
+but intentionally records a stale evidence hash; CI must reject it through
+`scripts/verify-goal-fixtures.sh`.
 
 ## Evidence Freshness Policy
 

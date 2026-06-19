@@ -100,7 +100,9 @@ preserve after a successful iteration:
 
 CI runs `scripts/verify-goal-fixtures.sh` to validate every checked-in GoalRun
 and GoalRun update-audit fixture, and to verify every recorded GoalRun evidence
-hash, including this handoff pair.
+hash, including this handoff pair. The same smoke test also verifies that
+`examples/goals/invalid/stale-evidence.goal-run.invalid.json` fails closed when
+its recorded evidence hash does not match the artifact bytes.
 
 ## Stop And Backoff
 

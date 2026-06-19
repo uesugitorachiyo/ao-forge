@@ -17,6 +17,14 @@ on:
         description: "Minimum published-release soak window in hours"
         required: true
         default: "24"
+      confirm_default_release_verify:
+        description: "Type true to confirm Release Verify used default evidence and signed-tag requirements"
+        required: true
+        default: "false"
+      confirm_no_known_blockers:
+        description: "Type true to confirm no known severity-high or severity-critical blockers"
+        required: true
+        default: "false"
       confirm_promotion_audit:
         description: "Type true to run the production-stable promotion audit"
         required: true
@@ -39,6 +47,8 @@ jobs:
       RELEASE_VERIFY_RUN_ID: ${{ github.event.inputs.release_verify_run_id }}
       RELEASE_ROLLBACK_AUDIT_RUN_ID: ${{ github.event.inputs.release_rollback_audit_run_id }}
       MIN_SOAK_HOURS: ${{ github.event.inputs.min_soak_hours }}
+      CONFIRM_DEFAULT_RELEASE_VERIFY: ${{ github.event.inputs.confirm_default_release_verify }}
+      CONFIRM_NO_KNOWN_BLOCKERS: ${{ github.event.inputs.confirm_no_known_blockers }}
       CONFIRM_PROMOTION_AUDIT: ${{ github.event.inputs.confirm_promotion_audit }}
 
     steps:
@@ -54,6 +64,14 @@ jobs:
           tag="${REQUESTED_PROMOTION_TAG:-}"
           if [[ "${CONFIRM_PROMOTION_AUDIT}" != "true" ]]; then
             echo "confirm_promotion_audit must be exactly true" >&2
+            exit 1
+          fi
+          if [[ "${CONFIRM_DEFAULT_RELEASE_VERIFY}" != "true" ]]; then
+            echo "confirm_default_release_verify must be exactly true" >&2
+            exit 1
+          fi
+          if [[ "${CONFIRM_NO_KNOWN_BLOCKERS}" != "true" ]]; then
+            echo "confirm_no_known_blockers must be exactly true" >&2
             exit 1
           fi
           if [[ -z "$tag" || "$tag" != v* ]]; then
@@ -179,6 +197,10 @@ jobs:
               },
               "criteria": criteria,
               "failed_criteria": failed,
+              "operator_assertions": {
+                  "default_release_verify_controls": os.environ["CONFIRM_DEFAULT_RELEASE_VERIFY"] == "true",
+                  "no_known_severity_high_or_critical_blockers": os.environ["CONFIRM_NO_KNOWN_BLOCKERS"] == "true",
+              },
               "allowed_status_language": [
                   "production-stable",
                   "stable for production adoption",

@@ -297,6 +297,8 @@ func TestGoalRunCLIChecksPhaseTransitions(t *testing.T) {
 func TestGoalRunCLIUpdatesWithTransitionGuardAndAudit(t *testing.T) {
 	root := repoRoot(t)
 	goalPath := filepath.Join(root, "examples", "goals", "ao2-weekend-hardening.goal-run.json")
+	auditSchemaPath := filepath.Join(root, "docs", "contracts", "goal-run-update-audit-v0.1.schema.json")
+	auditExamplePath := filepath.Join(root, "examples", "goals", "ao2-weekend-hardening.goal-run-update-audit.json")
 	outPath := filepath.Join(t.TempDir(), "updated.goal-run.json")
 
 	code, stdout, stderr := runCLI(
@@ -338,6 +340,30 @@ func TestGoalRunCLIUpdatesWithTransitionGuardAndAudit(t *testing.T) {
 		audit.LastIterationStatus != "passed" ||
 		audit.Status != "updated" {
 		t.Fatalf("goal update audit drifted: %+v", audit)
+	}
+	auditPath := filepath.Join(t.TempDir(), "goal-run-update-audit.json")
+	if err := os.WriteFile(auditPath, []byte(stdout), 0o644); err != nil {
+		t.Fatalf("write generated goal update audit: %v", err)
+	}
+	code, stdout, stderr = runCLI("contract", "validate", "--schema", auditSchemaPath, "--document", auditPath)
+	if code != 0 {
+		t.Fatalf("generated goal update audit validate exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "contract_validation=passed") {
+		t.Fatalf("generated goal update audit validation stdout drifted:\n%s", stdout)
+	}
+	if stderr != "" {
+		t.Fatalf("generated goal update audit validation wrote stderr: %s", stderr)
+	}
+	code, stdout, stderr = runCLI("contract", "validate", "--schema", auditSchemaPath, "--document", auditExamplePath)
+	if code != 0 {
+		t.Fatalf("example goal update audit validate exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "contract_validation=passed") {
+		t.Fatalf("example goal update audit validation stdout drifted:\n%s", stdout)
+	}
+	if stderr != "" {
+		t.Fatalf("example goal update audit validation wrote stderr: %s", stderr)
 	}
 
 	code, stdout, stderr = runCLI("goal", "validate", "--goal-run", outPath)
@@ -434,8 +460,10 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 
 	readme := readText("README.md")
 	goalRunSchema := readText("docs", "contracts", "goal-run-v0.1.schema.json")
+	goalRunUpdateAuditSchema := readText("docs", "contracts", "goal-run-update-audit-v0.1.schema.json")
 	goalRunDocs := readText("docs", "design", "GOAL-RUNS.md")
 	goalRunExample := readText("examples", "goals", "ao2-weekend-hardening.goal-run.json")
+	goalRunUpdateAuditExample := readText("examples", "goals", "ao2-weekend-hardening.goal-run-update-audit.json")
 	briefSchema := readText("docs", "contracts", "factory-brief-v0.1.schema.json")
 	planSchema := readText("docs", "contracts", "factory-plan-v0.1.schema.json")
 	releasePreviewSchema := readText("docs", "contracts", "release-preview-audit-v0.1.schema.json")
@@ -455,11 +483,14 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	}{
 		{name: "README goal run docs link", doc: readme, want: "[GoalRun Contract](docs/design/GOAL-RUNS.md)"},
 		{name: "README goal run schema link", doc: readme, want: "[GoalRun v0.1 Schema](docs/contracts/goal-run-v0.1.schema.json)"},
+		{name: "README goal run update audit schema link", doc: readme, want: "[GoalRun Update Audit v0.1 Schema](docs/contracts/goal-run-update-audit-v0.1.schema.json)"},
 		{name: "README goal run example link", doc: readme, want: "[Example GoalRun](examples/goals/ao2-weekend-hardening.goal-run.json)"},
+		{name: "README goal run update audit example link", doc: readme, want: "[Example GoalRun Update Audit](examples/goals/ao2-weekend-hardening.goal-run-update-audit.json)"},
 		{name: "README goal run validate command", doc: readme, want: "./bin/forge goal validate --goal-run examples/goals/ao2-weekend-hardening.goal-run.json"},
 		{name: "README goal run inspect command", doc: readme, want: "./bin/forge goal inspect --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --json"},
 		{name: "README goal run transitions command", doc: readme, want: "./bin/forge goal transitions --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --to implementation"},
 		{name: "README goal run update command", doc: readme, want: `./bin/forge goal update --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --out tmp/ao2-weekend-hardening.goal-run.json --phase implementation`},
+		{name: "README goal run update audit validate command", doc: readme, want: "forge contract validate --schema docs/contracts/goal-run-update-audit-v0.1.schema.json --document examples/goals/ao2-weekend-hardening.goal-run-update-audit.json"},
 		{name: "README brief schema link", doc: readme, want: "[Factory Brief v0.1 Schema](docs/contracts/factory-brief-v0.1.schema.json)"},
 		{name: "README plan schema link", doc: readme, want: "[Factory Plan v0.1 Schema](docs/contracts/factory-plan-v0.1.schema.json)"},
 		{name: "README release preview schema link", doc: readme, want: "[Release Preview Audit v0.1 Schema](docs/contracts/release-preview-audit-v0.1.schema.json)"},
@@ -486,6 +517,11 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run scheduler codex cron", doc: goalRunSchema, want: `"codex-cron"`},
 		{name: "goal run next action guard", doc: goalRunSchema, want: `"next_action_guard"`},
 		{name: "goal run backoff", doc: goalRunSchema, want: `"backoff_or_stop"`},
+		{name: "goal run update audit schema id", doc: goalRunUpdateAuditSchema, want: `"ao.forge.goal-run-update-audit.v0.1"`},
+		{name: "goal run update audit strict root", doc: goalRunUpdateAuditSchema, want: `"additionalProperties": false`},
+		{name: "goal run update audit previous phase", doc: goalRunUpdateAuditSchema, want: `"previous_phase"`},
+		{name: "goal run update audit updated fields", doc: goalRunUpdateAuditSchema, want: `"updated_fields"`},
+		{name: "goal run update audit status", doc: goalRunUpdateAuditSchema, want: `"updated"`},
 		{name: "goal run docs title", doc: goalRunDocs, want: "# AO Forge GoalRun Contract"},
 		{name: "goal run docs ownership", doc: goalRunDocs, want: "AO Forge owns durable goal and task state"},
 		{name: "goal run docs cron boundary", doc: goalRunDocs, want: "codex-cron should only trigger the loop"},
@@ -497,11 +533,16 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run docs update title", doc: goalRunDocs, want: "## Guarded Updates"},
 		{name: "goal run docs update audit", doc: goalRunDocs, want: "ao.forge.goal-run-update-audit.v0.1"},
 		{name: "goal run docs update no in-place", doc: goalRunDocs, want: "refuses to write over the input file"},
+		{name: "goal run docs update audit schema", doc: goalRunDocs, want: "docs/contracts/goal-run-update-audit-v0.1.schema.json"},
+		{name: "goal run docs update audit validate command", doc: goalRunDocs, want: "forge contract validate"},
 		{name: "goal run example id", doc: goalRunExample, want: `"goal_id": "ao2-weekend-hardening"`},
 		{name: "goal run example repo", doc: goalRunExample, want: `"repo": "ao2"`},
 		{name: "goal run example state owner", doc: goalRunExample, want: `"state_owner": "ao-forge"`},
 		{name: "goal run example executor", doc: goalRunExample, want: `"executor": "ao2-pulse"`},
 		{name: "goal run example scheduler", doc: goalRunExample, want: `"scheduler": "codex-cron"`},
+		{name: "goal run update audit example id", doc: goalRunUpdateAuditExample, want: `"audit_schema_version": "ao.forge.goal-run-update-audit.v0.1"`},
+		{name: "goal run update audit example transition", doc: goalRunUpdateAuditExample, want: `"phase_transition": "planning->implementation"`},
+		{name: "goal run update audit example status", doc: goalRunUpdateAuditExample, want: `"status": "updated"`},
 		{name: "brief schema id", doc: briefSchema, want: `"ao.forge.factory-brief.v0.1"`},
 		{name: "brief strict root", doc: briefSchema, want: `"additionalProperties": false`},
 		{name: "brief objective", doc: briefSchema, want: `"objective"`},

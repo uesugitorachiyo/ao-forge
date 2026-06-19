@@ -23,8 +23,10 @@ work:
 - `loop_owner`: ownership split between AO Forge, executor, and scheduler.
 - `next_action_guard`: required preflight proof for the next action.
 
-The schema is `docs/contracts/goal-run-v0.1.schema.json`. The example is
-`examples/goals/ao2-weekend-hardening.goal-run.json`.
+The GoalRun schema is `docs/contracts/goal-run-v0.1.schema.json`. The update
+audit schema is `docs/contracts/goal-run-update-audit-v0.1.schema.json`. The
+examples are `examples/goals/ao2-weekend-hardening.goal-run.json` and
+`examples/goals/ao2-weekend-hardening.goal-run-update-audit.json`.
 
 ## Loop Rule
 
@@ -84,3 +86,12 @@ The command validates the source GoalRun, checks any requested phase change
 against the transition policy, validates the updated GoalRun against the schema,
 writes the candidate to `--out`, and emits an `ao.forge.goal-run-update-audit.v0.1`
 summary. A denied transition exits non-zero and writes no output file.
+
+Validate an emitted or stored update audit before preserving it as loop
+evidence:
+
+```sh
+forge contract validate \
+  --schema docs/contracts/goal-run-update-audit-v0.1.schema.json \
+  --document examples/goals/ao2-weekend-hardening.goal-run-update-audit.json
+```

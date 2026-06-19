@@ -827,6 +827,7 @@ func TestGoalRunCLIChecksPhaseTransitions(t *testing.T) {
 func TestGoalRunCLIUpdatesWithTransitionGuardAndAudit(t *testing.T) {
 	root := repoRoot(t)
 	goalPath := filepath.Join(root, "examples", "goals", "ao2-weekend-hardening.goal-run.json")
+	stalePath := filepath.Join(root, "examples", "goals", "invalid", "stale-evidence.goal-run.invalid.json")
 	auditSchemaPath := filepath.Join(root, "docs", "contracts", "goal-run-update-audit-v0.1.schema.json")
 	auditExamplePath := filepath.Join(root, "examples", "goals", "ao2-weekend-hardening.goal-run-update-audit.json")
 	outPath := filepath.Join(t.TempDir(), "updated.goal-run.json")
@@ -960,6 +961,22 @@ func TestGoalRunCLIUpdatesWithTransitionGuardAndAudit(t *testing.T) {
 	}
 	if _, err := os.Stat(deniedOut); !os.IsNotExist(err) {
 		t.Fatalf("denied update wrote output file: %v", err)
+	}
+
+	staleOut := filepath.Join(t.TempDir(), "stale-advanced.goal-run.json")
+	code, stdout, stderr = runCLI("goal", "update", "--goal-run", stalePath, "--out", staleOut, "--phase", "verification")
+	if code != 1 {
+		t.Fatalf("goal update stale evidence exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if stdout != "" {
+		t.Fatalf("goal update stale evidence wrote stdout: %s", stdout)
+	}
+	if !strings.Contains(stderr, "existing GoalRun evidence verification failed") ||
+		!strings.Contains(stderr, "sha256 mismatch") {
+		t.Fatalf("goal update stale evidence stderr drifted: %s", stderr)
+	}
+	if _, err := os.Stat(staleOut); !os.IsNotExist(err) {
+		t.Fatalf("stale evidence update wrote output file: %v", err)
 	}
 
 	code, stdout, stderr = runCLI("goal", "update", "--goal-run", goalPath, "--out", goalPath, "--phase", "implementation")
@@ -1189,6 +1206,8 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run docs update title", doc: goalRunDocs, want: "## Guarded Updates"},
 		{name: "goal run docs update audit", doc: goalRunDocs, want: "ao.forge.goal-run-update-audit.v0.1"},
 		{name: "goal run docs update no in-place", doc: goalRunDocs, want: "refuses to write over the input file"},
+		{name: "goal run docs update source evidence precondition", doc: goalRunDocs, want: "re-lints and re-verifies the source GoalRun"},
+		{name: "goal run docs update stale evidence no candidate", doc: goalRunDocs, want: "the update fails before any candidate is written"},
 		{name: "goal run docs update evidence", doc: goalRunDocs, want: "Each `--evidence` path must be readable"},
 		{name: "goal run docs evidence verify", doc: goalRunDocs, want: "forge goal evidence verify --goal-run examples/goals/ao2-pulse-handoff.goal-run.json"},
 		{name: "goal run docs evidence verify schema", doc: goalRunDocs, want: "docs/contracts/goal-run-evidence-verify-v0.1.schema.json"},
@@ -1211,6 +1230,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run docs evidence freshness title", doc: goalRunDocs, want: "## Evidence Freshness Policy"},
 		{name: "goal run docs duplicate evidence denied", doc: goalRunDocs, want: "Duplicate paths are denied before the candidate GoalRun is written"},
 		{name: "goal run docs stale evidence stop", doc: goalRunDocs, want: "must emit backoff or stop and leave the existing"},
+		{name: "goal run docs stale evidence update bypass", doc: goalRunDocs, want: "evidence cannot be bypassed by updating the GoalRun directly after readiness"},
 		{name: "goal run docs live state refreshed", doc: goalRunDocs, want: "Evidence that depends on live repository state should be refreshed"},
 		{name: "goal run docs evidence retention title", doc: goalRunDocs, want: "## Evidence Retention Policy"},
 		{name: "goal run docs durable evidence layout", doc: goalRunDocs, want: "docs/evidence/goals/<goal_id>/<YYYYMMDDTHHMMSSZ>-<phase>/"},
@@ -1271,6 +1291,8 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "AO2 Pulse docs retained readiness fixture", doc: ao2PulseGoalRunLoopDocs, want: "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/goal-run-readiness-audit.json"},
 		{name: "AO2 Pulse docs tampered readiness audit fixture", doc: ao2PulseGoalRunLoopDocs, want: "examples/goals/invalid/tampered-readiness-audit.goal-run-readiness-audit.invalid.json"},
 		{name: "AO2 Pulse docs retained readiness schema validation", doc: ao2PulseGoalRunLoopDocs, want: "validates retained readiness audit JSON under"},
+		{name: "AO2 Pulse docs failed readiness preserved", doc: ao2PulseGoalRunLoopDocs, want: "failed `evidence_verify` result and errors were preserved"},
+		{name: "AO2 Pulse docs failed readiness cannot advance", doc: ao2PulseGoalRunLoopDocs, want: "`forge goal update` cannot write an advanced candidate after readiness fails"},
 		{name: "AO2 Pulse docs readiness script smoke", doc: ao2PulseGoalRunLoopDocs, want: "`scripts/ao2-pulse-goal-readiness.sh` produces schema-valid readiness audit JSON"},
 		{name: "AO2 Pulse docs retained smoke", doc: ao2PulseGoalRunLoopDocs, want: "one positive GoalRun fixture uses the retained evidence layout"},
 		{name: "AO2 Pulse docs lint smoke", doc: ao2PulseGoalRunLoopDocs, want: "It also runs\n`forge goal evidence lint`"},
@@ -2372,8 +2394,12 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		{name: "goal fixture verifier readiness command", doc: goalFixtureVerifier, want: "goal readiness --goal-run"},
 		{name: "goal fixture verifier AO2 Pulse readiness script", doc: goalFixtureVerifier, want: "scripts/ao2-pulse-goal-readiness.sh"},
 		{name: "goal fixture verifier AO2 Pulse readiness failure", doc: goalFixtureVerifier, want: "expected AO2 Pulse readiness entrypoint to fail"},
+		{name: "goal fixture verifier preserved failed readiness", doc: goalFixtureVerifier, want: "readiness audit did not preserve failed evidence_verify result"},
+		{name: "goal fixture verifier stale update failure", doc: goalFixtureVerifier, want: "expected stale GoalRun update to fail after readiness failure"},
+		{name: "goal fixture verifier stale update candidate block", doc: goalFixtureVerifier, want: "stale GoalRun update wrote candidate after readiness failure"},
 		{name: "goal fixture verifier readiness count", doc: goalFixtureVerifier, want: "goal_run_readiness_audits_validated"},
 		{name: "goal fixture verifier AO2 Pulse readiness count", doc: goalFixtureVerifier, want: "ao2_pulse_readiness_entrypoints_validated"},
+		{name: "goal fixture verifier failed readiness preserved count", doc: goalFixtureVerifier, want: "ao2_pulse_failed_readiness_audits_preserved"},
 		{name: "goal fixture verifier retained readiness count", doc: goalFixtureVerifier, want: "goal_run_retained_readiness_audits_validated"},
 		{name: "goal fixture verifier retained audit command", doc: goalFixtureVerifier, want: "goal evidence retention"},
 		{name: "goal fixture verifier retained count", doc: goalFixtureVerifier, want: "goal_run_retained_evidence_fixtures"},

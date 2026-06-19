@@ -223,6 +223,37 @@ for invalid_goal_run in "${invalid_goal_runs[@]}"; do
   "$forge_bin" contract validate \
     --schema docs/contracts/goal-run-readiness-audit-v0.1.schema.json \
     --document "$pulse_readiness_json"
+  python3 - "$pulse_readiness_json" "$invalid_goal_run" <<'PY'
+import json
+import pathlib
+import sys
+
+audit_path, goal_run = sys.argv[1:]
+audit = json.loads(pathlib.Path(audit_path).read_text())
+checks = {check["check_id"]: check for check in audit.get("checks", [])}
+if audit.get("goal_run") != goal_run:
+    raise SystemExit(f"readiness audit goal_run mismatch: {audit.get('goal_run')} != {goal_run}")
+if audit.get("status") != "failed":
+    raise SystemExit(f"readiness audit should be failed: {audit.get('status')}")
+if audit.get("evidence_verify", {}).get("status") != "failed":
+    raise SystemExit("readiness audit did not preserve failed evidence_verify result")
+if checks.get("evidence_verify", {}).get("status") != "failed":
+    raise SystemExit("readiness audit did not preserve failed evidence_verify check")
+if not audit.get("errors"):
+    raise SystemExit("readiness audit did not preserve failure errors")
+PY
+  blocked_candidate="$verify_dir/$(basename "$invalid_goal_run").advanced.goal-run.json"
+  if "$forge_bin" goal update \
+    --goal-run "$invalid_goal_run" \
+    --out "$blocked_candidate" \
+    --phase verification; then
+    echo "expected stale GoalRun update to fail after readiness failure: $invalid_goal_run" >&2
+    exit 1
+  fi
+  if [[ -e "$blocked_candidate" ]]; then
+    echo "stale GoalRun update wrote candidate after readiness failure: $blocked_candidate" >&2
+    exit 1
+  fi
 done
 
 for invalid_path_goal_run in "${invalid_path_goal_runs[@]}"; do
@@ -272,3 +303,4 @@ echo "goal_run_retained_evidence_audits_validated=${#retained_evidence_artifacts
 echo "goal_run_retained_readiness_audits_validated=${#retained_readiness_audits[@]}"
 echo "goal_run_retained_evidence_invalid_fixtures_rejected=${#invalid_retained_evidence_artifacts[@]}"
 echo "goal_run_readiness_audit_invalid_fixtures_rejected=${#invalid_readiness_audits[@]}"
+echo "ao2_pulse_failed_readiness_audits_preserved=${#invalid_goal_runs[@]}"

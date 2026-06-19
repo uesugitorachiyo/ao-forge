@@ -103,6 +103,9 @@ The command validates the source GoalRun, checks any requested phase change
 against the transition policy, validates the updated GoalRun against the schema,
 writes the candidate to `--out`, and emits an `ao.forge.goal-run-update-audit.v0.1`
 summary. A denied transition exits non-zero and writes no output file.
+Before writing a candidate, it also re-lints and re-verifies the source GoalRun
+evidence. If existing evidence is stale, missing, or recorded under a denied
+path, the update fails before any candidate is written.
 Each `--evidence` path must be readable. AO Forge records the evidence path and
 SHA-256 in both `last_iteration.evidence` and the emitted update audit, so AO2
 Pulse can preserve the artifacts that prove why the next state was selected.
@@ -168,6 +171,9 @@ selected the next state.
 - If `forge goal evidence verify` reports a missing artifact, missing hash, or
   SHA-256 mismatch, AO2 Pulse must emit backoff or stop and leave the existing
   GoalRun unchanged.
+- `forge goal update` enforces the same source-evidence precondition, so stale
+  evidence cannot be bypassed by updating the GoalRun directly after readiness
+  fails.
 - Evidence that depends on live repository state should be refreshed after the
   worktree, branch, or checked commit changes.
 

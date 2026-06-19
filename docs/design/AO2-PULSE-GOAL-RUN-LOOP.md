@@ -149,6 +149,11 @@ for positive fixtures and fails closed while preserving failed readiness JSON fo
 negative fixtures. It validates retained readiness audit JSON under
 `docs/evidence/goals/` against
 `docs/contracts/goal-run-readiness-audit-v0.1.schema.json`. The same smoke test
+inspects the failed readiness audit for
+`examples/goals/invalid/stale-evidence.goal-run.invalid.json`, confirms the
+failed `evidence_verify` result and errors were preserved, and proves
+`forge goal update` cannot write an advanced candidate after readiness fails.
+The same smoke test
 rejects
 `examples/goals/invalid/tampered-readiness-audit.goal-run-readiness-audit.invalid.json`
 to prove tampered readiness evidence cannot be accepted before loop
@@ -172,6 +177,8 @@ AO2 Pulse must not continue when any of these checks fail:
 - the readiness audit JSON does not validate against
   `docs/contracts/goal-run-readiness-audit-v0.1.schema.json`;
 - `forge goal update` fails;
+- `forge goal update` rejects the source GoalRun because existing evidence no
+  longer lints or verifies;
 - the update audit does not validate;
 - the candidate GoalRun does not validate;
 - any recorded evidence attachment is missing or has a SHA-256 mismatch.

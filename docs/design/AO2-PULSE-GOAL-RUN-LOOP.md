@@ -159,7 +159,10 @@ The same smoke test
 rejects
 `examples/goals/invalid/tampered-readiness-audit.goal-run-readiness-audit.invalid.json`
 to prove tampered readiness evidence cannot be accepted before loop
-continuation. The same smoke test verifies that
+continuation. It also rejects
+`examples/goals/invalid/mismatched-provenance-readiness-audit.goal-run-readiness-audit.provenance-invalid.json`
+to prove schema-valid readiness audits cannot point at stale GoalRun or
+evidence bytes. The same smoke test verifies that
 `examples/goals/invalid/stale-evidence.goal-run.invalid.json` fails closed when
 its recorded evidence hash does not match the artifact bytes, and that at least
 one positive GoalRun fixture uses the retained evidence layout. It also runs

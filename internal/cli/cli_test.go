@@ -1092,6 +1092,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	retainedEvidenceArtifact := readText("docs", "evidence", "goals", "ao2-weekend-hardening", "20260619T143000Z-implementation", "ao2-pulse-handoff-retention-proof.json")
 	retainedReadinessAudit := readText("docs", "evidence", "goals", "ao2-weekend-hardening", "20260619T180000Z-verification", "goal-run-readiness-audit.json")
 	tamperedReadinessAuditExample := readText("examples", "goals", "invalid", "tampered-readiness-audit.goal-run-readiness-audit.invalid.json")
+	mismatchedProvenanceReadinessAuditExample := readText("examples", "goals", "invalid", "mismatched-provenance-readiness-audit.goal-run-readiness-audit.provenance-invalid.json")
 	missingRetentionMetadataExample := readText("examples", "goals", "invalid", "missing-retention-metadata.goal-run-retained-evidence.invalid.json")
 	unsafeCleanupRetentionExample := readText("examples", "goals", "invalid", "unsafe-cleanup-retention.goal-run-retained-evidence.invalid.json")
 	staleEvidenceGoalRunExample := readText("examples", "goals", "invalid", "stale-evidence.goal-run.invalid.json")
@@ -1247,6 +1248,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run docs retained readiness audit schema", doc: goalRunDocs, want: "Retained readiness audit JSON"},
 		{name: "goal run docs retained readiness provenance", doc: goalRunDocs, want: "Retained readiness audits must include provenance hashes"},
 		{name: "goal run docs retained readiness provenance verifier", doc: goalRunDocs, want: "those hashes from the checked-in files"},
+		{name: "goal run docs mismatched readiness provenance fixture", doc: goalRunDocs, want: "examples/goals/invalid/mismatched-provenance-readiness-audit.goal-run-readiness-audit.provenance-invalid.json"},
 		{name: "goal run docs readiness command", doc: goalRunDocs, want: "forge goal readiness --goal-run examples/goals/ao2-retained-evidence.goal-run.json --to verification --json"},
 		{name: "goal run docs readiness combined gate", doc: goalRunDocs, want: "`forge goal readiness` is the combined pre-loop gate for AO2 Pulse"},
 		{name: "goal run docs retained evidence audit command", doc: goalRunDocs, want: "forge goal evidence retention --artifact <retained-evidence.json>"},
@@ -1317,6 +1319,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "AO2 Pulse docs retained fixture", doc: ao2PulseGoalRunLoopDocs, want: "examples/goals/ao2-retained-evidence.goal-run.json"},
 		{name: "AO2 Pulse docs retained readiness fixture", doc: ao2PulseGoalRunLoopDocs, want: "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/goal-run-readiness-audit.json"},
 		{name: "AO2 Pulse docs tampered readiness audit fixture", doc: ao2PulseGoalRunLoopDocs, want: "examples/goals/invalid/tampered-readiness-audit.goal-run-readiness-audit.invalid.json"},
+		{name: "AO2 Pulse docs mismatched readiness provenance fixture", doc: ao2PulseGoalRunLoopDocs, want: "examples/goals/invalid/mismatched-provenance-readiness-audit.goal-run-readiness-audit.provenance-invalid.json"},
 		{name: "AO2 Pulse docs retained readiness schema validation", doc: ao2PulseGoalRunLoopDocs, want: "validates retained readiness audit JSON under"},
 		{name: "AO2 Pulse docs retained readiness provenance", doc: ao2PulseGoalRunLoopDocs, want: "recomputes\nreadiness provenance hashes"},
 		{name: "AO2 Pulse docs failed readiness preserved", doc: ao2PulseGoalRunLoopDocs, want: "failed `evidence_verify` result and errors were preserved"},
@@ -1369,6 +1372,9 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "tampered readiness audit provenance", doc: tamperedReadinessAuditExample, want: `"provenance"`},
 		{name: "tampered readiness audit schema marker", doc: tamperedReadinessAuditExample, want: `"readiness_schema_version": "ao.forge.goal-run-readiness-audit.v0.1"`},
 		{name: "tampered readiness audit extra field", doc: tamperedReadinessAuditExample, want: `"tampered_after_validation": true`},
+		{name: "mismatched provenance readiness audit schema marker", doc: mismatchedProvenanceReadinessAuditExample, want: `"readiness_schema_version": "ao.forge.goal-run-readiness-audit.v0.1"`},
+		{name: "mismatched provenance readiness audit wrong hash", doc: mismatchedProvenanceReadinessAuditExample, want: `"sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"`},
+		{name: "mismatched provenance readiness audit evidence hash", doc: mismatchedProvenanceReadinessAuditExample, want: `"actual_sha256": "dc28391a22a1ead221ee82f7d3c80d1f3766badf977722dddb147b4484e2f528"`},
 		{name: "missing retention metadata fixture schema", doc: missingRetentionMetadataExample, want: `"schema_version": "ao.forge.goal-run-retained-evidence.v0.1"`},
 		{name: "missing retention metadata fixture summary", doc: missingRetentionMetadataExample, want: "must declare machine-readable retention metadata"},
 		{name: "unsafe cleanup retention fixture review disabled", doc: unsafeCleanupRetentionExample, want: `"deletion_requires_review": false`},
@@ -2412,6 +2418,7 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		{name: "goal fixture verifier path invalid glob", doc: goalFixtureVerifier, want: "*.goal-run.path-invalid.json"},
 		{name: "goal fixture verifier path invalid audit glob", doc: goalFixtureVerifier, want: "*.goal-run-update-audit.path-invalid.json"},
 		{name: "goal fixture verifier readiness invalid glob", doc: goalFixtureVerifier, want: "*.goal-run-readiness-audit.invalid.json"},
+		{name: "goal fixture verifier readiness provenance invalid glob", doc: goalFixtureVerifier, want: "*.goal-run-readiness-audit.provenance-invalid.json"},
 		{name: "goal fixture verifier stale failure", doc: goalFixtureVerifier, want: "expected stale GoalRun evidence fixture to fail"},
 		{name: "goal fixture verifier retained artifact failure", doc: goalFixtureVerifier, want: "expected retained GoalRun evidence artifact fixture to fail"},
 		{name: "goal fixture verifier readiness audit failure", doc: goalFixtureVerifier, want: "expected GoalRun readiness audit fixture to fail"},
@@ -2433,7 +2440,9 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		{name: "goal fixture verifier failed readiness preserved count", doc: goalFixtureVerifier, want: "ao2_pulse_failed_readiness_audits_preserved"},
 		{name: "goal fixture verifier retained readiness count", doc: goalFixtureVerifier, want: "goal_run_retained_readiness_audits_validated"},
 		{name: "goal fixture verifier retained readiness provenance", doc: goalFixtureVerifier, want: "readiness audit provenance goal_run sha256 mismatch"},
+		{name: "goal fixture verifier readiness provenance failure", doc: goalFixtureVerifier, want: "expected GoalRun readiness provenance fixture to fail"},
 		{name: "goal fixture verifier retained readiness provenance count", doc: goalFixtureVerifier, want: "goal_run_retained_readiness_provenance_verified"},
+		{name: "goal fixture verifier readiness provenance rejected count", doc: goalFixtureVerifier, want: "goal_run_readiness_provenance_invalid_fixtures_rejected"},
 		{name: "goal fixture verifier retained audit command", doc: goalFixtureVerifier, want: "goal evidence retention"},
 		{name: "goal fixture verifier retained count", doc: goalFixtureVerifier, want: "goal_run_retained_evidence_fixtures"},
 		{name: "goal fixture verifier retained artifact count", doc: goalFixtureVerifier, want: "goal_run_retained_evidence_artifacts_validated"},

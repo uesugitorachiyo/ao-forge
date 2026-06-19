@@ -40,6 +40,7 @@ const (
 	gateResultSchemaVersion      = "ao.forge.covenant-gate-result.v0.1"
 	releasePreviewAuditVersion   = "ao.forge.release-preview-audit.v0.1"
 	releasePreviewInspectVersion = "ao.forge.release-preview-inspect.v0.1"
+	productionReadinessVersion   = "ao.forge.production-readiness-audit.v0.1"
 	goalRunSchemaVersion         = "ao.forge.goal-run.v0.1"
 	goalRunSchemaPath            = "docs/contracts/goal-run-v0.1.schema.json"
 	goalRunUpdateAuditVersion    = "ao.forge.goal-run-update-audit.v0.1"
@@ -296,6 +297,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runArtifact(args[1:], stdout, stderr)
 	case "release-preview":
 		return runReleasePreview(args[1:], stdout, stderr)
+	case "production-readiness":
+		return runProductionReadiness(args[1:], stdout, stderr)
 	case "contract":
 		return runContract(args[1:], stdout, stderr)
 	case "goal":
@@ -333,6 +336,7 @@ Usage:
   forge artifact verify-checksums --manifest <checksums.txt>
   forge release-preview --workspace <git-workspace> [--tag <vX.Y.Z>] [--artifact <path> ...] [--out <release-preview-audit.json>]
   forge release-preview inspect --audit <release-preview-audit.json> [--json]
+  forge production-readiness audit [--json]
   forge contract validate --schema <schema.json> --document <document.json> [--json]
   forge goal validate --goal-run <goal-run.json> [--json]
   forge goal inspect --goal-run <goal-run.json> [--json]
@@ -350,7 +354,7 @@ Factory terms:
   factory packet  operator-ready JSON summary of plan, gates, evidence, and next actions
 
 Slice 2.8 status:
-  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, release preview audits, release preview enforcement, release preview audit inspection, artifact checksums, artifact checksum verification, contract schema validation, GoalRun validation and inspection, GoalRun transition checks, guarded GoalRun updates, GoalRun update evidence attachments, GoalRun evidence verification, GoalRun evidence path linting, GoalRun retained evidence retention audits, and GoalRun readiness audits are enabled.
+  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, release preview audits, release preview enforcement, release preview audit inspection, production-readiness scoring, artifact checksums, artifact checksum verification, contract schema validation, GoalRun validation and inspection, GoalRun transition checks, guarded GoalRun updates, GoalRun update evidence attachments, GoalRun evidence verification, GoalRun evidence path linting, GoalRun retained evidence retention audits, and GoalRun readiness audits are enabled.
 `)
 }
 
@@ -6527,6 +6531,329 @@ type releasePreviewInspectSummary struct {
 	Artifacts            int                      `json:"artifacts"`
 	ArtifactDetails      []releasePreviewArtifact `json:"artifact_details"`
 	NextActions          []nextAction             `json:"next_actions"`
+}
+
+type productionReadinessFlags struct {
+	json bool
+}
+
+type productionReadinessGate struct {
+	GateID   string   `json:"gate_id"`
+	Category string   `json:"category"`
+	Status   string   `json:"status"`
+	Summary  string   `json:"summary"`
+	Evidence []string `json:"evidence"`
+}
+
+type productionReadinessAudit struct {
+	SchemaVersion    string                    `json:"schema_version"`
+	Status           string                    `json:"status"`
+	GeneratedAtUTC   string                    `json:"generated_at_utc"`
+	ReadinessPercent int                       `json:"readiness_percent"`
+	PassedGates      int                       `json:"passed_gates"`
+	TotalGates       int                       `json:"total_gates"`
+	Gates            []productionReadinessGate `json:"gates"`
+	NextActions      []nextAction              `json:"next_actions"`
+}
+
+type productionReadinessGateSpec struct {
+	GateID   string
+	Category string
+	Summary  string
+	Evidence []string
+	Requires []productionReadinessRequirement
+}
+
+type productionReadinessRequirement struct {
+	Path     string
+	Pattern  string
+	Optional bool
+}
+
+func runProductionReadiness(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "forge production-readiness: missing subcommand")
+		return 2
+	}
+	switch args[0] {
+	case "audit":
+		return runProductionReadinessAudit(args[1:], stdout, stderr)
+	case "--help", "-h":
+		fmt.Fprintln(stderr, "forge production-readiness: use `forge production-readiness audit [--json]`")
+		return 0
+	default:
+		fmt.Fprintf(stderr, "forge production-readiness: unknown subcommand %q\n", args[0])
+		return 2
+	}
+}
+
+func parseProductionReadinessAuditFlags(args []string) (productionReadinessFlags, error) {
+	var flags productionReadinessFlags
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--json":
+			flags.json = true
+		case "--help", "-h":
+			return productionReadinessFlags{}, fmt.Errorf("help is available with `forge --help`")
+		default:
+			if strings.HasPrefix(args[i], "--") {
+				return productionReadinessFlags{}, fmt.Errorf("unknown flag %s", args[i])
+			}
+			return productionReadinessFlags{}, fmt.Errorf("unexpected argument %s", args[i])
+		}
+	}
+	return flags, nil
+}
+
+func runProductionReadinessAudit(args []string, stdout, stderr io.Writer) int {
+	flags, err := parseProductionReadinessAuditFlags(args)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge production-readiness audit: %v\n", err)
+		return 2
+	}
+
+	audit := buildProductionReadinessAudit()
+	writeProductionReadinessAudit(stdout, audit, flags.json)
+	if audit.Status != "passed" {
+		fmt.Fprintf(stderr, "forge production-readiness audit: %d/%d gates passed\n", audit.PassedGates, audit.TotalGates)
+		return 1
+	}
+	return 0
+}
+
+func buildProductionReadinessAudit() productionReadinessAudit {
+	audit := productionReadinessAudit{
+		SchemaVersion:  productionReadinessVersion,
+		Status:         "passed",
+		GeneratedAtUTC: time.Now().UTC().Format(time.RFC3339),
+		Gates:          []productionReadinessGate{},
+		NextActions:    []nextAction{},
+	}
+
+	for _, spec := range productionReadinessGateSpecs() {
+		gate := evaluateProductionReadinessGate(spec)
+		audit.Gates = append(audit.Gates, gate)
+		if gate.Status == "passed" {
+			audit.PassedGates++
+		} else {
+			audit.Status = "failed"
+			audit.NextActions = append(audit.NextActions, nextAction{
+				ActionID:    "fix-" + gate.GateID,
+				Description: "Restore production-readiness gate: " + gate.Summary,
+				Required:    true,
+			})
+		}
+	}
+	audit.TotalGates = len(audit.Gates)
+	if audit.TotalGates > 0 {
+		audit.ReadinessPercent = audit.PassedGates * 100 / audit.TotalGates
+	}
+	return audit
+}
+
+func productionReadinessGateSpecs() []productionReadinessGateSpec {
+	return []productionReadinessGateSpec{
+		{
+			GateID:   "contract.production_readiness_audit",
+			Category: "contracts",
+			Summary:  "production-readiness audit output has a strict JSON contract",
+			Evidence: []string{"docs/contracts/production-readiness-audit-v0.1.schema.json"},
+			Requires: []productionReadinessRequirement{
+				{Path: "docs/contracts/production-readiness-audit-v0.1.schema.json", Pattern: productionReadinessVersion},
+				{Path: "docs/contracts/production-readiness-audit-v0.1.schema.json", Pattern: `"additionalProperties": false`},
+			},
+		},
+		{
+			GateID:   "ci.required_checks_documented",
+			Category: "ci",
+			Summary:  "branch protection runbook documents all required merge checks",
+			Evidence: []string{"docs/release/BRANCH-PROTECTION.md"},
+			Requires: []productionReadinessRequirement{
+				{Path: "docs/release/BRANCH-PROTECTION.md", Pattern: "Go ubuntu-latest"},
+				{Path: "docs/release/BRANCH-PROTECTION.md", Pattern: "Go macos-latest"},
+				{Path: "docs/release/BRANCH-PROTECTION.md", Pattern: "Go windows-latest"},
+				{Path: "docs/release/BRANCH-PROTECTION.md", Pattern: "Workflow lint"},
+				{Path: "docs/release/BRANCH-PROTECTION.md", Pattern: "GoalRun fixture smoke"},
+				{Path: "docs/release/BRANCH-PROTECTION.md", Pattern: "Release preview dry-run audit"},
+			},
+		},
+		{
+			GateID:   "ci.workflow_required_jobs",
+			Category: "ci",
+			Summary:  "CI workflow defines Go, workflow lint, and GoalRun fixture smoke jobs",
+			Evidence: []string{".github/workflows/ci.yml"},
+			Requires: []productionReadinessRequirement{
+				{Path: ".github/workflows/ci.yml", Pattern: "Go ${{ matrix.os }}"},
+				{Path: ".github/workflows/ci.yml", Pattern: "Workflow lint"},
+				{Path: ".github/workflows/ci.yml", Pattern: "GoalRun fixture smoke"},
+				{Path: ".github/workflows/ci.yml", Pattern: "scripts/verify-goal-fixtures.sh"},
+			},
+		},
+		{
+			GateID:   "release.preview_read_only",
+			Category: "release",
+			Summary:  "release preview workflow runs non-mutating audit and validates preview contracts",
+			Evidence: []string{".github/workflows/release-preview.yml", "docs/contracts/release-preview-audit-v0.1.schema.json", "docs/contracts/release-preview-inspect-v0.1.schema.json"},
+			Requires: []productionReadinessRequirement{
+				{Path: ".github/workflows/release-preview.yml", Pattern: "Release preview dry-run audit"},
+				{Path: ".github/workflows/release-preview.yml", Pattern: "release-preview-audit-v0.1.schema.json"},
+				{Path: ".github/workflows/release-preview.yml", Pattern: "release-preview-inspect-v0.1.schema.json"},
+				{Path: "docs/contracts/release-preview-audit-v0.1.schema.json", Pattern: "ao.forge.release-preview-audit.v0.1"},
+				{Path: "docs/contracts/release-preview-inspect-v0.1.schema.json", Pattern: "ao.forge.release-preview-inspect.v0.1"},
+			},
+		},
+		{
+			GateID:   "release.publish_attested_draft",
+			Category: "release",
+			Summary:  "release publish requires rehearsal evidence, checksums, release evidence bundle, and attestation verification",
+			Evidence: []string{".github/workflows/release-publish.yml", "docs/contracts/release-evidence-bundle-v0.1.schema.json"},
+			Requires: []productionReadinessRequirement{
+				{Path: ".github/workflows/release-publish.yml", Pattern: "release-evidence-bundle.json"},
+				{Path: ".github/workflows/release-publish.yml", Pattern: "gh attestation verify"},
+				{Path: ".github/workflows/release-publish.yml", Pattern: "draft"},
+				{Path: "docs/contracts/release-evidence-bundle-v0.1.schema.json", Pattern: "ao.forge.release-evidence-bundle.v0.1"},
+			},
+		},
+		{
+			GateID:   "release.verify_and_install",
+			Category: "release",
+			Summary:  "release verification and install verification workflows emit contract-valid read-only audits",
+			Evidence: []string{".github/workflows/release-verify.yml", ".github/workflows/release-install-verify.yml", "docs/contracts/release-verify-audit-v0.1.schema.json", "docs/contracts/release-install-verify-audit-v0.1.schema.json"},
+			Requires: []productionReadinessRequirement{
+				{Path: ".github/workflows/release-verify.yml", Pattern: "release-verify-audit.json"},
+				{Path: ".github/workflows/release-verify.yml", Pattern: "require_evidence_bundle"},
+				{Path: ".github/workflows/release-install-verify.yml", Pattern: "release-install-verify-audit.json"},
+				{Path: "docs/contracts/release-verify-audit-v0.1.schema.json", Pattern: "ao.forge.release-verify-audit.v0.1"},
+				{Path: "docs/contracts/release-install-verify-audit-v0.1.schema.json", Pattern: "ao.forge.release-install-verify.v0.1"},
+			},
+		},
+		{
+			GateID:   "release.rollback_guarded",
+			Category: "release",
+			Summary:  "rollback workflow has read-only audit mode and guarded mutation modes",
+			Evidence: []string{".github/workflows/release-rollback.yml", "docs/contracts/release-rollback-audit-v0.1.schema.json"},
+			Requires: []productionReadinessRequirement{
+				{Path: ".github/workflows/release-rollback.yml", Pattern: "audit-only"},
+				{Path: ".github/workflows/release-rollback.yml", Pattern: "production-release"},
+				{Path: ".github/workflows/release-rollback.yml", Pattern: "release-rollback-audit.json"},
+				{Path: "docs/contracts/release-rollback-audit-v0.1.schema.json", Pattern: "ao.forge.release-rollback-audit.v0.1"},
+			},
+		},
+		{
+			GateID:   "release.production_promotion",
+			Category: "release",
+			Summary:  "production-stable promotion is read-only and requires verify, install, rollback, and soak evidence",
+			Evidence: []string{".github/workflows/production-promotion.yml", "docs/release/PRODUCTION-STABLE-PROMOTION.md", "docs/contracts/production-promotion-audit-v0.1.schema.json"},
+			Requires: []productionReadinessRequirement{
+				{Path: ".github/workflows/production-promotion.yml", Pattern: "production-promotion-audit.json"},
+				{Path: ".github/workflows/production-promotion.yml", Pattern: "min_soak_hours"},
+				{Path: ".github/workflows/production-promotion.yml", Pattern: "release_rollback_audit_run_id"},
+				{Path: "docs/release/PRODUCTION-STABLE-PROMOTION.md", Pattern: "Do not describe a release as production-stable"},
+				{Path: "docs/contracts/production-promotion-audit-v0.1.schema.json", Pattern: "ao.forge.production-promotion-audit.v0.1"},
+			},
+		},
+		{
+			GateID:   "goalrun.contracts_and_loop",
+			Category: "goalrun",
+			Summary:  "GoalRun schemas, AO2 Pulse readiness entrypoint, and durable loop documentation are present",
+			Evidence: []string{"docs/contracts/goal-run-v0.1.schema.json", "docs/contracts/goal-run-readiness-audit-v0.1.schema.json", "scripts/ao2-pulse-goal-readiness.sh", "docs/design/AO2-PULSE-GOAL-RUN-LOOP.md"},
+			Requires: []productionReadinessRequirement{
+				{Path: "docs/contracts/goal-run-v0.1.schema.json", Pattern: "ao.forge.goal-run.v0.1"},
+				{Path: "docs/contracts/goal-run-readiness-audit-v0.1.schema.json", Pattern: "ao.forge.goal-run-readiness-audit.v0.1"},
+				{Path: "scripts/ao2-pulse-goal-readiness.sh", Pattern: "goal readiness --goal-run"},
+				{Path: "docs/design/AO2-PULSE-GOAL-RUN-LOOP.md", Pattern: "codex-cron may invoke AO2 Pulse on a schedule"},
+			},
+		},
+		{
+			GateID:   "goalrun.evidence_retention",
+			Category: "goalrun",
+			Summary:  "retained evidence policy includes loop evidence plus release/promotion provenance protection",
+			Evidence: []string{"docs/contracts/goal-run-retained-evidence-v0.1.schema.json", "docs/contracts/goal-run-retained-evidence-audit-v0.1.schema.json", "docs/evidence/goals/ao2-weekend-hardening/20260101T000000Z-complete/release-provenance-retention-proof.json"},
+			Requires: []productionReadinessRequirement{
+				{Path: "docs/contracts/goal-run-retained-evidence-v0.1.schema.json", Pattern: "release_provenance"},
+				{Path: "docs/contracts/goal-run-retained-evidence-v0.1.schema.json", Pattern: "promotion_provenance"},
+				{Path: "docs/contracts/goal-run-retained-evidence-audit-v0.1.schema.json", Pattern: "not_eligible_public_provenance"},
+				{Path: "docs/evidence/goals/ao2-weekend-hardening/20260101T000000Z-complete/release-provenance-retention-proof.json", Pattern: `"retention_class": "release_provenance"`},
+			},
+		},
+		{
+			GateID:   "goalrun.provenance_negative_fixtures",
+			Category: "goalrun",
+			Summary:  "readiness audit tampering and provenance mismatch fixtures are checked in",
+			Evidence: []string{"examples/goals/invalid/tampered-readiness-audit.goal-run-readiness-audit.invalid.json", "examples/goals/invalid/mismatched-provenance-readiness-audit.goal-run-readiness-audit.provenance-invalid.json", "scripts/verify-goal-fixtures.sh"},
+			Requires: []productionReadinessRequirement{
+				{Path: "examples/goals/invalid/tampered-readiness-audit.goal-run-readiness-audit.invalid.json", Pattern: "tampered_after_validation"},
+				{Path: "examples/goals/invalid/mismatched-provenance-readiness-audit.goal-run-readiness-audit.provenance-invalid.json", Pattern: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+				{Path: "scripts/verify-goal-fixtures.sh", Pattern: "goal_run_readiness_provenance_invalid_fixtures_rejected"},
+			},
+		},
+		{
+			GateID:   "security.release_threat_model",
+			Category: "security",
+			Summary:  "release threat model covers artifact tampering, attestations, and promotion evidence",
+			Evidence: []string{"docs/security/RELEASE-THREAT-MODEL.md"},
+			Requires: []productionReadinessRequirement{
+				{Path: "docs/security/RELEASE-THREAT-MODEL.md", Pattern: "Artifact tampering"},
+				{Path: "docs/security/RELEASE-THREAT-MODEL.md", Pattern: "GitHub Artifact Attestation"},
+				{Path: "docs/security/RELEASE-THREAT-MODEL.md", Pattern: "Production Promotion"},
+			},
+		},
+	}
+}
+
+func evaluateProductionReadinessGate(spec productionReadinessGateSpec) productionReadinessGate {
+	gate := productionReadinessGate{
+		GateID:   spec.GateID,
+		Category: spec.Category,
+		Status:   "passed",
+		Summary:  spec.Summary,
+		Evidence: spec.Evidence,
+	}
+	for _, requirement := range spec.Requires {
+		if err := productionReadinessRequirementSatisfied(requirement); err != nil {
+			gate.Status = "failed"
+			gate.Summary = spec.Summary + ": " + err.Error()
+			return gate
+		}
+	}
+	return gate
+}
+
+func productionReadinessRequirementSatisfied(requirement productionReadinessRequirement) error {
+	data, err := os.ReadFile(resolveDefaultContractPath(requirement.Path))
+	if err != nil {
+		if requirement.Optional {
+			return nil
+		}
+		return fmt.Errorf("%s is not readable: %v", requirement.Path, err)
+	}
+	if requirement.Pattern != "" && !strings.Contains(string(data), requirement.Pattern) {
+		return fmt.Errorf("%s missing %q", requirement.Path, requirement.Pattern)
+	}
+	return nil
+}
+
+func writeProductionReadinessAudit(stdout io.Writer, audit productionReadinessAudit, asJSON bool) {
+	if asJSON {
+		data, err := marshalIndented(audit)
+		if err != nil {
+			fmt.Fprintf(stdout, "{\"schema_version\":\"%s\",\"status\":\"failed\",\"readiness_percent\":0,\"passed_gates\":0,\"total_gates\":0,\"gates\":[],\"next_actions\":[{\"action_id\":\"marshal-production-readiness-audit\",\"description\":%q,\"required\":true}]}\n", productionReadinessVersion, err.Error())
+			return
+		}
+		_, _ = stdout.Write(data)
+		return
+	}
+
+	fmt.Fprintf(stdout, "production_readiness=%s\n", audit.Status)
+	fmt.Fprintf(stdout, "readiness_percent=%d\n", audit.ReadinessPercent)
+	fmt.Fprintf(stdout, "gates_passed=%d\n", audit.PassedGates)
+	fmt.Fprintf(stdout, "gates_total=%d\n", audit.TotalGates)
+	for _, gate := range audit.Gates {
+		fmt.Fprintf(stdout, "gate=%s category=%s status=%s summary=%s\n", gate.GateID, gate.Category, gate.Status, gate.Summary)
+	}
+	for _, action := range audit.NextActions {
+		fmt.Fprintf(stdout, "next_action=%s required=%t description=%s\n", action.ActionID, action.Required, action.Description)
+	}
 }
 
 func parseReleasePreviewInspectFlags(args []string) (releasePreviewInspectFlags, error) {

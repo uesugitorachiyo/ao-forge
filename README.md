@@ -80,6 +80,7 @@ over provider execution, release publishing, or control-plane approval.
 - [Release Install Verify Audit v0.1 Schema](docs/contracts/release-install-verify-audit-v0.1.schema.json)
 - [Release Rollback Audit v0.1 Schema](docs/contracts/release-rollback-audit-v0.1.schema.json)
 - [Production Promotion Audit v0.1 Schema](docs/contracts/production-promotion-audit-v0.1.schema.json)
+- [Production Readiness Audit v0.1 Schema](docs/contracts/production-readiness-audit-v0.1.schema.json)
 - [Example GoalRun](examples/goals/ao2-weekend-hardening.goal-run.json)
 - [Example GoalRun Update Audit](examples/goals/ao2-weekend-hardening.goal-run-update-audit.json)
 - [AO2 Pulse Handoff GoalRun](examples/goals/ao2-pulse-handoff.goal-run.json)
@@ -247,6 +248,13 @@ For automation, emit the inspect summary as JSON:
 
 ```sh
 ./bin/forge release-preview inspect --audit release-preview-audit.json --json
+```
+
+Compute the repository production-readiness score from checked-in contracts,
+workflows, runbooks, and retained evidence controls:
+
+```sh
+./bin/forge production-readiness audit --json
 ```
 
 Mutating commands fail closed unless the required gate result, clean workspace,

@@ -72,12 +72,14 @@ func TestHelpExplainsFactoryTermsWithoutMarketingCopy(t *testing.T) {
 		"dry-run execution",
 		"forge artifact checksums",
 		"forge release-preview inspect --audit <release-preview-audit.json> [--json]",
+		"forge production-readiness audit [--json]",
 		"Slice 2.8 status:",
 		"release mutation",
 		"GitHub publishing",
 		"release preview audits",
 		"release preview enforcement",
 		"release preview audit inspection",
+		"production-readiness scoring",
 		"artifact checksums",
 		"artifact checksum verification",
 		"contract schema validation",
@@ -1109,6 +1111,68 @@ func TestReleasePreviewAuditFlagRequiresValue(t *testing.T) {
 	}
 }
 
+func TestProductionReadinessAuditScoresRepositoryGates(t *testing.T) {
+	root := repoRoot(t)
+	schemaPath := filepath.Join(root, "docs", "contracts", "production-readiness-audit-v0.1.schema.json")
+
+	code, stdout, stderr := runCLI("production-readiness", "audit")
+	if code != 0 {
+		t.Fatalf("production-readiness audit exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	for _, want := range []string{
+		"production_readiness=passed",
+		"readiness_percent=100",
+		"gates_passed=12",
+		"gates_total=12",
+		"gate=release.production_promotion category=release status=passed",
+		"gate=goalrun.evidence_retention category=goalrun status=passed",
+		"gate=security.release_threat_model category=security status=passed",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("production-readiness audit stdout missing %q\n%s", want, stdout)
+		}
+	}
+	if stderr != "" {
+		t.Fatalf("production-readiness audit wrote stderr: %s", stderr)
+	}
+
+	code, stdout, stderr = runCLI("production-readiness", "audit", "--json")
+	if code != 0 {
+		t.Fatalf("production-readiness audit --json exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	var audit struct {
+		SchemaVersion    string                    `json:"schema_version"`
+		Status           string                    `json:"status"`
+		ReadinessPercent int                       `json:"readiness_percent"`
+		PassedGates      int                       `json:"passed_gates"`
+		TotalGates       int                       `json:"total_gates"`
+		Gates            []productionReadinessGate `json:"gates"`
+		NextActions      []nextAction              `json:"next_actions"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &audit); err != nil {
+		t.Fatalf("production-readiness audit --json emitted invalid JSON: %v\n%s", err, stdout)
+	}
+	var document any
+	if err := json.Unmarshal([]byte(stdout), &document); err != nil {
+		t.Fatalf("production-readiness audit --json emitted invalid JSON document: %v\n%s", err, stdout)
+	}
+	if err := validateJSONSchemaValue(schemaPath, document); err != nil {
+		t.Fatalf("production-readiness audit --json failed schema validation: %v\n%s", err, stdout)
+	}
+	if audit.SchemaVersion != "ao.forge.production-readiness-audit.v0.1" ||
+		audit.Status != "passed" ||
+		audit.ReadinessPercent != 100 ||
+		audit.PassedGates != 12 ||
+		audit.TotalGates != 12 ||
+		len(audit.Gates) != 12 ||
+		len(audit.NextActions) != 0 {
+		t.Fatalf("production-readiness audit JSON drifted: %+v", audit)
+	}
+	if stderr != "" {
+		t.Fatalf("production-readiness audit --json wrote stderr: %s", stderr)
+	}
+}
+
 func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	root := repoRoot(t)
 	readText := func(path ...string) string {
@@ -1165,6 +1229,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	releaseInstallVerifyAuditSchema := readText("docs", "contracts", "release-install-verify-audit-v0.1.schema.json")
 	releaseRollbackAuditSchema := readText("docs", "contracts", "release-rollback-audit-v0.1.schema.json")
 	productionPromotionAuditSchema := readText("docs", "contracts", "production-promotion-audit-v0.1.schema.json")
+	productionReadinessAuditSchema := readText("docs", "contracts", "production-readiness-audit-v0.1.schema.json")
 
 	for _, check := range []struct {
 		name string
@@ -1215,6 +1280,8 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "README release install verify audit schema link", doc: readme, want: "[Release Install Verify Audit v0.1 Schema](docs/contracts/release-install-verify-audit-v0.1.schema.json)"},
 		{name: "README release rollback audit schema link", doc: readme, want: "[Release Rollback Audit v0.1 Schema](docs/contracts/release-rollback-audit-v0.1.schema.json)"},
 		{name: "README production promotion audit schema link", doc: readme, want: "[Production Promotion Audit v0.1 Schema](docs/contracts/production-promotion-audit-v0.1.schema.json)"},
+		{name: "README production readiness audit schema link", doc: readme, want: "[Production Readiness Audit v0.1 Schema](docs/contracts/production-readiness-audit-v0.1.schema.json)"},
+		{name: "README production readiness audit command", doc: readme, want: "./bin/forge production-readiness audit --json"},
 		{name: "goal run schema id", doc: goalRunSchema, want: `"ao.forge.goal-run.v0.1"`},
 		{name: "goal run strict root", doc: goalRunSchema, want: `"additionalProperties": false`},
 		{name: "goal run id", doc: goalRunSchema, want: `"goal_id"`},
@@ -1520,6 +1587,11 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "production promotion audit evidence runs", doc: productionPromotionAuditSchema, want: `"evidence_runs"`},
 		{name: "production promotion audit criteria", doc: productionPromotionAuditSchema, want: `"criteria"`},
 		{name: "production promotion audit operator assertions", doc: productionPromotionAuditSchema, want: `"operator_assertions"`},
+		{name: "production readiness audit schema id", doc: productionReadinessAuditSchema, want: `"ao.forge.production-readiness-audit.v0.1"`},
+		{name: "production readiness audit strict root", doc: productionReadinessAuditSchema, want: `"additionalProperties": false`},
+		{name: "production readiness audit percent", doc: productionReadinessAuditSchema, want: `"readiness_percent"`},
+		{name: "production readiness audit gates", doc: productionReadinessAuditSchema, want: `"gates"`},
+		{name: "production readiness audit passed max actions", doc: productionReadinessAuditSchema, want: `"maxItems": 0`},
 	} {
 		if !strings.Contains(check.doc, check.want) {
 			t.Fatalf("%s missing %q", check.name, check.want)
@@ -1541,6 +1613,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "release install verify audit schema", text: releaseInstallVerifyAuditSchema},
 		{name: "release rollback audit schema", text: releaseRollbackAuditSchema},
 		{name: "production promotion audit schema", text: productionPromotionAuditSchema},
+		{name: "production readiness audit schema", text: productionReadinessAuditSchema},
 		{name: "goal run evidence verify schema", text: goalRunEvidenceVerifySchema},
 	} {
 		var decoded any

@@ -493,6 +493,7 @@ func TestGoalRunCLILintsEvidencePaths(t *testing.T) {
 func TestGoalRunCLIAuditsRetainedEvidenceRetention(t *testing.T) {
 	root := repoRoot(t)
 	artifactPath := filepath.Join(root, "docs", "evidence", "goals", "ao2-weekend-hardening", "20260619T143000Z-implementation", "ao2-pulse-handoff-retention-proof.json")
+	releaseProvenancePath := filepath.Join(root, "docs", "evidence", "goals", "ao2-weekend-hardening", "20260101T000000Z-complete", "release-provenance-retention-proof.json")
 	auditSchemaPath := filepath.Join(root, "docs", "contracts", "goal-run-retained-evidence-audit-v0.1.schema.json")
 	now := "2026-06-19T18:00:00Z"
 
@@ -590,6 +591,52 @@ func TestGoalRunCLIAuditsRetainedEvidenceRetention(t *testing.T) {
 	}
 	if stderr != "" {
 		t.Fatalf("goal evidence retention terminal wrote stderr: %s", stderr)
+	}
+
+	code, stdout, stderr = runCLI("goal", "evidence", "retention", "--artifact", releaseProvenancePath, "--now", now)
+	if code != 0 {
+		t.Fatalf("goal evidence retention release provenance exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	for _, want := range []string{
+		"phase=complete",
+		"retention_class=release_provenance",
+		"retention_status=mandatory_retention",
+		"cleanup_review_status=not_eligible_public_provenance",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("goal evidence retention release provenance stdout missing %q\n%s", want, stdout)
+		}
+	}
+	if strings.Contains(stdout, "mandatory_retention_until=") {
+		t.Fatalf("goal evidence retention release provenance should not emit a terminal cleanup date:\n%s", stdout)
+	}
+	if stderr != "" {
+		t.Fatalf("goal evidence retention release provenance wrote stderr: %s", stderr)
+	}
+
+	promotionPath := filepath.Join(t.TempDir(), "promotion-provenance-retained-evidence.json")
+	promotionArtifact := strings.ReplaceAll(terminalArtifact, `"retention_class": "loop_evidence"`, `"retention_class": "promotion_provenance"`)
+	if err := os.WriteFile(promotionPath, []byte(promotionArtifact), 0o644); err != nil {
+		t.Fatalf("write promotion provenance retained evidence fixture: %v", err)
+	}
+	code, stdout, stderr = runCLI("goal", "evidence", "retention", "--artifact", promotionPath, "--now", now, "--json")
+	if code != 0 {
+		t.Fatalf("goal evidence retention promotion provenance exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if err := json.Unmarshal([]byte(stdout), &auditDocument); err != nil {
+		t.Fatalf("goal evidence retention promotion provenance --json emitted invalid JSON: %v\n%s", err, stdout)
+	}
+	if err := validateJSONSchemaValue(auditSchemaPath, auditDocument); err != nil {
+		t.Fatalf("goal evidence retention promotion provenance --json failed schema validation: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stdout, `"retention_class": "promotion_provenance"`) ||
+		!strings.Contains(stdout, `"retention_status": "mandatory_retention"`) ||
+		!strings.Contains(stdout, `"cleanup_review_status": "not_eligible_public_provenance"`) ||
+		strings.Contains(stdout, `"mandatory_retention_until"`) {
+		t.Fatalf("goal evidence retention promotion provenance stdout drifted:\n%s", stdout)
+	}
+	if stderr != "" {
+		t.Fatalf("goal evidence retention promotion provenance wrote stderr: %s", stderr)
 	}
 
 	futurePath := filepath.Join(t.TempDir(), "future-retained-evidence.json")
@@ -1090,6 +1137,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	ao2PulseHandoffAuditExample := readText("examples", "goals", "ao2-pulse-handoff.goal-run-update-audit.json")
 	retainedEvidenceGoalRunExample := readText("examples", "goals", "ao2-retained-evidence.goal-run.json")
 	retainedEvidenceArtifact := readText("docs", "evidence", "goals", "ao2-weekend-hardening", "20260619T143000Z-implementation", "ao2-pulse-handoff-retention-proof.json")
+	releaseProvenanceEvidenceArtifact := readText("docs", "evidence", "goals", "ao2-weekend-hardening", "20260101T000000Z-complete", "release-provenance-retention-proof.json")
 	retainedReadinessAudit := readText("docs", "evidence", "goals", "ao2-weekend-hardening", "20260619T180000Z-verification", "goal-run-readiness-audit.json")
 	tamperedReadinessAuditExample := readText("examples", "goals", "invalid", "tampered-readiness-audit.goal-run-readiness-audit.invalid.json")
 	mismatchedProvenanceReadinessAuditExample := readText("examples", "goals", "invalid", "mismatched-provenance-readiness-audit.goal-run-readiness-audit.provenance-invalid.json")
@@ -1208,6 +1256,8 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run retained evidence metadata", doc: goalRunRetainedEvidenceSchema, want: `"retention_metadata"`},
 		{name: "goal run retained evidence retained at", doc: goalRunRetainedEvidenceSchema, want: `"retained_at"`},
 		{name: "goal run retained evidence retention class", doc: goalRunRetainedEvidenceSchema, want: `"loop_evidence"`},
+		{name: "goal run retained evidence release provenance class", doc: goalRunRetainedEvidenceSchema, want: `"release_provenance"`},
+		{name: "goal run retained evidence promotion provenance class", doc: goalRunRetainedEvidenceSchema, want: `"promotion_provenance"`},
 		{name: "goal run retained evidence active retention", doc: goalRunRetainedEvidenceSchema, want: `"retain_while_goal_active"`},
 		{name: "goal run retained evidence deletion review", doc: goalRunRetainedEvidenceSchema, want: `"deletion_requires_review"`},
 		{name: "goal run retained evidence audit schema id", doc: goalRunRetainedEvidenceAuditSchema, want: `"ao.forge.goal-run-retained-evidence-audit.v0.1"`},
@@ -1215,6 +1265,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run retained evidence audit active status", doc: goalRunRetainedEvidenceAuditSchema, want: `"active_retention"`},
 		{name: "goal run retained evidence audit cleanup eligible", doc: goalRunRetainedEvidenceAuditSchema, want: `"cleanup_review_eligible"`},
 		{name: "goal run retained evidence audit cleanup review status", doc: goalRunRetainedEvidenceAuditSchema, want: `"eligible_after_review"`},
+		{name: "goal run retained evidence audit public provenance status", doc: goalRunRetainedEvidenceAuditSchema, want: `"not_eligible_public_provenance"`},
 		{name: "goal run readiness audit schema id", doc: goalRunReadinessAuditSchema, want: `"ao.forge.goal-run-readiness-audit.v0.1"`},
 		{name: "goal run readiness audit strict root", doc: goalRunReadinessAuditSchema, want: `"additionalProperties": false`},
 		{name: "goal run readiness audit provenance", doc: goalRunReadinessAuditSchema, want: `"provenance"`},
@@ -1266,6 +1317,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run docs no scratch persisted evidence", doc: goalRunDocs, want: "must not be preserved in the durable GoalRun or update audit"},
 		{name: "goal run docs ninety day retention", doc: goalRunDocs, want: "keep loop evidence for at least 90 days"},
 		{name: "goal run docs release evidence indefinitely", doc: goalRunDocs, want: "Keep release, promotion, and public provenance evidence indefinitely"},
+		{name: "goal run docs public provenance not cleanup eligible", doc: goalRunDocs, want: "not_eligible_public_provenance"},
 		{name: "goal run docs cleanup reviewable", doc: goalRunDocs, want: "Cleanup must be reviewable"},
 		{name: "goal run docs retained fixture", doc: goalRunDocs, want: "examples/goals/ao2-retained-evidence.goal-run.json"},
 		{name: "goal run docs retained fixture smoke", doc: goalRunDocs, want: "fails if no positive GoalRun fixture uses that"},
@@ -1362,6 +1414,10 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "retained evidence artifact retain active", doc: retainedEvidenceArtifact, want: `"retain_while_goal_active": true`},
 		{name: "retained evidence artifact deletion review", doc: retainedEvidenceArtifact, want: `"deletion_requires_review": true`},
 		{name: "retained evidence artifact cleanup fields", doc: retainedEvidenceArtifact, want: `"cleanup_change_must_name": ["goal_id", "iteration", "reason"]`},
+		{name: "release provenance evidence artifact schema version", doc: releaseProvenanceEvidenceArtifact, want: `"schema_version": "ao.forge.goal-run-retained-evidence.v0.1"`},
+		{name: "release provenance evidence artifact phase", doc: releaseProvenanceEvidenceArtifact, want: `"phase": "complete"`},
+		{name: "release provenance evidence artifact retention class", doc: releaseProvenanceEvidenceArtifact, want: `"retention_class": "release_provenance"`},
+		{name: "release provenance evidence artifact summary", doc: releaseProvenanceEvidenceArtifact, want: "public provenance remains mandatory retention"},
 		{name: "retained readiness audit schema version", doc: retainedReadinessAudit, want: `"readiness_schema_version": "ao.forge.goal-run-readiness-audit.v0.1"`},
 		{name: "retained readiness audit goal run", doc: retainedReadinessAudit, want: `"goal_run": "examples/goals/ao2-retained-evidence.goal-run.json"`},
 		{name: "retained readiness audit requested phase", doc: retainedReadinessAudit, want: `"requested_phase": "verification"`},

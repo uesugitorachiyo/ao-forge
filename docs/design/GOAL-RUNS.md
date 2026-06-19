@@ -249,7 +249,10 @@ Retention rules:
 - Keep evidence for any non-terminal GoalRun while the loop may continue.
 - After `complete` or `stopped`, keep loop evidence for at least 90 days.
 - Keep release, promotion, and public provenance evidence indefinitely unless a
-  later audited retention decision replaces that policy.
+  later audited retention decision replaces that policy. `forge goal evidence
+  retention` reports those public provenance classes as `mandatory_retention`
+  with `not_eligible_public_provenance`, even after the terminal loop-evidence
+  cleanup window has elapsed.
 - Do not delete an evidence artifact while any retained GoalRun or update audit
   still references its path.
 - Cleanup must be reviewable: remove evidence in a separate change that names

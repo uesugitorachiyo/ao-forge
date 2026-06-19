@@ -20,8 +20,9 @@ Before running promotion audit, collect:
 - a successful `Release Rollback` audit-only run for the same tag;
 - confirmation that the release has completed the agreed soak window.
 
-The default soak window is 24 hours after publication. Increase it for releases
-with broad user impact, migration risk, or new release automation.
+The default soak window is 0 hours for solo-operator controlled releases. Use
+24 hours or longer when external users depend on the release, or when a release
+has broad user impact, migration risk, or new release automation.
 
 ## Promotion Audit
 
@@ -42,7 +43,8 @@ Run the `Production Promotion` workflow manually with:
 
 The workflow is read-only. It must not publish releases, edit notes, move tags,
 or mark releases latest. It writes `production-promotion-audit.json` and uploads
-the `production-promotion-audit` artifact for review.
+the `production-promotion-audit` artifact for review. Blocked promotion runs
+still upload a contract-valid audit artifact before the workflow fails.
 
 ## Pass Criteria
 

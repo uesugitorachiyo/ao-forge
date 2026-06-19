@@ -190,6 +190,11 @@ under `docs/evidence/goals/` against
 Retained artifacts must include machine-readable retention metadata: when the
 artifact was retained, its retention class, whether it must be retained while
 the GoalRun is active, and the review fields a cleanup change must name.
+It also rejects schema-invalid retained artifact fixtures under
+`examples/goals/invalid/`:
+
+- `examples/goals/invalid/missing-retention-metadata.goal-run-retained-evidence.invalid.json`
+- `examples/goals/invalid/unsafe-cleanup-retention.goal-run-retained-evidence.invalid.json`
 
 The same fixture smoke runs `forge goal evidence lint` against every checked-in
 GoalRun and GoalRun update-audit evidence path. The checked-in negative fixtures

@@ -57,6 +57,8 @@ over provider execution, release publishing, or control-plane approval.
 - [Verified Foundation Baseline](docs/foundation/VERIFIED-BASELINE.md)
 - [Foundation Baseline JSON](docs/foundation/foundation-baseline.v0.1.json)
 - [Release Threat Model](docs/security/RELEASE-THREAT-MODEL.md)
+- [GoalRun Contract](docs/design/GOAL-RUNS.md)
+- [GoalRun v0.1 Schema](docs/contracts/goal-run-v0.1.schema.json)
 - [Factory Brief v0.1 Schema](docs/contracts/factory-brief-v0.1.schema.json)
 - [Factory Plan v0.1 Schema](docs/contracts/factory-plan-v0.1.schema.json)
 - [Factory Packet v0.1 Schema](docs/contracts/factory-packet-v0.1.schema.json)
@@ -71,6 +73,7 @@ over provider execution, release publishing, or control-plane approval.
 - [Release Install Verify Audit v0.1 Schema](docs/contracts/release-install-verify-audit-v0.1.schema.json)
 - [Release Rollback Audit v0.1 Schema](docs/contracts/release-rollback-audit-v0.1.schema.json)
 - [Production Promotion Audit v0.1 Schema](docs/contracts/production-promotion-audit-v0.1.schema.json)
+- [Example GoalRun](examples/goals/ao2-weekend-hardening.goal-run.json)
 - [Release Preview Fixtures](examples/release-preview/)
 - [Example Vertical Slice](examples/vertical-slices/risky-pr-factory.factory.json)
 - [Example Deterministic Plan](examples/plans/risky-pr-factory-plan.json)
@@ -78,6 +81,12 @@ over provider execution, release publishing, or control-plane approval.
 - [Example Factory Packet](examples/packets/risky-pr-factory-packet.json)
 
 ## Local CLI
+
+AO Forge owns durable goal and task state for repeated hardening loops through
+the `GoalRun` contract. AO2 Pulse or Codex can update a `GoalRun` after each
+iteration; codex-cron should only trigger the loop. Before the next iteration,
+the agent must read the latest `GoalRun` and prove the next action still matches
+the objective, allowed scope, acceptance criteria, and stop conditions.
 
 Build and run the current skeleton:
 

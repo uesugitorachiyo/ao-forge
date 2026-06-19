@@ -124,6 +124,9 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	}
 
 	readme := readText("README.md")
+	goalRunSchema := readText("docs", "contracts", "goal-run-v0.1.schema.json")
+	goalRunDocs := readText("docs", "design", "GOAL-RUNS.md")
+	goalRunExample := readText("examples", "goals", "ao2-weekend-hardening.goal-run.json")
 	briefSchema := readText("docs", "contracts", "factory-brief-v0.1.schema.json")
 	planSchema := readText("docs", "contracts", "factory-plan-v0.1.schema.json")
 	releasePreviewSchema := readText("docs", "contracts", "release-preview-audit-v0.1.schema.json")
@@ -141,6 +144,9 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		doc  string
 		want string
 	}{
+		{name: "README goal run docs link", doc: readme, want: "[GoalRun Contract](docs/design/GOAL-RUNS.md)"},
+		{name: "README goal run schema link", doc: readme, want: "[GoalRun v0.1 Schema](docs/contracts/goal-run-v0.1.schema.json)"},
+		{name: "README goal run example link", doc: readme, want: "[Example GoalRun](examples/goals/ao2-weekend-hardening.goal-run.json)"},
 		{name: "README brief schema link", doc: readme, want: "[Factory Brief v0.1 Schema](docs/contracts/factory-brief-v0.1.schema.json)"},
 		{name: "README plan schema link", doc: readme, want: "[Factory Plan v0.1 Schema](docs/contracts/factory-plan-v0.1.schema.json)"},
 		{name: "README release preview schema link", doc: readme, want: "[Release Preview Audit v0.1 Schema](docs/contracts/release-preview-audit-v0.1.schema.json)"},
@@ -152,6 +158,30 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "README release install verify audit schema link", doc: readme, want: "[Release Install Verify Audit v0.1 Schema](docs/contracts/release-install-verify-audit-v0.1.schema.json)"},
 		{name: "README release rollback audit schema link", doc: readme, want: "[Release Rollback Audit v0.1 Schema](docs/contracts/release-rollback-audit-v0.1.schema.json)"},
 		{name: "README production promotion audit schema link", doc: readme, want: "[Production Promotion Audit v0.1 Schema](docs/contracts/production-promotion-audit-v0.1.schema.json)"},
+		{name: "goal run schema id", doc: goalRunSchema, want: `"ao.forge.goal-run.v0.1"`},
+		{name: "goal run strict root", doc: goalRunSchema, want: `"additionalProperties": false`},
+		{name: "goal run id", doc: goalRunSchema, want: `"goal_id"`},
+		{name: "goal run acceptance criteria", doc: goalRunSchema, want: `"acceptance_criteria"`},
+		{name: "goal run allowed scope", doc: goalRunSchema, want: `"allowed_scope"`},
+		{name: "goal run stop conditions", doc: goalRunSchema, want: `"stop_conditions"`},
+		{name: "goal run current phase", doc: goalRunSchema, want: `"current_phase"`},
+		{name: "goal run next task", doc: goalRunSchema, want: `"next_task"`},
+		{name: "goal run last verified", doc: goalRunSchema, want: `"last_verified_at"`},
+		{name: "goal run continuation prompt", doc: goalRunSchema, want: `"continuation_prompt"`},
+		{name: "goal run state owner", doc: goalRunSchema, want: `"state_owner"`},
+		{name: "goal run owner ao forge", doc: goalRunSchema, want: `"ao-forge"`},
+		{name: "goal run scheduler codex cron", doc: goalRunSchema, want: `"codex-cron"`},
+		{name: "goal run next action guard", doc: goalRunSchema, want: `"next_action_guard"`},
+		{name: "goal run backoff", doc: goalRunSchema, want: `"backoff_or_stop"`},
+		{name: "goal run docs title", doc: goalRunDocs, want: "# AO Forge GoalRun Contract"},
+		{name: "goal run docs ownership", doc: goalRunDocs, want: "AO Forge owns durable goal and task state"},
+		{name: "goal run docs cron boundary", doc: goalRunDocs, want: "codex-cron should only trigger the loop"},
+		{name: "goal run docs guard", doc: goalRunDocs, want: "If the next action does not match, the agent must emit backoff or stop"},
+		{name: "goal run example id", doc: goalRunExample, want: `"goal_id": "ao2-weekend-hardening"`},
+		{name: "goal run example repo", doc: goalRunExample, want: `"repo": "ao2"`},
+		{name: "goal run example state owner", doc: goalRunExample, want: `"state_owner": "ao-forge"`},
+		{name: "goal run example executor", doc: goalRunExample, want: `"executor": "ao2-pulse"`},
+		{name: "goal run example scheduler", doc: goalRunExample, want: `"scheduler": "codex-cron"`},
 		{name: "brief schema id", doc: briefSchema, want: `"ao.forge.factory-brief.v0.1"`},
 		{name: "brief strict root", doc: briefSchema, want: `"additionalProperties": false`},
 		{name: "brief objective", doc: briefSchema, want: `"objective"`},

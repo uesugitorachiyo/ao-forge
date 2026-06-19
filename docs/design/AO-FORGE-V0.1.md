@@ -175,6 +175,7 @@ packet directory.
 
 AO Forge owns:
 
+- durable goal and task state through `GoalRun`;
 - factory brief normalization;
 - factory plan and workcell schema;
 - scheduler decisions;
@@ -187,6 +188,12 @@ AO2 owns:
 - command evidence;
 - approval and evaluator closure;
 - replayable run artifacts.
+
+AO2 Pulse or Codex may update a `GoalRun` after each iteration, but must read
+the latest `GoalRun` before the next iteration and prove the next action still
+matches the objective, allowed scope, acceptance criteria, and stop conditions.
+codex-cron may trigger a loop, but it must not own goal semantics or stop
+rules.
 
 AO Covenant owns:
 
@@ -244,4 +251,3 @@ AO Forge can be public-preview ready when:
 - no provider credentials appear in artifacts;
 - the control plane remains an observer;
 - a fresh operator can reproduce the first vertical slice from the README.
-

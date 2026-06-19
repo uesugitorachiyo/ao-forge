@@ -1041,13 +1041,13 @@ func TestV012ReleaseNotesDraftIsPublicSafeAndEvidenceBacked(t *testing.T) {
 	for _, want := range []string{
 		"# AO Forge v0.1.2 Release Notes",
 		"v0.1.2",
-		"Commit: supplied by the generated Release Publish notes",
+		"Commit: `dc9e069d9fe50156a677703d67751e525579be37`",
 		"Release evidence assets include `release-preview-inspect.json`,",
 		"linux-amd64",
 		"darwin-arm64",
 		"windows-amd64",
-		"controlled preview",
-		"not production-stable",
+		"production-stable for solo-operator adoption",
+		"Production Promotion passed for `v0.1.2`",
 		"Release Preview",
 		"Release Rehearsal",
 		"Release Verify",
@@ -1057,9 +1057,24 @@ func TestV012ReleaseNotesDraftIsPublicSafeAndEvidenceBacked(t *testing.T) {
 		"checksums.txt",
 		"release-attestation-plan.v0.1.example.json",
 		"v0.1.1 was rehearsal-only",
+		"Release Verify run: `https://github.com/uesugitorachiyo/ao-forge/actions/runs/27806606671`",
+		"Release Install Verify run: `https://github.com/uesugitorachiyo/ao-forge/actions/runs/27805124271`",
+		"Release Rollback audit run: `https://github.com/uesugitorachiyo/ao-forge/actions/runs/27805835533`",
+		"Production Promotion run: `https://github.com/uesugitorachiyo/ao-forge/actions/runs/27807431085`",
 	} {
 		if !strings.Contains(notes, want) {
 			t.Fatalf("release notes draft missing %q", want)
+		}
+	}
+
+	for _, staleStatus := range []string{
+		"controlled preview release candidate",
+		"not production-stable infrastructure yet",
+		"Do not present it as production-stable until Production Promotion",
+		"Production Promotion must remain read-only and should pass only after",
+	} {
+		if strings.Contains(notes, staleStatus) {
+			t.Fatalf("release notes draft contains stale status text %q", staleStatus)
 		}
 	}
 

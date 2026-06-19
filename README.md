@@ -255,15 +255,16 @@ release comparison for mutation-relevant fields. Rollback must not delete
 releases, tags, assets, or evidence.
 
 The `Production Promotion` workflow is the read-only gate for production-stable
-release language. It requires a successful `Release Verify` run, a successful
-`Release Verify` run with contract-valid verify audit evidence proving default
-signed-tag and evidence-bundle controls, a successful `Release Install Verify`
-run with contract-valid install audit evidence for the same release, a
-successful `Release Rollback` audit-only run, rollback evidence proving
-mutation-relevant release fields stayed unchanged, and a completed soak window
-before it uploads `production-promotion-audit.json`.
+release language. It requires a successful `Release Verify` run with
+contract-valid verify audit evidence proving default signed-tag and
+evidence-bundle controls, a successful `Release Install Verify` run with
+contract-valid install audit evidence for the same release, a successful
+`Release Rollback` audit-only run, rollback evidence proving mutation-relevant
+release fields stayed unchanged, and a completed soak window before it uploads
+`production-promotion-audit.json`.
 Until that audit passes, releases should stay described as public-preview or
-candidate releases.
+candidate releases. After it passes, production-stable language must stay
+within the scope proven by the promotion evidence.
 
 ## Continuous Integration
 

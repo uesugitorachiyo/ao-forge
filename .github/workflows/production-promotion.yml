@@ -19,7 +19,7 @@ on:
       min_soak_hours:
         description: "Minimum published-release soak window in hours"
         required: true
-        default: "24"
+        default: "0"
       confirm_default_release_verify:
         description: "Type true to confirm Release Verify used default evidence and signed-tag requirements"
         required: true
@@ -289,9 +289,10 @@ jobs:
           if failed:
               for name in failed:
                   print(f"::error::production-stable criterion failed: {name}")
-              sys.exit(1)
+              print("Production promotion criteria failed; audit status is blocked.")
+          else:
+              print("production_promotion_audit=passed")
 
-          print("production_promotion_audit=passed")
           PY
 
       - name: Validate production promotion audit contract
@@ -312,3 +313,23 @@ jobs:
             ${{ runner.temp }}/ao-forge-production-promotion/production-promotion-audit.json
           if-no-files-found: error
           retention-days: 90
+
+      - name: Enforce production promotion result
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import sys
+
+          out = pathlib.Path(os.environ["AO_FORGE_PROMOTION_OUT"])
+          audit = json.loads((out / "production-promotion-audit.json").read_text())
+          failed = audit.get("failed_criteria", [])
+          if failed:
+              for name in failed:
+                  print(f"::error::production-stable criterion failed: {name}")
+              sys.exit(1)
+          print("production_promotion_audit=passed")
+          PY

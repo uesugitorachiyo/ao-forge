@@ -185,6 +185,7 @@ jobs:
               "release_install_verify_succeeded": install_verify_run.get("workflowName") == "Release Install Verify" and install_verify_run.get("conclusion") == "success",
               "rollback_audit_succeeded": rollback_run.get("workflowName") == "Release Rollback" and rollback_run.get("conclusion") == "success",
               "rollback_audit_only": rollback_audit.get("tag") == tag and rollback_audit.get("rollback_action") == "audit-only",
+              "rollback_release_unchanged": rollback_audit.get("mutation_comparison", {}).get("mutation_relevant_fields_unchanged") is True,
           }
           failed = [name for name, ok in criteria.items() if not ok]
 

@@ -355,6 +355,77 @@ func TestReleaseAuditContractsValidateWorkflowEvidence(t *testing.T) {
       "checksums.txt"
     ]
   },
+  "release_after": {
+    "tag_name": "v0.1.0",
+    "target_commitish": "4291e2adf4169dc6adbe9b17317715e572dc912b",
+    "is_draft": false,
+    "is_prerelease": false,
+    "published_at": "2026-06-18T23:37:16Z",
+    "url": "https://github.com/uesugitorachiyo/ao-forge/releases/tag/v0.1.0",
+    "asset_names": [
+      "ao-forge_Linux_x86_64.tar.gz",
+      "checksums.txt"
+    ]
+  },
+  "mutation_comparison": {
+    "mutation_relevant_fields_unchanged": true,
+    "checked_fields": [
+      "tag_name",
+      "target_commitish",
+      "is_draft",
+      "is_prerelease",
+      "published_at",
+      "url",
+      "assets.name",
+      "assets.digest",
+      "assets.size",
+      "assets.state"
+    ],
+    "before": {
+      "tag_name": "v0.1.0",
+      "target_commitish": "4291e2adf4169dc6adbe9b17317715e572dc912b",
+      "is_draft": false,
+      "is_prerelease": false,
+      "published_at": "2026-06-18T23:37:16Z",
+      "url": "https://github.com/uesugitorachiyo/ao-forge/releases/tag/v0.1.0",
+      "assets": [
+        {
+          "name": "ao-forge_Linux_x86_64.tar.gz",
+          "digest": "sha256:fcbdd8c9d365162c6d365973378896e629b5ef46c9dea168e6e5779e57ba1403",
+          "size": 6138016,
+          "state": "uploaded"
+        },
+        {
+          "name": "checksums.txt",
+          "digest": "sha256:5bcf0fd85cf0a3d7366f4be7d7be893d1ebe5e83c62b2fb80f07113a522223d8",
+          "size": 284,
+          "state": "uploaded"
+        }
+      ]
+    },
+    "after": {
+      "tag_name": "v0.1.0",
+      "target_commitish": "4291e2adf4169dc6adbe9b17317715e572dc912b",
+      "is_draft": false,
+      "is_prerelease": false,
+      "published_at": "2026-06-18T23:37:16Z",
+      "url": "https://github.com/uesugitorachiyo/ao-forge/releases/tag/v0.1.0",
+      "assets": [
+        {
+          "name": "ao-forge_Linux_x86_64.tar.gz",
+          "digest": "sha256:fcbdd8c9d365162c6d365973378896e629b5ef46c9dea168e6e5779e57ba1403",
+          "size": 6138016,
+          "state": "uploaded"
+        },
+        {
+          "name": "checksums.txt",
+          "digest": "sha256:5bcf0fd85cf0a3d7366f4be7d7be893d1ebe5e83c62b2fb80f07113a522223d8",
+          "size": 284,
+          "state": "uploaded"
+        }
+      ]
+    }
+  },
   "operator_rules": [
     "Never delete release evidence",
     "Do not replace release assets in rollback",
@@ -1555,6 +1626,8 @@ func TestReleaseRollbackWorkflowGuardsReleaseYankActions(t *testing.T) {
 		{name: "release metadata", doc: workflow, want: "gh release view"},
 		{name: "preserve evidence", doc: workflow, want: "Never delete release evidence"},
 		{name: "no silent replacement", doc: workflow, want: "Do not replace release assets in rollback"},
+		{name: "read after before audit", doc: workflow, want: "Read release metadata after rollback"},
+		{name: "normalized mutation comparison", doc: workflow, want: "mutation_relevant_fields_unchanged"},
 		{name: "audit file", doc: workflow, want: "release-rollback-audit.json"},
 		{name: "audit contract", doc: workflow, want: "release-rollback-audit-v0.1.schema.json"},
 		{name: "audit contract validation", doc: workflow, want: `contract validate --schema docs/contracts/release-rollback-audit-v0.1.schema.json --document "${AO_FORGE_ROLLBACK_OUT}/release-rollback-audit.json"`},
@@ -1616,10 +1689,10 @@ func TestReleaseSignerPolicyDefinesEligibilityAndRotation(t *testing.T) {
 	var policy struct {
 		SchemaVersion string `json:"schema_version"`
 		ActiveSigners []struct {
-			GitHubLogin string `json:"github_login"`
-			Fingerprint string `json:"fingerprint"`
+			GitHubLogin   string `json:"github_login"`
+			Fingerprint   string `json:"fingerprint"`
 			PublicKeyPath string `json:"public_key_path"`
-			Status string `json:"status"`
+			Status        string `json:"status"`
 		} `json:"active_signers"`
 		RotationRules []string `json:"rotation_rules"`
 	}
@@ -1648,7 +1721,7 @@ func TestReleaseSignerPolicyDefinesEligibilityAndRotation(t *testing.T) {
 
 	for _, check := range []struct {
 		name string
-		doc string
+		doc  string
 		want string
 	}{
 		{name: "public key", doc: publicKey, want: "BEGIN PGP PUBLIC KEY BLOCK"},
@@ -1714,6 +1787,7 @@ func TestProductionPromotionWorkflowDefinesStableCriteria(t *testing.T) {
 		{name: "verify workflow required", doc: workflow, want: "Release Verify"},
 		{name: "install verify workflow required", doc: workflow, want: "Release Install Verify"},
 		{name: "rollback workflow required", doc: workflow, want: "Release Rollback"},
+		{name: "rollback mutation comparison required", doc: workflow, want: `rollback_audit.get("mutation_comparison", {}).get("mutation_relevant_fields_unchanged") is True`},
 		{name: "install verify criterion", doc: workflow, want: "release_install_verify_succeeded"},
 		{name: "audit schema", doc: workflow, want: "ao.forge.production-promotion-audit.v0.1"},
 		{name: "operator assertions", doc: workflow, want: "operator_assertions"},

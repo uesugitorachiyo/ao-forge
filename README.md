@@ -247,11 +247,14 @@ manual-only and always requires explicit `confirm_rollback=true` plus a public
 correction reason. The `audit-only` path is read-only and emits rollback
 evidence without production environment approval; `mark-prerelease` and
 `mark-draft` require the `production-release` environment before using
-`contents: write`. Rollback must not delete releases, tags, assets, or evidence.
+`contents: write`. Rollback audit evidence includes normalized before/after
+release comparison for mutation-relevant fields. Rollback must not delete
+releases, tags, assets, or evidence.
 
 The `Production Promotion` workflow is the read-only gate for production-stable
 release language. It requires a successful `Release Verify` run, a successful
 `Release Install Verify` run, a successful `Release Rollback` audit-only run,
+rollback evidence proving mutation-relevant release fields stayed unchanged,
 and a completed soak window before it uploads `production-promotion-audit.json`.
 Until that audit passes, releases should stay described as public-preview or
 candidate releases.

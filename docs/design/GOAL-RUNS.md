@@ -25,7 +25,9 @@ work:
 
 The GoalRun schema is `docs/contracts/goal-run-v0.1.schema.json`. The update
 audit schema is `docs/contracts/goal-run-update-audit-v0.1.schema.json`. The
-examples are `examples/goals/ao2-weekend-hardening.goal-run.json` and
+evidence verification schema is
+`docs/contracts/goal-run-evidence-verify-v0.1.schema.json`. The examples are
+`examples/goals/ao2-weekend-hardening.goal-run.json` and
 `examples/goals/ao2-weekend-hardening.goal-run-update-audit.json`.
 AO2 Pulse integration rules live in
 `docs/design/AO2-PULSE-GOAL-RUN-LOOP.md`.
@@ -107,11 +109,17 @@ the latest durable state:
 
 ```sh
 forge goal evidence verify --goal-run examples/goals/ao2-pulse-handoff.goal-run.json
+forge goal evidence verify --goal-run examples/goals/ao2-pulse-handoff.goal-run.json --json > tmp/goal-run-evidence-verify.json
+forge contract validate \
+  --schema docs/contracts/goal-run-evidence-verify-v0.1.schema.json \
+  --document tmp/goal-run-evidence-verify.json
 ```
 
 The verifier recalculates SHA-256 for every `last_iteration.evidence` path and
 fails if an artifact is missing, has no recorded hash, or no longer matches the
-recorded hash.
+recorded hash. JSON output uses
+`ao.forge.goal-run-evidence-verify.v0.1` and must validate against the evidence
+verification schema before AO2 Pulse treats it as durable loop evidence.
 
 ## Evidence Freshness Policy
 

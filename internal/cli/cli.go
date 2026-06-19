@@ -5546,7 +5546,10 @@ func buildGoalEvidenceRetentionSummary(path string, now time.Time) goalEvidenceR
 	}
 
 	summary.AgeDays = int(now.Sub(retainedAt).Hours() / 24)
-	if isTerminalGoalRunPhase(artifact.Phase) {
+	if isPublicProvenanceRetentionClass(artifact.RetentionMetadata.RetentionClass) {
+		summary.RetentionStatus = "mandatory_retention"
+		summary.CleanupReviewStatus = "not_eligible_public_provenance"
+	} else if isTerminalGoalRunPhase(artifact.Phase) {
 		mandatoryUntil := retainedAt.AddDate(0, 0, artifact.RetentionPolicy.MinimumRetentionDaysAfterTerminalPhase)
 		summary.MandatoryRetentionUntil = mandatoryUntil.UTC().Format(time.RFC3339)
 		if now.Before(mandatoryUntil) {
@@ -5561,6 +5564,10 @@ func buildGoalEvidenceRetentionSummary(path string, now time.Time) goalEvidenceR
 		summary.CleanupReviewStatus = "not_eligible_active_goal"
 	}
 	return summary
+}
+
+func isPublicProvenanceRetentionClass(retentionClass string) bool {
+	return retentionClass == "release_provenance" || retentionClass == "promotion_provenance"
 }
 
 func verifyGoalRunEvidence(evidence goalRunEvidence) goalEvidenceVerifyResult {

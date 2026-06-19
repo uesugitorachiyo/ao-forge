@@ -64,6 +64,7 @@
       "enum": [
         "not_eligible_active_goal",
         "not_eligible_minimum_window",
+        "not_eligible_public_provenance",
         "eligible_after_review",
         "unknown"
       ]

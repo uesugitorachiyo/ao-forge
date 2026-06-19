@@ -80,6 +80,7 @@ over provider execution, release publishing, or control-plane approval.
 - [Example GoalRun Update Audit](examples/goals/ao2-weekend-hardening.goal-run-update-audit.json)
 - [AO2 Pulse Handoff GoalRun](examples/goals/ao2-pulse-handoff.goal-run.json)
 - [AO2 Pulse Handoff Update Audit](examples/goals/ao2-pulse-handoff.goal-run-update-audit.json)
+- [Retained GoalRun Evidence Fixture](examples/goals/ao2-retained-evidence.goal-run.json)
 - [Release Preview Fixtures](examples/release-preview/)
 - [Example Vertical Slice](examples/vertical-slices/risky-pr-factory.factory.json)
 - [Example Deterministic Plan](examples/plans/risky-pr-factory-plan.json)

@@ -160,6 +160,11 @@ the evidence verification JSON, and any source artifacts referenced by
 compare in code review; avoid timestamps inside individual file names unless
 they are part of the iteration directory.
 
+`examples/goals/ao2-retained-evidence.goal-run.json` is the checked-in fixture
+for this policy. Its retained artifact lives under `docs/evidence/goals/`, and
+`scripts/verify-goal-fixtures.sh` fails if no positive GoalRun fixture uses that
+durable layout.
+
 Retention rules:
 
 - Keep evidence for any non-terminal GoalRun while the loop may continue.

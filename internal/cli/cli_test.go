@@ -614,6 +614,8 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	goalRunUpdateAuditExample := readText("examples", "goals", "ao2-weekend-hardening.goal-run-update-audit.json")
 	ao2PulseHandoffGoalRunExample := readText("examples", "goals", "ao2-pulse-handoff.goal-run.json")
 	ao2PulseHandoffAuditExample := readText("examples", "goals", "ao2-pulse-handoff.goal-run-update-audit.json")
+	retainedEvidenceGoalRunExample := readText("examples", "goals", "ao2-retained-evidence.goal-run.json")
+	retainedEvidenceArtifact := readText("docs", "evidence", "goals", "ao2-weekend-hardening", "20260619T143000Z-implementation", "ao2-pulse-handoff-retention-proof.json")
 	staleEvidenceGoalRunExample := readText("examples", "goals", "invalid", "stale-evidence.goal-run.invalid.json")
 	briefSchema := readText("docs", "contracts", "factory-brief-v0.1.schema.json")
 	planSchema := readText("docs", "contracts", "factory-plan-v0.1.schema.json")
@@ -641,6 +643,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "README goal run update audit example link", doc: readme, want: "[Example GoalRun Update Audit](examples/goals/ao2-weekend-hardening.goal-run-update-audit.json)"},
 		{name: "README AO2 Pulse handoff goal run link", doc: readme, want: "[AO2 Pulse Handoff GoalRun](examples/goals/ao2-pulse-handoff.goal-run.json)"},
 		{name: "README AO2 Pulse handoff audit link", doc: readme, want: "[AO2 Pulse Handoff Update Audit](examples/goals/ao2-pulse-handoff.goal-run-update-audit.json)"},
+		{name: "README retained goal evidence fixture link", doc: readme, want: "[Retained GoalRun Evidence Fixture](examples/goals/ao2-retained-evidence.goal-run.json)"},
 		{name: "README goal run validate command", doc: readme, want: "./bin/forge goal validate --goal-run examples/goals/ao2-weekend-hardening.goal-run.json"},
 		{name: "README goal run inspect command", doc: readme, want: "./bin/forge goal inspect --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --json"},
 		{name: "README goal run transitions command", doc: readme, want: "./bin/forge goal transitions --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --to implementation"},
@@ -715,6 +718,8 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run docs ninety day retention", doc: goalRunDocs, want: "keep loop evidence for at least 90 days"},
 		{name: "goal run docs release evidence indefinitely", doc: goalRunDocs, want: "Keep release, promotion, and public provenance evidence indefinitely"},
 		{name: "goal run docs cleanup reviewable", doc: goalRunDocs, want: "Cleanup must be reviewable"},
+		{name: "goal run docs retained fixture", doc: goalRunDocs, want: "examples/goals/ao2-retained-evidence.goal-run.json"},
+		{name: "goal run docs retained fixture smoke", doc: goalRunDocs, want: "fails if no positive GoalRun fixture uses that"},
 		{name: "goal run docs update audit schema", doc: goalRunDocs, want: "docs/contracts/goal-run-update-audit-v0.1.schema.json"},
 		{name: "goal run docs update audit validate command", doc: goalRunDocs, want: "forge contract validate"},
 		{name: "goal run docs AO2 Pulse link", doc: goalRunDocs, want: "docs/design/AO2-PULSE-GOAL-RUN-LOOP.md"},
@@ -739,6 +744,8 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "AO2 Pulse docs handoff fixture", doc: ao2PulseGoalRunLoopDocs, want: "## Handoff Fixture"},
 		{name: "AO2 Pulse docs handoff goal run", doc: ao2PulseGoalRunLoopDocs, want: "examples/goals/ao2-pulse-handoff.goal-run.json"},
 		{name: "AO2 Pulse docs handoff audit", doc: ao2PulseGoalRunLoopDocs, want: "examples/goals/ao2-pulse-handoff.goal-run-update-audit.json"},
+		{name: "AO2 Pulse docs retained fixture", doc: ao2PulseGoalRunLoopDocs, want: "examples/goals/ao2-retained-evidence.goal-run.json"},
+		{name: "AO2 Pulse docs retained smoke", doc: ao2PulseGoalRunLoopDocs, want: "one positive GoalRun fixture uses the retained evidence layout"},
 		{name: "AO2 Pulse docs stale fixture", doc: ao2PulseGoalRunLoopDocs, want: "examples/goals/invalid/stale-evidence.goal-run.invalid.json"},
 		{name: "AO2 Pulse docs audit validate command", doc: ao2PulseGoalRunLoopDocs, want: "docs/contracts/goal-run-update-audit-v0.1.schema.json"},
 		{name: "AO2 Pulse docs candidate validate", doc: ao2PulseGoalRunLoopDocs, want: "forge goal validate --goal-run tmp/ao2-weekend-hardening.goal-run.json"},
@@ -758,6 +765,10 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "AO2 Pulse handoff audit out", doc: ao2PulseHandoffAuditExample, want: `"out": "examples/goals/ao2-pulse-handoff.goal-run.json"`},
 		{name: "AO2 Pulse handoff audit evidence field", doc: ao2PulseHandoffAuditExample, want: `"last_iteration.evidence"`},
 		{name: "AO2 Pulse handoff audit status", doc: ao2PulseHandoffAuditExample, want: `"status": "updated"`},
+		{name: "retained evidence goal run durable path", doc: retainedEvidenceGoalRunExample, want: `"path": "docs/evidence/goals/ao2-weekend-hardening/20260619T143000Z-implementation/ao2-pulse-handoff-retention-proof.json"`},
+		{name: "retained evidence goal run hash", doc: retainedEvidenceGoalRunExample, want: `"sha256": "b6cd9a985cbafcb6f3d2fc5666a4719088d2e967228419fc9b1e904826c4c754"`},
+		{name: "retained evidence artifact layout", doc: retainedEvidenceArtifact, want: `"layout": "docs/evidence/goals/<goal_id>/<YYYYMMDDTHHMMSSZ>-<phase>/"`},
+		{name: "retained evidence artifact no temp", doc: retainedEvidenceArtifact, want: `"temporary_paths_allowed": false`},
 		{name: "stale evidence fixture schema valid", doc: staleEvidenceGoalRunExample, want: `"schema_version": "ao.forge.goal-run.v0.1"`},
 		{name: "stale evidence fixture stale hash", doc: staleEvidenceGoalRunExample, want: `"sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"`},
 		{name: "stale evidence fixture summary", doc: staleEvidenceGoalRunExample, want: "intentionally stale and must fail closed"},
@@ -1769,6 +1780,8 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		{name: "goal fixture verifier invalid glob", doc: goalFixtureVerifier, want: "*.goal-run.invalid.json"},
 		{name: "goal fixture verifier stale failure", doc: goalFixtureVerifier, want: "expected stale GoalRun evidence fixture to fail"},
 		{name: "goal fixture verifier rejected count", doc: goalFixtureVerifier, want: "goal_run_invalid_fixtures_rejected"},
+		{name: "goal fixture verifier retained layout", doc: goalFixtureVerifier, want: "docs/evidence/goals/"},
+		{name: "goal fixture verifier retained count", doc: goalFixtureVerifier, want: "goal_run_retained_evidence_fixtures"},
 		{name: "goal fixture verifier audit validate", doc: goalFixtureVerifier, want: "goal-run-update-audit-v0.1.schema.json"},
 		{name: "ci actionlint job", doc: ciWorkflow, want: "workflow-lint:"},
 		{name: "ci actionlint name", doc: ciWorkflow, want: "name: Workflow lint"},

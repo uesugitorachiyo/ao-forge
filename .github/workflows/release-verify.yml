@@ -13,6 +13,10 @@ on:
         description: "Require release-evidence-bundle.json and its attestation"
         required: true
         default: "true"
+      require_signed_tag:
+        description: "Require a signed annotated release tag"
+        required: true
+        default: "true"
 
 permissions:
   contents: read
@@ -30,6 +34,7 @@ jobs:
       RELEASE_EVENT_TAG: ${{ github.event.release.tag_name }}
       REQUESTED_VERIFY_TAG: ${{ github.event.inputs.tag }}
       REQUIRE_EVIDENCE_BUNDLE_INPUT: ${{ github.event.inputs.require_evidence_bundle }}
+      REQUIRE_SIGNED_TAG_INPUT: ${{ github.event.inputs.require_signed_tag }}
 
     steps:
       - name: Checkout
@@ -69,8 +74,18 @@ jobs:
             echo "require_evidence_bundle=false allows legacy releases only"
           fi
 
+          require_signed_tag="${REQUIRE_SIGNED_TAG_INPUT:-true}"
+          if [[ "$require_signed_tag" != "true" && "$require_signed_tag" != "false" ]]; then
+            echo "require_signed_tag must be true or false" >&2
+            exit 1
+          fi
+          if [[ "$require_signed_tag" == "false" ]]; then
+            echo "require_signed_tag=false allows legacy releases only"
+          fi
+
           echo "AO_FORGE_RELEASE_VERIFY_TAG=$tag" >> "$GITHUB_ENV"
           echo "AO_FORGE_REQUIRE_EVIDENCE_BUNDLE=$require_bundle" >> "$GITHUB_ENV"
+          echo "AO_FORGE_REQUIRE_SIGNED_TAG=$require_signed_tag" >> "$GITHUB_ENV"
           echo "AO_FORGE_RELEASE_VERIFY_DIR=${RUNNER_TEMP}/ao-forge-release-verify" >> "$GITHUB_ENV"
           echo "tag=$tag" >> "$GITHUB_STEP_SUMMARY"
 
@@ -94,7 +109,6 @@ jobs:
           import json
           import os
           import pathlib
-          import subprocess
           import sys
 
           verify_dir = pathlib.Path(os.environ["AO_FORGE_RELEASE_VERIFY_DIR"])
@@ -135,16 +149,6 @@ jobs:
           if missing:
               errors.append(f"release assets missing: {missing}")
 
-          tag_ref = subprocess.check_output([
-              "git", "ls-remote", "--tags", "origin", f"refs/tags/{expected_tag}"
-          ], text=True).strip()
-          if not tag_ref:
-              errors.append(f"release tag ref not found: {expected_tag}")
-          else:
-              tag_sha = tag_ref.split()[0]
-              if tag_sha != release.get("targetCommitish"):
-                  errors.append(f"release tag target mismatch: {tag_sha} != {release.get('targetCommitish')}")
-
           if errors:
               for error in errors:
                   print(f"::error::{error}")
@@ -153,6 +157,38 @@ jobs:
           print(f"release_url={release.get('url')}")
           print(f"release_target={release.get('targetCommitish')}")
           PY
+
+      - name: Verify release tag identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --force --tags origin "refs/tags/${AO_FORGE_RELEASE_VERIFY_TAG}:refs/tags/${AO_FORGE_RELEASE_VERIFY_TAG}"
+
+          tag_ref="refs/tags/${AO_FORGE_RELEASE_VERIFY_TAG}"
+          if ! git rev-parse -q --verify "${tag_ref}" >/dev/null; then
+            echo "release tag ref not found: ${AO_FORGE_RELEASE_VERIFY_TAG}" >&2
+            exit 1
+          fi
+
+          tag_type="$(git cat-file -t "${tag_ref}")"
+          if [[ "${AO_FORGE_REQUIRE_SIGNED_TAG}" == "true" ]]; then
+            if [[ "$tag_type" != "tag" ]]; then
+              echo "release tag must be an annotated tag" >&2
+              exit 1
+            fi
+            git tag -v "${AO_FORGE_RELEASE_VERIFY_TAG}"
+          else
+            echo "require_signed_tag=false allows legacy releases only"
+          fi
+
+          tag_commit="$(git rev-parse "${tag_ref}^{commit}")"
+          release_target="$(python3 -c 'import json, os, pathlib; print(json.loads((pathlib.Path(os.environ["AO_FORGE_RELEASE_VERIFY_DIR"]) / "release.json").read_text()).get("targetCommitish", ""))')"
+          if [[ "$tag_commit" != "$release_target" ]]; then
+            echo "release tag target mismatch: ${tag_commit} != ${release_target}" >&2
+            exit 1
+          fi
+
+          echo "release_tag_identity_verified=${AO_FORGE_RELEASE_VERIFY_TAG}"
 
       - name: Download published release assets
         env:

@@ -30,6 +30,14 @@ is intentionally public.
 4. Record the intended `<tag>` and commit SHA in the operator notes.
 5. Do not create or push the tag until Release Rehearsal evidence has passed and
    been reviewed.
+6. For releases after `v0.1.0`, create a signed annotated tag that points at the
+   reviewed release commit:
+
+   ```sh
+   git tag -s <tag> <commit-sha> -m "AO Forge <tag>"
+   git tag -v <tag>
+   git push origin <tag>
+   ```
 
 ## Local Release-Readiness Gate
 
@@ -102,6 +110,8 @@ Only publish when all of these are true:
 - local release-readiness gate passed;
 - `Release Preview` passed on `main`;
 - `Release Rehearsal` passed for `<tag>`;
+- `<tag>` is an existing signed annotated tag that resolves to the intended
+  release commit;
 - artifact inventory and attestation plan were validated;
 - checksum manifest was reviewed;
 - release notes contain no private local paths, tokens, or excluded handoff
@@ -122,7 +132,9 @@ production-stable adoption.
 After publishing:
 
 1. Run the `Release Verify` workflow for the published `<tag>`.
-2. Confirm the public tag points at the intended commit.
+2. Confirm the public tag is signed, annotated, and points at the intended
+   commit. For `v0.1.0` only, dispatch with `require_signed_tag=false` because
+   that release predates this policy.
 3. Confirm every expected artifact from the inventory is attached.
 4. Confirm `checksums.txt` matches every attached artifact.
 5. Confirm attestation evidence is attached or linked according to the

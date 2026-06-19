@@ -229,6 +229,9 @@ archive attestations, the release evidence bundle, bundle attestation, and a
 host-compatible binary smoke test. Future releases require both the evidence
 bundle and a signed annotated release tag by default; use explicit legacy
 overrides only for releases published before those controls existed.
+Signed release tags must be made by an active signer in
+`RELEASE-SIGNERS.json`; the public keys live under `docs/release/signers/` and
+are imported by the release workflows before tag verification.
 
 The `Release Rollback` workflow is the guarded release yank path. It is
 manual-only, requires the `production-release` environment, explicit

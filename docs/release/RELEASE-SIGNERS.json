@@ -1,0 +1,24 @@
+{
+  "schema_version": "ao.forge.release-signers.v0.1",
+  "policy_status": "active",
+  "active_signers": [
+    {
+      "github_login": "uesugitorachiyo",
+      "display_name": "Uesugi",
+      "email": "uesugitorachiyo@gmail.com",
+      "fingerprint": "8D5D9D83E11871F366A02E3FF8C8B4ACE0A1DFD8",
+      "key_type": "ed25519",
+      "public_key_path": "docs/release/signers/uesugi-2026.asc",
+      "valid_from": "2026-05-11",
+      "valid_until": "2027-05-11",
+      "status": "active"
+    }
+  ],
+  "retired_signers": [],
+  "rotation_rules": [
+    "Add the replacement public key and signer record before using it for a release tag.",
+    "Keep retired signer records for auditability; do not delete historical signer metadata.",
+    "After compromise or loss of control, mark the signer retired before any further release promotion.",
+    "Production-stable promotion requires the release tag signer fingerprint to be active in this policy."
+  ]
+}

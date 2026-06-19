@@ -48,6 +48,12 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Import release signer keys
+        shell: bash
+        run: |
+          set -euo pipefail
+          gpg --batch --import docs/release/signers/*.asc
+
       - name: Build verification CLI
         run: go build -o "${RUNNER_TEMP}/forge" ./cmd/forge
 
@@ -177,6 +183,32 @@ jobs:
               exit 1
             fi
             git tag -v "${AO_FORGE_RELEASE_VERIFY_TAG}"
+            tag_status="$(mktemp)"
+            git verify-tag --raw "${AO_FORGE_RELEASE_VERIFY_TAG}" >"${tag_status}" 2>&1
+            signer_fingerprint="$(awk '/^\[GNUPG:\] VALIDSIG / {print $3; exit}' "${tag_status}")"
+            if [[ -z "${signer_fingerprint}" ]]; then
+              echo "release tag signer fingerprint not found" >&2
+              cat "${tag_status}" >&2
+              exit 1
+            fi
+            SIGNER_FINGERPRINT="${signer_fingerprint}" python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import sys
+
+          policy = json.loads(pathlib.Path("docs/release/RELEASE-SIGNERS.json").read_text())
+          signer = os.environ["SIGNER_FINGERPRINT"].upper()
+          active = {
+              entry.get("fingerprint", "").replace(" ", "").upper()
+              for entry in policy.get("active_signers", [])
+              if entry.get("status") == "active"
+          }
+          if signer not in active:
+              print("release tag signer is not in RELEASE-SIGNERS.json", file=sys.stderr)
+              sys.exit(1)
+          print(f"release_tag_signer={signer}")
+          PY
           else
             echo "require_signed_tag=false allows legacy releases only"
           fi

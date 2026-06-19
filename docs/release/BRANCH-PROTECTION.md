@@ -3,7 +3,8 @@
 This runbook documents the recommended GitHub branch protection settings for
 the public AO Forge repository. It is intended for maintainers configuring
 protection on `main`. For first public release operations, also follow
-`FIRST-PUBLIC-RELEASE.md`.
+`FIRST-PUBLIC-RELEASE.md`. The latest live verification evidence is recorded in
+`BRANCH-PROTECTION-EVIDENCE.md`.
 
 ## Required Settings
 
@@ -49,6 +50,19 @@ Release Preview also validates generated audit and inspect JSON against their pu
    workflow, artifact, security, or evidence paths.
 5. Merge through GitHub after the required checks pass.
 6. Confirm the post-merge `main` CI and Release Preview runs pass.
+
+## Live Verification
+
+After changing branch protection, or after renaming workflow jobs, run:
+
+```sh
+scripts/verify-branch-protection.sh
+```
+
+The verifier is read-only. It uses `gh api` to inspect live GitHub protection
+for `main`, confirms the required check names and protection toggles, and emits
+`ao.forge.branch-protection-audit.v0.1` JSON. Keep
+`BRANCH-PROTECTION-EVIDENCE.md` current when the live settings change.
 
 ## Local Fallback
 

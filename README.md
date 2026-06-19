@@ -50,6 +50,7 @@ over provider execution, release publishing, or control-plane approval.
 - [AO Forge v0.1 Design](docs/design/AO-FORGE-V0.1.md)
 - [Phase 0 Roadmap](docs/roadmap/PHASE-0.md)
 - [Branch Protection Runbook](docs/release/BRANCH-PROTECTION.md)
+- [Branch Protection Evidence](docs/release/BRANCH-PROTECTION-EVIDENCE.md)
 - [First Public Release Checklist](docs/release/FIRST-PUBLIC-RELEASE.md)
 - [v0.1.0 Release Notes Draft](docs/release/V0.1.0-RELEASE-NOTES.md)
 - [v0.1.2 Release Notes Draft](docs/release/V0.1.2-RELEASE-NOTES.md)

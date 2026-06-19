@@ -69,6 +69,7 @@ func TestHelpExplainsFactoryTermsWithoutMarketingCopy(t *testing.T) {
 		"forge goal evidence lint --goal-run <goal-run.json> [--json]",
 		"forge goal evidence lint --update-audit <goal-run-update-audit.json> [--json]",
 		"forge goal evidence retention --artifact <retained-evidence.json> [--now <RFC3339>] [--json]",
+		"forge goal evidence cleanup --dry-run [--root <dir>] [--now <RFC3339>] [--json]",
 		"dry-run execution",
 		"forge artifact checksums",
 		"forge release-preview inspect --audit <release-preview-audit.json> [--json]",
@@ -665,6 +666,77 @@ func TestGoalRunCLIAuditsRetainedEvidenceRetention(t *testing.T) {
 	}
 }
 
+func TestGoalRunCLIDryRunsRetainedEvidenceCleanup(t *testing.T) {
+	root := repoRoot(t)
+	schemaPath := filepath.Join(root, "docs", "contracts", "goal-run-retained-evidence-cleanup-v0.1.schema.json")
+	now := "2026-06-19T18:00:00Z"
+
+	code, stdout, stderr := runCLI("goal", "evidence", "cleanup", "--now", now)
+	if code != 2 {
+		t.Fatalf("goal evidence cleanup without --dry-run exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if !strings.Contains(stderr, "missing required --dry-run") {
+		t.Fatalf("goal evidence cleanup without --dry-run stderr drifted: %s", stderr)
+	}
+
+	code, stdout, stderr = runCLI("goal", "evidence", "cleanup", "--dry-run", "--now", now)
+	if code != 0 {
+		t.Fatalf("goal evidence cleanup exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	for _, want := range []string{
+		"goal_evidence_cleanup=passed",
+		"mode=dry-run",
+		"root=docs/evidence/goals",
+		"artifacts_scanned=3",
+		"eligible_artifacts=1",
+		"protected_artifacts=2",
+		"failed_artifacts=0",
+		"public_provenance_excluded=1",
+		"active_goal_excluded=1",
+		"artifact=docs/evidence/goals/ao2-weekend-hardening/20260101T010000Z-complete/old-loop-retention-proof.json retention_status=cleanup_review_eligible cleanup_review_status=eligible_after_review retention_class=loop_evidence",
+		"artifact=docs/evidence/goals/ao2-weekend-hardening/20260101T000000Z-complete/release-provenance-retention-proof.json retention_status=mandatory_retention cleanup_review_status=not_eligible_public_provenance retention_class=release_provenance",
+		"artifact=docs/evidence/goals/ao2-weekend-hardening/20260619T143000Z-implementation/ao2-pulse-handoff-retention-proof.json retention_status=active_retention cleanup_review_status=not_eligible_active_goal retention_class=loop_evidence",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("goal evidence cleanup stdout missing %q\n%s", want, stdout)
+		}
+	}
+	if stderr != "" {
+		t.Fatalf("goal evidence cleanup wrote stderr: %s", stderr)
+	}
+
+	code, stdout, stderr = runCLI("goal", "evidence", "cleanup", "--dry-run", "--now", now, "--json")
+	if code != 0 {
+		t.Fatalf("goal evidence cleanup --json exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	var summary goalEvidenceCleanupSummary
+	if err := json.Unmarshal([]byte(stdout), &summary); err != nil {
+		t.Fatalf("goal evidence cleanup --json emitted invalid JSON: %v\n%s", err, stdout)
+	}
+	var document any
+	if err := json.Unmarshal([]byte(stdout), &document); err != nil {
+		t.Fatalf("goal evidence cleanup --json emitted invalid JSON document: %v\n%s", err, stdout)
+	}
+	if err := validateJSONSchemaValue(schemaPath, document); err != nil {
+		t.Fatalf("goal evidence cleanup --json failed schema validation: %v\n%s", err, stdout)
+	}
+	if summary.CleanupSchemaVersion != "ao.forge.goal-run-retained-evidence-cleanup.v0.1" ||
+		summary.Mode != "dry-run" ||
+		summary.Status != "passed" ||
+		summary.ArtifactsScanned != 3 ||
+		summary.EligibleArtifacts != 1 ||
+		summary.ProtectedArtifacts != 2 ||
+		summary.FailedArtifacts != 0 ||
+		summary.PublicProvenanceExcluded != 1 ||
+		summary.ActiveGoalExcluded != 1 ||
+		len(summary.RetentionAudits) != 3 {
+		t.Fatalf("goal evidence cleanup JSON drifted: %+v", summary)
+	}
+	if stderr != "" {
+		t.Fatalf("goal evidence cleanup --json wrote stderr: %s", stderr)
+	}
+}
+
 func TestGoalRunCLIReportsReadiness(t *testing.T) {
 	root := repoRoot(t)
 	retainedPath := filepath.Join(root, "examples", "goals", "ao2-retained-evidence.goal-run.json")
@@ -1193,6 +1265,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	goalRunEvidenceLintSchema := readText("docs", "contracts", "goal-run-evidence-lint-v0.1.schema.json")
 	goalRunRetainedEvidenceSchema := readText("docs", "contracts", "goal-run-retained-evidence-v0.1.schema.json")
 	goalRunRetainedEvidenceAuditSchema := readText("docs", "contracts", "goal-run-retained-evidence-audit-v0.1.schema.json")
+	goalRunRetainedEvidenceCleanupSchema := readText("docs", "contracts", "goal-run-retained-evidence-cleanup-v0.1.schema.json")
 	goalRunReadinessAuditSchema := readText("docs", "contracts", "goal-run-readiness-audit-v0.1.schema.json")
 	goalRunDocs := readText("docs", "design", "GOAL-RUNS.md")
 	goalRunExample := readText("examples", "goals", "ao2-weekend-hardening.goal-run.json")
@@ -1201,6 +1274,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	ao2PulseHandoffAuditExample := readText("examples", "goals", "ao2-pulse-handoff.goal-run-update-audit.json")
 	retainedEvidenceGoalRunExample := readText("examples", "goals", "ao2-retained-evidence.goal-run.json")
 	retainedEvidenceArtifact := readText("docs", "evidence", "goals", "ao2-weekend-hardening", "20260619T143000Z-implementation", "ao2-pulse-handoff-retention-proof.json")
+	cleanupEligibleEvidenceArtifact := readText("docs", "evidence", "goals", "ao2-weekend-hardening", "20260101T010000Z-complete", "old-loop-retention-proof.json")
 	releaseProvenanceEvidenceArtifact := readText("docs", "evidence", "goals", "ao2-weekend-hardening", "20260101T000000Z-complete", "release-provenance-retention-proof.json")
 	retainedReadinessAudit := readText("docs", "evidence", "goals", "ao2-weekend-hardening", "20260619T180000Z-verification", "goal-run-readiness-audit.json")
 	tamperedReadinessAuditExample := readText("examples", "goals", "invalid", "tampered-readiness-audit.goal-run-readiness-audit.invalid.json")
@@ -1244,6 +1318,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "README goal run evidence lint schema link", doc: readme, want: "[GoalRun Evidence Lint v0.1 Schema](docs/contracts/goal-run-evidence-lint-v0.1.schema.json)"},
 		{name: "README goal run retained evidence schema link", doc: readme, want: "[GoalRun Retained Evidence v0.1 Schema](docs/contracts/goal-run-retained-evidence-v0.1.schema.json)"},
 		{name: "README goal run retained evidence audit schema link", doc: readme, want: "[GoalRun Retained Evidence Audit v0.1 Schema](docs/contracts/goal-run-retained-evidence-audit-v0.1.schema.json)"},
+		{name: "README goal run retained evidence cleanup schema link", doc: readme, want: "[GoalRun Retained Evidence Cleanup v0.1 Schema](docs/contracts/goal-run-retained-evidence-cleanup-v0.1.schema.json)"},
 		{name: "README goal run readiness audit schema link", doc: readme, want: "[GoalRun Readiness Audit v0.1 Schema](docs/contracts/goal-run-readiness-audit-v0.1.schema.json)"},
 		{name: "README goal run example link", doc: readme, want: "[Example GoalRun](examples/goals/ao2-weekend-hardening.goal-run.json)"},
 		{name: "README goal run update audit example link", doc: readme, want: "[Example GoalRun Update Audit](examples/goals/ao2-weekend-hardening.goal-run-update-audit.json)"},
@@ -1266,6 +1341,8 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "README goal retained evidence schema validate command", doc: readme, want: "forge contract validate --schema docs/contracts/goal-run-retained-evidence-v0.1.schema.json --document docs/evidence/goals/ao2-weekend-hardening/20260619T143000Z-implementation/ao2-pulse-handoff-retention-proof.json"},
 		{name: "README goal retained evidence audit command", doc: readme, want: "forge goal evidence retention --artifact docs/evidence/goals/ao2-weekend-hardening/20260619T143000Z-implementation/ao2-pulse-handoff-retention-proof.json --json > tmp/goal-run-retained-evidence-audit.json"},
 		{name: "README goal retained evidence audit schema validate command", doc: readme, want: "forge contract validate --schema docs/contracts/goal-run-retained-evidence-audit-v0.1.schema.json --document tmp/goal-run-retained-evidence-audit.json"},
+		{name: "README goal retained evidence cleanup command", doc: readme, want: "forge goal evidence cleanup --dry-run --json > tmp/goal-run-retained-evidence-cleanup.json"},
+		{name: "README goal retained evidence cleanup schema validate command", doc: readme, want: "forge contract validate --schema docs/contracts/goal-run-retained-evidence-cleanup-v0.1.schema.json --document tmp/goal-run-retained-evidence-cleanup.json"},
 		{name: "README goal evidence verify schema validate command", doc: readme, want: "forge contract validate --schema docs/contracts/goal-run-evidence-verify-v0.1.schema.json --document tmp/goal-run-evidence-verify.json"},
 		{name: "README goal evidence retained paths", doc: readme, want: "Persisted GoalRun evidence is retained under repository-relative durable paths"},
 		{name: "README goal evidence path lint", doc: readme, want: "The GoalRun fixture smoke rejects retained"},
@@ -1333,6 +1410,11 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run retained evidence audit cleanup eligible", doc: goalRunRetainedEvidenceAuditSchema, want: `"cleanup_review_eligible"`},
 		{name: "goal run retained evidence audit cleanup review status", doc: goalRunRetainedEvidenceAuditSchema, want: `"eligible_after_review"`},
 		{name: "goal run retained evidence audit public provenance status", doc: goalRunRetainedEvidenceAuditSchema, want: `"not_eligible_public_provenance"`},
+		{name: "goal run retained evidence cleanup schema id", doc: goalRunRetainedEvidenceCleanupSchema, want: `"ao.forge.goal-run-retained-evidence-cleanup.v0.1"`},
+		{name: "goal run retained evidence cleanup strict root", doc: goalRunRetainedEvidenceCleanupSchema, want: `"additionalProperties": false`},
+		{name: "goal run retained evidence cleanup dry run", doc: goalRunRetainedEvidenceCleanupSchema, want: `"dry-run"`},
+		{name: "goal run retained evidence cleanup eligible count", doc: goalRunRetainedEvidenceCleanupSchema, want: `"eligible_artifacts"`},
+		{name: "goal run retained evidence cleanup public provenance count", doc: goalRunRetainedEvidenceCleanupSchema, want: `"public_provenance_excluded"`},
 		{name: "goal run readiness audit schema id", doc: goalRunReadinessAuditSchema, want: `"ao.forge.goal-run-readiness-audit.v0.1"`},
 		{name: "goal run readiness audit strict root", doc: goalRunReadinessAuditSchema, want: `"additionalProperties": false`},
 		{name: "goal run readiness audit provenance", doc: goalRunReadinessAuditSchema, want: `"provenance"`},
@@ -1370,6 +1452,8 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run docs readiness command", doc: goalRunDocs, want: "forge goal readiness --goal-run examples/goals/ao2-retained-evidence.goal-run.json --to verification --json"},
 		{name: "goal run docs readiness combined gate", doc: goalRunDocs, want: "`forge goal readiness` is the combined pre-loop gate for AO2 Pulse"},
 		{name: "goal run docs retained evidence audit command", doc: goalRunDocs, want: "forge goal evidence retention --artifact <retained-evidence.json>"},
+		{name: "goal run docs retained evidence cleanup command", doc: goalRunDocs, want: "forge goal evidence cleanup --dry-run"},
+		{name: "goal run docs retained evidence cleanup dry run", doc: goalRunDocs, want: "It never deletes files"},
 		{name: "goal run docs retained evidence audit terminal windows", doc: goalRunDocs, want: "`complete` and `stopped` artifacts are classified as mandatory retention"},
 		{name: "goal run docs retention metadata", doc: goalRunDocs, want: "Retained artifacts must include machine-readable retention metadata"},
 		{name: "goal run docs stale fixture", doc: goalRunDocs, want: "examples/goals/invalid/stale-evidence.goal-run.invalid.json"},
@@ -1481,6 +1565,10 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "retained evidence artifact retain active", doc: retainedEvidenceArtifact, want: `"retain_while_goal_active": true`},
 		{name: "retained evidence artifact deletion review", doc: retainedEvidenceArtifact, want: `"deletion_requires_review": true`},
 		{name: "retained evidence artifact cleanup fields", doc: retainedEvidenceArtifact, want: `"cleanup_change_must_name": ["goal_id", "iteration", "reason"]`},
+		{name: "cleanup eligible evidence artifact schema", doc: cleanupEligibleEvidenceArtifact, want: `"schema_version": "ao.forge.goal-run-retained-evidence.v0.1"`},
+		{name: "cleanup eligible evidence artifact phase", doc: cleanupEligibleEvidenceArtifact, want: `"phase": "complete"`},
+		{name: "cleanup eligible evidence artifact retained at", doc: cleanupEligibleEvidenceArtifact, want: `"retained_at": "2026-01-01T01:00:00Z"`},
+		{name: "cleanup eligible evidence artifact retention class", doc: cleanupEligibleEvidenceArtifact, want: `"retention_class": "loop_evidence"`},
 		{name: "release provenance evidence artifact schema version", doc: releaseProvenanceEvidenceArtifact, want: `"schema_version": "ao.forge.goal-run-retained-evidence.v0.1"`},
 		{name: "release provenance evidence artifact phase", doc: releaseProvenanceEvidenceArtifact, want: `"phase": "complete"`},
 		{name: "release provenance evidence artifact retention class", doc: releaseProvenanceEvidenceArtifact, want: `"retention_class": "release_provenance"`},
@@ -1614,6 +1702,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "release rollback audit schema", text: releaseRollbackAuditSchema},
 		{name: "production promotion audit schema", text: productionPromotionAuditSchema},
 		{name: "production readiness audit schema", text: productionReadinessAuditSchema},
+		{name: "goal run retained evidence cleanup schema", text: goalRunRetainedEvidenceCleanupSchema},
 		{name: "goal run evidence verify schema", text: goalRunEvidenceVerifySchema},
 	} {
 		var decoded any
@@ -2548,6 +2637,7 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		{name: "goal fixture verifier evidence lint schema", doc: goalFixtureVerifier, want: "goal-run-evidence-lint-v0.1.schema.json"},
 		{name: "goal fixture verifier retained evidence schema", doc: goalFixtureVerifier, want: "goal-run-retained-evidence-v0.1.schema.json"},
 		{name: "goal fixture verifier retained evidence audit schema", doc: goalFixtureVerifier, want: "goal-run-retained-evidence-audit-v0.1.schema.json"},
+		{name: "goal fixture verifier retained evidence cleanup schema", doc: goalFixtureVerifier, want: "goal-run-retained-evidence-cleanup-v0.1.schema.json"},
 		{name: "goal fixture verifier readiness audit schema", doc: goalFixtureVerifier, want: "goal-run-readiness-audit-v0.1.schema.json"},
 		{name: "goal fixture verifier invalid glob", doc: goalFixtureVerifier, want: "*.goal-run.invalid.json"},
 		{name: "goal fixture verifier retained invalid glob", doc: goalFixtureVerifier, want: "*.goal-run-retained-evidence.invalid.json"},
@@ -2580,9 +2670,11 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		{name: "goal fixture verifier retained readiness provenance count", doc: goalFixtureVerifier, want: "goal_run_retained_readiness_provenance_verified"},
 		{name: "goal fixture verifier readiness provenance rejected count", doc: goalFixtureVerifier, want: "goal_run_readiness_provenance_invalid_fixtures_rejected"},
 		{name: "goal fixture verifier retained audit command", doc: goalFixtureVerifier, want: "goal evidence retention"},
+		{name: "goal fixture verifier retained cleanup command", doc: goalFixtureVerifier, want: "goal evidence cleanup"},
 		{name: "goal fixture verifier retained count", doc: goalFixtureVerifier, want: "goal_run_retained_evidence_fixtures"},
 		{name: "goal fixture verifier retained artifact count", doc: goalFixtureVerifier, want: "goal_run_retained_evidence_artifacts_validated"},
 		{name: "goal fixture verifier retained audit count", doc: goalFixtureVerifier, want: "goal_run_retained_evidence_audits_validated"},
+		{name: "goal fixture verifier retained cleanup count", doc: goalFixtureVerifier, want: "goal_run_retained_evidence_cleanup_dry_run_validated"},
 		{name: "goal fixture verifier retained artifact rejected count", doc: goalFixtureVerifier, want: "goal_run_retained_evidence_invalid_fixtures_rejected"},
 		{name: "goal fixture verifier audit validate", doc: goalFixtureVerifier, want: "goal-run-update-audit-v0.1.schema.json"},
 		{name: "ci actionlint job", doc: ciWorkflow, want: "workflow-lint:"},

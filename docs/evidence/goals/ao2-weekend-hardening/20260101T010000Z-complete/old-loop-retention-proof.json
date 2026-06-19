@@ -1,0 +1,19 @@
+{
+  "schema_version": "ao.forge.goal-run-retained-evidence.v0.1",
+  "goal_id": "ao2-weekend-hardening",
+  "iteration": "20260101T010000Z-complete",
+  "phase": "complete",
+  "summary": "Retained terminal loop evidence fixture proving cleanup dry-run lists eligible artifacts only after the minimum retention window.",
+  "retention_policy": {
+    "layout": "docs/evidence/goals/<goal_id>/<YYYYMMDDTHHMMSSZ>-<phase>/",
+    "temporary_paths_allowed": false,
+    "minimum_retention_days_after_terminal_phase": 90
+  },
+  "retention_metadata": {
+    "retained_at": "2026-01-01T01:00:00Z",
+    "retention_class": "loop_evidence",
+    "retain_while_goal_active": true,
+    "deletion_requires_review": true,
+    "cleanup_change_must_name": ["goal_id", "iteration", "reason"]
+  }
+}

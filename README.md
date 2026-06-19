@@ -65,6 +65,7 @@ over provider execution, release publishing, or control-plane approval.
 - [GoalRun Evidence Lint v0.1 Schema](docs/contracts/goal-run-evidence-lint-v0.1.schema.json)
 - [GoalRun Retained Evidence v0.1 Schema](docs/contracts/goal-run-retained-evidence-v0.1.schema.json)
 - [GoalRun Retained Evidence Audit v0.1 Schema](docs/contracts/goal-run-retained-evidence-audit-v0.1.schema.json)
+- [GoalRun Retained Evidence Cleanup v0.1 Schema](docs/contracts/goal-run-retained-evidence-cleanup-v0.1.schema.json)
 - [GoalRun Readiness Audit v0.1 Schema](docs/contracts/goal-run-readiness-audit-v0.1.schema.json)
 - [Factory Brief v0.1 Schema](docs/contracts/factory-brief-v0.1.schema.json)
 - [Factory Plan v0.1 Schema](docs/contracts/factory-plan-v0.1.schema.json)
@@ -125,6 +126,8 @@ scripts/ao2-pulse-goal-readiness.sh --goal-run examples/goals/ao2-retained-evide
 ./bin/forge contract validate --schema docs/contracts/goal-run-retained-evidence-v0.1.schema.json --document docs/evidence/goals/ao2-weekend-hardening/20260619T143000Z-implementation/ao2-pulse-handoff-retention-proof.json
 ./bin/forge goal evidence retention --artifact docs/evidence/goals/ao2-weekend-hardening/20260619T143000Z-implementation/ao2-pulse-handoff-retention-proof.json --json > tmp/goal-run-retained-evidence-audit.json
 ./bin/forge contract validate --schema docs/contracts/goal-run-retained-evidence-audit-v0.1.schema.json --document tmp/goal-run-retained-evidence-audit.json
+./bin/forge goal evidence cleanup --dry-run --json > tmp/goal-run-retained-evidence-cleanup.json
+./bin/forge contract validate --schema docs/contracts/goal-run-retained-evidence-cleanup-v0.1.schema.json --document tmp/goal-run-retained-evidence-cleanup.json
 ./bin/forge goal evidence verify --goal-run examples/goals/ao2-pulse-handoff.goal-run.json --json > tmp/goal-run-evidence-verify.json
 ./bin/forge contract validate --schema docs/contracts/goal-run-evidence-verify-v0.1.schema.json --document tmp/goal-run-evidence-verify.json
 ```

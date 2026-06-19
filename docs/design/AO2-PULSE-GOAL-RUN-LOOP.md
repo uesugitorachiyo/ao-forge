@@ -7,7 +7,7 @@ not treat a scheduler tick as permission to mutate a repository.
 ## Boundary
 
 - AO Forge owns the GoalRun schema, phase transitions, guarded updates, and
-  update audit contract.
+  readiness and update audit contracts.
 - AO2 Pulse may inspect a GoalRun, perform bounded work that matches the
   GoalRun, and propose the next GoalRun state through `forge goal update`.
 - codex-cron may invoke AO2 Pulse on a schedule, but must not store goal
@@ -19,25 +19,43 @@ not treat a scheduler tick as permission to mutate a repository.
 
 Run these commands from the repository that owns the GoalRun contract.
 
-1. Validate the latest GoalRun before doing work:
+1. Run the AO Forge readiness entrypoint before doing work:
 
    ```sh
-   forge goal validate --goal-run examples/goals/ao2-weekend-hardening.goal-run.json
+   scripts/ao2-pulse-goal-readiness.sh \
+     --goal-run examples/goals/ao2-retained-evidence.goal-run.json \
+     --to verification \
+     --out tmp/goal-run-readiness-audit.json
    ```
 
-2. Inspect the latest state and use the JSON output as the loop input:
+   The entrypoint runs `forge goal readiness --json`, validates the emitted JSON
+   against `docs/contracts/goal-run-readiness-audit-v0.1.schema.json`, writes it
+   to `--out`, and exits non-zero when readiness fails. AO2 Pulse and codex-cron
+   must treat a non-zero exit as backoff or stop, not as permission to mutate.
+
+2. Use the readiness audit JSON as the loop input:
+
+   ```sh
+   forge goal readiness \
+     --goal-run examples/goals/ao2-retained-evidence.goal-run.json \
+     --to verification \
+     --json > tmp/goal-run-readiness-audit.json
+   ```
+
+   The readiness audit includes GoalRun validation, inspection, phase transition
+   status, evidence path linting, evidence hash verification, and retained
+   evidence retention audits. AO2 Pulse may read the embedded check summaries,
+   but it must not reimplement these policies outside AO Forge.
+
+3. Prove the next action still matches the objective, allowed scope,
+   acceptance criteria, and stop conditions. If it does not match the readiness
+   audit and latest GoalRun, stop before mutating anything.
+
+4. If the loop needs lower-level diagnostics, inspect the latest state or phase
+   transition manually; do not replace the readiness gate with these commands:
 
    ```sh
    forge goal inspect --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --json
-   ```
-
-3. Prove the next action still matches the objective, allowed scope,
-   acceptance criteria, and stop conditions. If it does not match, stop before
-   mutating anything.
-
-4. Check the intended phase transition before proposing state changes:
-
-   ```sh
    forge goal transitions \
      --goal-run examples/goals/ao2-weekend-hardening.goal-run.json \
      --to implementation
@@ -100,9 +118,9 @@ Run these commands from the repository that owns the GoalRun contract.
    state changed or the artifact is a live-state snapshot, AO2 Pulse must
    collect fresh evidence instead.
 
-11. Retain the handoff evidence. The durable handoff must include the candidate
-    GoalRun, update audit, evidence verification JSON, and every artifact named
-    in `last_iteration.evidence`. Persist these under
+11. Retain the handoff evidence. The durable handoff must include the readiness
+    audit JSON, candidate GoalRun, update audit, evidence verification JSON, and
+    every artifact named in `last_iteration.evidence`. Persist these under
     `docs/evidence/goals/<goal_id>/<YYYYMMDDTHHMMSSZ>-<phase>/` or stop before
     replacing the latest GoalRun.
 
@@ -123,6 +141,9 @@ preserve after a successful iteration:
 CI runs `scripts/verify-goal-fixtures.sh` to validate every checked-in GoalRun
 and GoalRun update-audit fixture, and to verify every recorded GoalRun evidence
 hash, including this handoff pair. The same smoke test also verifies that
+`scripts/ao2-pulse-goal-readiness.sh` produces schema-valid readiness audit JSON
+for positive fixtures and fails closed while preserving failed readiness JSON for
+negative fixtures. The same smoke test verifies that
 `examples/goals/invalid/stale-evidence.goal-run.invalid.json` fails closed when
 its recorded evidence hash does not match the artifact bytes, and that at least
 one positive GoalRun fixture uses the retained evidence layout. It also runs
@@ -138,7 +159,9 @@ AO2 Pulse must not continue when any of these checks fail:
 - the latest GoalRun cannot be inspected;
 - the next action does not match the objective, allowed scope, acceptance
   criteria, and stop conditions;
-- `forge goal transitions` denies the proposed phase change;
+- `scripts/ao2-pulse-goal-readiness.sh` exits non-zero;
+- the readiness audit JSON does not validate against
+  `docs/contracts/goal-run-readiness-audit-v0.1.schema.json`;
 - `forge goal update` fails;
 - the update audit does not validate;
 - the candidate GoalRun does not validate;
@@ -156,8 +179,10 @@ operator-approved GoalRun.
 Each successful loop iteration must preserve:
 
 - the GoalRun path and `goal_id`;
-- the inspected `current_phase` and proposed next phase;
-- the `forge goal transitions` result;
+- the readiness audit JSON from `scripts/ao2-pulse-goal-readiness.sh`;
+- the inspected `current_phase` and proposed next phase from that readiness
+  audit;
+- the readiness `goal_transition` result;
 - the `forge goal update` audit JSON;
 - every hashed evidence attachment listed by the update audit;
 - the `forge contract validate` result for that audit;

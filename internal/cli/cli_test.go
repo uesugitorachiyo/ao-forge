@@ -1035,6 +1035,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 
 	readme := readText("README.md")
 	ao2PulseGoalRunLoopDocs := readText("docs", "design", "AO2-PULSE-GOAL-RUN-LOOP.md")
+	ao2PulseReadinessScript := readText("scripts", "ao2-pulse-goal-readiness.sh")
 	goalRunSchema := readText("docs", "contracts", "goal-run-v0.1.schema.json")
 	goalRunUpdateAuditSchema := readText("docs", "contracts", "goal-run-update-audit-v0.1.schema.json")
 	goalRunEvidenceVerifySchema := readText("docs", "contracts", "goal-run-evidence-verify-v0.1.schema.json")
@@ -1096,6 +1097,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "README goal run validate command", doc: readme, want: "./bin/forge goal validate --goal-run examples/goals/ao2-weekend-hardening.goal-run.json"},
 		{name: "README goal run inspect command", doc: readme, want: "./bin/forge goal inspect --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --json"},
 		{name: "README goal run transitions command", doc: readme, want: "./bin/forge goal transitions --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --to implementation"},
+		{name: "README AO2 Pulse readiness entrypoint", doc: readme, want: "scripts/ao2-pulse-goal-readiness.sh --goal-run examples/goals/ao2-retained-evidence.goal-run.json --to verification --out tmp/goal-run-readiness-audit.json"},
 		{name: "README goal run readiness command", doc: readme, want: "forge goal readiness --goal-run examples/goals/ao2-retained-evidence.goal-run.json --to verification --json > tmp/goal-run-readiness-audit.json"},
 		{name: "README goal run readiness validate command", doc: readme, want: "forge contract validate --schema docs/contracts/goal-run-readiness-audit-v0.1.schema.json --document tmp/goal-run-readiness-audit.json"},
 		{name: "README goal run update command", doc: readme, want: `./bin/forge goal update --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --out tmp/ao2-weekend-hardening.goal-run.json --phase implementation`},
@@ -1232,9 +1234,13 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run docs AO2 Pulse link", doc: goalRunDocs, want: "docs/design/AO2-PULSE-GOAL-RUN-LOOP.md"},
 		{name: "AO2 Pulse docs title", doc: ao2PulseGoalRunLoopDocs, want: "# AO2 Pulse GoalRun Loop"},
 		{name: "AO2 Pulse docs scheduler boundary", doc: ao2PulseGoalRunLoopDocs, want: "codex-cron may invoke AO2 Pulse on a schedule"},
-		{name: "AO2 Pulse docs validate command", doc: ao2PulseGoalRunLoopDocs, want: "forge goal validate --goal-run examples/goals/ao2-weekend-hardening.goal-run.json"},
+		{name: "AO2 Pulse docs readiness entrypoint command", doc: ao2PulseGoalRunLoopDocs, want: "scripts/ao2-pulse-goal-readiness.sh"},
+		{name: "AO2 Pulse docs readiness audit out", doc: ao2PulseGoalRunLoopDocs, want: "--out tmp/goal-run-readiness-audit.json"},
+		{name: "AO2 Pulse docs readiness schema", doc: ao2PulseGoalRunLoopDocs, want: "docs/contracts/goal-run-readiness-audit-v0.1.schema.json"},
+		{name: "AO2 Pulse docs readiness nonzero", doc: ao2PulseGoalRunLoopDocs, want: "must treat a non-zero exit as backoff or stop"},
 		{name: "AO2 Pulse docs inspect command", doc: ao2PulseGoalRunLoopDocs, want: "forge goal inspect --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --json"},
 		{name: "AO2 Pulse docs transitions command", doc: ao2PulseGoalRunLoopDocs, want: "forge goal transitions"},
+		{name: "AO2 Pulse docs no reimplemented policies", doc: ao2PulseGoalRunLoopDocs, want: "must not reimplement these policies outside AO Forge"},
 		{name: "AO2 Pulse docs update command", doc: ao2PulseGoalRunLoopDocs, want: "forge goal update"},
 		{name: "AO2 Pulse docs update evidence", doc: ao2PulseGoalRunLoopDocs, want: "--evidence examples/goals/ao2-weekend-hardening.goal-run.json"},
 		{name: "AO2 Pulse docs hashed evidence", doc: ao2PulseGoalRunLoopDocs, want: "every hashed evidence attachment listed by the update audit"},
@@ -1243,6 +1249,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "AO2 Pulse docs evidence lint audit command", doc: ao2PulseGoalRunLoopDocs, want: "forge goal evidence lint --update-audit tmp/ao2-weekend-hardening.goal-run-update-audit.json"},
 		{name: "AO2 Pulse docs evidence verify result", doc: ao2PulseGoalRunLoopDocs, want: "the final `forge goal evidence verify` result for the candidate GoalRun"},
 		{name: "AO2 Pulse docs evidence lint result", doc: ao2PulseGoalRunLoopDocs, want: "the final `forge goal evidence lint` result for the candidate GoalRun"},
+		{name: "AO2 Pulse docs readiness evidence result", doc: ao2PulseGoalRunLoopDocs, want: "the readiness audit JSON from `scripts/ao2-pulse-goal-readiness.sh`"},
 		{name: "AO2 Pulse docs evidence reuse decision", doc: ao2PulseGoalRunLoopDocs, want: "Decide whether evidence may be reused"},
 		{name: "AO2 Pulse docs immutable evidence reuse", doc: ao2PulseGoalRunLoopDocs, want: "only when it is intentionally immutable"},
 		{name: "AO2 Pulse docs fresh evidence", doc: ao2PulseGoalRunLoopDocs, want: "collect fresh evidence instead"},
@@ -1255,9 +1262,15 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "AO2 Pulse docs handoff goal run", doc: ao2PulseGoalRunLoopDocs, want: "examples/goals/ao2-pulse-handoff.goal-run.json"},
 		{name: "AO2 Pulse docs handoff audit", doc: ao2PulseGoalRunLoopDocs, want: "examples/goals/ao2-pulse-handoff.goal-run-update-audit.json"},
 		{name: "AO2 Pulse docs retained fixture", doc: ao2PulseGoalRunLoopDocs, want: "examples/goals/ao2-retained-evidence.goal-run.json"},
+		{name: "AO2 Pulse docs readiness script smoke", doc: ao2PulseGoalRunLoopDocs, want: "`scripts/ao2-pulse-goal-readiness.sh` produces schema-valid readiness audit JSON"},
 		{name: "AO2 Pulse docs retained smoke", doc: ao2PulseGoalRunLoopDocs, want: "one positive GoalRun fixture uses the retained evidence layout"},
 		{name: "AO2 Pulse docs lint smoke", doc: ao2PulseGoalRunLoopDocs, want: "It also runs\n`forge goal evidence lint`"},
 		{name: "AO2 Pulse docs evidence path fixtures", doc: ao2PulseGoalRunLoopDocs, want: "path-policy fixtures"},
+		{name: "AO2 Pulse readiness script goal run flag", doc: ao2PulseReadinessScript, want: "--goal-run"},
+		{name: "AO2 Pulse readiness script out flag", doc: ao2PulseReadinessScript, want: "--out"},
+		{name: "AO2 Pulse readiness script command", doc: ao2PulseReadinessScript, want: "goal readiness --goal-run"},
+		{name: "AO2 Pulse readiness script schema validation", doc: ao2PulseReadinessScript, want: "goal-run-readiness-audit-v0.1.schema.json"},
+		{name: "AO2 Pulse readiness script failed persistence", doc: ao2PulseReadinessScript, want: "ao2_pulse_readiness=failed"},
 		{name: "AO2 Pulse docs stale fixture", doc: ao2PulseGoalRunLoopDocs, want: "examples/goals/invalid/stale-evidence.goal-run.invalid.json"},
 		{name: "AO2 Pulse docs audit validate command", doc: ao2PulseGoalRunLoopDocs, want: "docs/contracts/goal-run-update-audit-v0.1.schema.json"},
 		{name: "AO2 Pulse docs candidate validate", doc: ao2PulseGoalRunLoopDocs, want: "forge goal validate --goal-run tmp/ao2-weekend-hardening.goal-run.json"},
@@ -2338,7 +2351,10 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		{name: "goal fixture verifier update audit path rejected count", doc: goalFixtureVerifier, want: "goal_run_update_audit_invalid_path_fixtures_rejected"},
 		{name: "goal fixture verifier retained layout", doc: goalFixtureVerifier, want: "docs/evidence/goals/"},
 		{name: "goal fixture verifier readiness command", doc: goalFixtureVerifier, want: "goal readiness --goal-run"},
+		{name: "goal fixture verifier AO2 Pulse readiness script", doc: goalFixtureVerifier, want: "scripts/ao2-pulse-goal-readiness.sh"},
+		{name: "goal fixture verifier AO2 Pulse readiness failure", doc: goalFixtureVerifier, want: "expected AO2 Pulse readiness entrypoint to fail"},
 		{name: "goal fixture verifier readiness count", doc: goalFixtureVerifier, want: "goal_run_readiness_audits_validated"},
+		{name: "goal fixture verifier AO2 Pulse readiness count", doc: goalFixtureVerifier, want: "ao2_pulse_readiness_entrypoints_validated"},
 		{name: "goal fixture verifier retained audit command", doc: goalFixtureVerifier, want: "goal evidence retention"},
 		{name: "goal fixture verifier retained count", doc: goalFixtureVerifier, want: "goal_run_retained_evidence_fixtures"},
 		{name: "goal fixture verifier retained artifact count", doc: goalFixtureVerifier, want: "goal_run_retained_evidence_artifacts_validated"},

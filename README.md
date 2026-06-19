@@ -104,9 +104,10 @@ preserving AO2 Pulse handoff state. The GoalRun fixture smoke rejects retained
 evidence paths under `tmp/`, `/tmp/`, home directories, parent traversal, or
 machine-local absolute paths.
 
-Validate and inspect a durable GoalRun before a loop iteration:
+Run the AO2 Pulse readiness entrypoint before a loop iteration:
 
 ```sh
+scripts/ao2-pulse-goal-readiness.sh --goal-run examples/goals/ao2-retained-evidence.goal-run.json --to verification --out tmp/goal-run-readiness-audit.json
 ./bin/forge goal validate --goal-run examples/goals/ao2-weekend-hardening.goal-run.json
 ./bin/forge goal inspect --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --json
 ./bin/forge goal transitions --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --to implementation

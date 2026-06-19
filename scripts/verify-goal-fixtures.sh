@@ -73,6 +73,14 @@ for goal_run in "${goal_runs[@]}"; do
   "$forge_bin" contract validate \
     --schema docs/contracts/goal-run-readiness-audit-v0.1.schema.json \
     --document "$readiness_json"
+  pulse_readiness_json="$verify_dir/$(basename "$goal_run").ao2-pulse-readiness-audit.json"
+  AO_FORGE_BIN="$forge_bin" scripts/ao2-pulse-goal-readiness.sh \
+    --goal-run "$goal_run" \
+    --now 2026-06-19T18:00:00Z \
+    --out "$pulse_readiness_json"
+  "$forge_bin" contract validate \
+    --schema docs/contracts/goal-run-readiness-audit-v0.1.schema.json \
+    --document "$pulse_readiness_json"
   "$forge_bin" goal evidence lint --goal-run "$goal_run"
   lint_json="$verify_dir/$(basename "$goal_run").evidence-lint.json"
   "$forge_bin" goal evidence lint --goal-run "$goal_run" --json > "$lint_json"
@@ -169,6 +177,17 @@ for invalid_goal_run in "${invalid_goal_runs[@]}"; do
   "$forge_bin" contract validate \
     --schema docs/contracts/goal-run-evidence-verify-v0.1.schema.json \
     --document "$verify_json"
+  pulse_readiness_json="$verify_dir/$(basename "$invalid_goal_run").ao2-pulse-readiness-audit.json"
+  if AO_FORGE_BIN="$forge_bin" scripts/ao2-pulse-goal-readiness.sh \
+    --goal-run "$invalid_goal_run" \
+    --now 2026-06-19T18:00:00Z \
+    --out "$pulse_readiness_json"; then
+    echo "expected AO2 Pulse readiness entrypoint to fail: $invalid_goal_run" >&2
+    exit 1
+  fi
+  "$forge_bin" contract validate \
+    --schema docs/contracts/goal-run-readiness-audit-v0.1.schema.json \
+    --document "$pulse_readiness_json"
 done
 
 for invalid_path_goal_run in "${invalid_path_goal_runs[@]}"; do
@@ -207,6 +226,7 @@ done
 
 echo "goal_run_fixtures_validated=${#goal_runs[@]}"
 echo "goal_run_readiness_audits_validated=${#goal_runs[@]}"
+echo "ao2_pulse_readiness_entrypoints_validated=${#goal_runs[@]}"
 echo "goal_run_update_audits_validated=${#update_audits[@]}"
 echo "goal_run_invalid_fixtures_rejected=${#invalid_goal_runs[@]}"
 echo "goal_run_invalid_path_fixtures_rejected=${#invalid_path_goal_runs[@]}"

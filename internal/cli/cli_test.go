@@ -131,6 +131,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	releaseArtifactInventorySchema := readText("docs", "contracts", "release-artifact-inventory-v0.1.schema.json")
 	releaseAttestationPlanSchema := readText("docs", "contracts", "release-attestation-plan-v0.1.schema.json")
 	releaseEvidenceBundleSchema := readText("docs", "contracts", "release-evidence-bundle-v0.1.schema.json")
+	releaseVerifyAuditSchema := readText("docs", "contracts", "release-verify-audit-v0.1.schema.json")
 	releaseInstallVerifyAuditSchema := readText("docs", "contracts", "release-install-verify-audit-v0.1.schema.json")
 	releaseRollbackAuditSchema := readText("docs", "contracts", "release-rollback-audit-v0.1.schema.json")
 	productionPromotionAuditSchema := readText("docs", "contracts", "production-promotion-audit-v0.1.schema.json")
@@ -147,6 +148,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "README release artifact inventory schema link", doc: readme, want: "[Release Artifact Inventory v0.1 Schema](docs/contracts/release-artifact-inventory-v0.1.schema.json)"},
 		{name: "README release attestation plan schema link", doc: readme, want: "[Release Attestation Plan v0.1 Schema](docs/contracts/release-attestation-plan-v0.1.schema.json)"},
 		{name: "README release evidence bundle schema link", doc: readme, want: "[Release Evidence Bundle v0.1 Schema](docs/contracts/release-evidence-bundle-v0.1.schema.json)"},
+		{name: "README release verify audit schema link", doc: readme, want: "[Release Verify Audit v0.1 Schema](docs/contracts/release-verify-audit-v0.1.schema.json)"},
 		{name: "README release install verify audit schema link", doc: readme, want: "[Release Install Verify Audit v0.1 Schema](docs/contracts/release-install-verify-audit-v0.1.schema.json)"},
 		{name: "README release rollback audit schema link", doc: readme, want: "[Release Rollback Audit v0.1 Schema](docs/contracts/release-rollback-audit-v0.1.schema.json)"},
 		{name: "README production promotion audit schema link", doc: readme, want: "[Production Promotion Audit v0.1 Schema](docs/contracts/production-promotion-audit-v0.1.schema.json)"},
@@ -193,6 +195,10 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "release evidence bundle rehearsal", doc: releaseEvidenceBundleSchema, want: `"release_rehearsal_run_id"`},
 		{name: "release evidence bundle files", doc: releaseEvidenceBundleSchema, want: `"evidence_files"`},
 		{name: "release evidence bundle signature policy", doc: releaseEvidenceBundleSchema, want: `"signature_policy"`},
+		{name: "release verify audit schema id", doc: releaseVerifyAuditSchema, want: `"ao.forge.release-verify-audit.v0.1"`},
+		{name: "release verify audit strict root", doc: releaseVerifyAuditSchema, want: `"additionalProperties": false`},
+		{name: "release verify audit controls", doc: releaseVerifyAuditSchema, want: `"require_evidence_bundle"`},
+		{name: "release verify audit checks", doc: releaseVerifyAuditSchema, want: `"release_evidence_bundle_attestation_verified"`},
 		{name: "release install verify audit schema id", doc: releaseInstallVerifyAuditSchema, want: `"ao.forge.release-install-verify.v0.1"`},
 		{name: "release install verify audit strict root", doc: releaseInstallVerifyAuditSchema, want: `"additionalProperties": false`},
 		{name: "release install verify audit checks", doc: releaseInstallVerifyAuditSchema, want: `"installed_binary_checksum_verification"`},
@@ -225,6 +231,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "release artifact inventory schema", text: releaseArtifactInventorySchema},
 		{name: "release attestation plan schema", text: releaseAttestationPlanSchema},
 		{name: "release evidence bundle schema", text: releaseEvidenceBundleSchema},
+		{name: "release verify audit schema", text: releaseVerifyAuditSchema},
 		{name: "release install verify audit schema", text: releaseInstallVerifyAuditSchema},
 		{name: "release rollback audit schema", text: releaseRollbackAuditSchema},
 		{name: "production promotion audit schema", text: productionPromotionAuditSchema},
@@ -287,10 +294,57 @@ func TestReleaseEvidenceBundleContractDocumentsSignedBundle(t *testing.T) {
 
 func TestReleaseAuditContractsValidateWorkflowEvidence(t *testing.T) {
 	root := repoRoot(t)
+	verifySchema := filepath.Join(root, "docs", "contracts", "release-verify-audit-v0.1.schema.json")
 	installSchema := filepath.Join(root, "docs", "contracts", "release-install-verify-audit-v0.1.schema.json")
 	rollbackSchema := filepath.Join(root, "docs", "contracts", "release-rollback-audit-v0.1.schema.json")
 	promotionSchema := filepath.Join(root, "docs", "contracts", "production-promotion-audit-v0.1.schema.json")
 	tmp := t.TempDir()
+
+	verifyAudit := []byte(`{
+  "schema_version": "ao.forge.release-verify-audit.v0.1",
+  "status": "passed",
+  "tag": "v0.1.0",
+  "repository": "uesugitorachiyo/ao-forge",
+  "workflow": {
+    "name": "Release Verify",
+    "path": ".github/workflows/release-verify.yml",
+    "ref": "refs/tags/v0.1.0",
+    "run_id": "27798832320",
+    "run_attempt": "1"
+  },
+  "release": {
+    "url": "https://github.com/uesugitorachiyo/ao-forge/releases/tag/v0.1.0",
+    "target_commitish": "4291e2adf4169dc6adbe9b17317715e572dc912b",
+    "published_at": "2026-06-18T23:37:16Z"
+  },
+  "controls": {
+    "require_evidence_bundle": true,
+    "require_signed_tag": true
+  },
+  "checks": {
+    "release_metadata_verified": true,
+    "release_tag_identity_verified": true,
+    "checksums_verified": true,
+    "release_preview_inspect_verified": true,
+    "archive_attestations_verified": true,
+    "release_evidence_bundle_verified": true,
+    "release_evidence_bundle_attestation_verified": true,
+    "binary_smoke_test_passed_or_skipped": true
+  },
+  "verified_assets": [
+    "ao-forge_Linux_x86_64.tar.gz",
+    "ao-forge_Darwin_arm64.tar.gz",
+    "ao-forge_Windows_x86_64.zip",
+    "checksums.txt",
+    "release-preview-inspect.json",
+    "release-evidence-bundle.json",
+    "release-evidence-bundle.attestation.json"
+  ]
+}`)
+	verifyDoc := filepath.Join(tmp, "release-verify-audit.json")
+	if err := os.WriteFile(verifyDoc, verifyAudit, 0o600); err != nil {
+		t.Fatalf("write verify audit sample: %v", err)
+	}
 
 	installAudit := []byte(`{
   "schema_version": "ao.forge.release-install-verify.v0.1",
@@ -479,6 +533,10 @@ func TestReleaseAuditContractsValidateWorkflowEvidence(t *testing.T) {
     "tag_matches_release": true,
     "soak_window_met": true,
     "release_verify_succeeded": true,
+    "release_verify_audit_run_matches": true,
+    "release_verify_audit_tag_matches": true,
+    "release_verify_audit_release_matches": true,
+    "release_verify_default_controls": true,
     "release_install_verify_succeeded": true,
     "install_verify_audit_run_matches": true,
     "install_verify_audit_tag_matches": true,
@@ -510,6 +568,7 @@ func TestReleaseAuditContractsValidateWorkflowEvidence(t *testing.T) {
 		schema   string
 		document string
 	}{
+		{name: "release verify audit", schema: verifySchema, document: verifyDoc},
 		{name: "release install verify audit", schema: installSchema, document: installDoc},
 		{name: "release rollback audit", schema: rollbackSchema, document: rollbackDoc},
 		{name: "production promotion audit", schema: promotionSchema, document: promotionDoc},
@@ -1481,6 +1540,10 @@ func TestReleaseVerifyWorkflowChecksPublishedReleaseEvidence(t *testing.T) {
 		{name: "bundle attestation", doc: workflow, want: "Verify release evidence bundle attestation"},
 		{name: "attestation command", doc: workflow, want: "gh attestation verify"},
 		{name: "binary smoke", doc: workflow, want: "Smoke test Darwin artifact when host-compatible"},
+		{name: "write verify audit", doc: workflow, want: "Write release verify audit"},
+		{name: "verify audit schema", doc: workflow, want: "ao.forge.release-verify-audit.v0.1"},
+		{name: "verify audit contract", doc: workflow, want: `contract validate --schema docs/contracts/release-verify-audit-v0.1.schema.json --document "${AO_FORGE_RELEASE_VERIFY_DIR}/release-verify-audit.json"`},
+		{name: "upload verify audit", doc: workflow, want: "release-verify-audit"},
 		{name: "summary", doc: workflow, want: "post_release_verification=passed"},
 		{name: "readme workflow", doc: readme, want: "`Release Verify`"},
 		{name: "first release workflow", doc: firstRelease, want: "`Release Verify` workflow"},
@@ -1784,6 +1847,9 @@ func TestProductionPromotionWorkflowDefinesStableCriteria(t *testing.T) {
 		{name: "blocker assertion gate", doc: workflow, want: "confirm_no_known_blockers must be exactly true"},
 		{name: "metadata read", doc: workflow, want: "Read release metadata"},
 		{name: "verify run metadata", doc: workflow, want: "Read evidence workflow runs"},
+		{name: "download release verify evidence", doc: workflow, want: "Download release verification evidence"},
+		{name: "release verify artifact", doc: workflow, want: "release-verify-audit"},
+		{name: "release verify contract validation", doc: workflow, want: `contract validate --schema docs/contracts/release-verify-audit-v0.1.schema.json --document "${AO_FORGE_PROMOTION_OUT}/verify/release-verify-audit.json"`},
 		{name: "install verify run metadata", doc: workflow, want: "release-install-verify-run.json"},
 		{name: "download install verify evidence", doc: workflow, want: "Download install verification evidence"},
 		{name: "install verify artifact", doc: workflow, want: "release-install-verify-audit"},
@@ -1792,6 +1858,12 @@ func TestProductionPromotionWorkflowDefinesStableCriteria(t *testing.T) {
 		{name: "rollback audit contract validation", doc: workflow, want: `contract validate --schema docs/contracts/release-rollback-audit-v0.1.schema.json --document "${AO_FORGE_PROMOTION_OUT}/rollback/release-rollback-audit.json"`},
 		{name: "criteria validation", doc: workflow, want: "Validate production-stable criteria"},
 		{name: "verify workflow required", doc: workflow, want: "Release Verify"},
+		{name: "verify audit loaded", doc: workflow, want: `verify_audit = json.loads((out / "verify" / "release-verify-audit.json").read_text())`},
+		{name: "verify audit release loaded", doc: workflow, want: `verify_release = verify_audit.get("release", {})`},
+		{name: "verify audit run binding", doc: workflow, want: `"release_verify_audit_run_matches": verify_audit.get("workflow", {}).get("run_id") == str(verify_run.get("databaseId"))`},
+		{name: "verify audit tag binding", doc: workflow, want: `"release_verify_audit_tag_matches": verify_audit.get("tag") == tag`},
+		{name: "verify audit target binding", doc: workflow, want: `"release_verify_audit_release_matches": verify_release.get("target_commitish") == release.get("targetCommitish")`},
+		{name: "verify default controls", doc: workflow, want: `"release_verify_default_controls": verify_audit.get("controls", {}).get("require_evidence_bundle") is True and verify_audit.get("controls", {}).get("require_signed_tag") is True`},
 		{name: "install verify workflow required", doc: workflow, want: "Release Install Verify"},
 		{name: "install audit loaded", doc: workflow, want: `install_verify_audit = json.loads((out / "install" / "release-install-verify-audit.json").read_text())`},
 		{name: "install audit run binding", doc: workflow, want: `"install_verify_audit_run_matches": install_verify_audit.get("workflow", {}).get("run_id") == str(install_verify_run.get("databaseId"))`},
@@ -1810,6 +1882,8 @@ func TestProductionPromotionWorkflowDefinesStableCriteria(t *testing.T) {
 		{name: "upload audit", doc: workflow, want: "production-promotion-audit"},
 		{name: "runbook title", doc: runbook, want: "# Production-Stable Promotion"},
 		{name: "runbook status language", doc: runbook, want: "Do not describe a release as production-stable"},
+		{name: "runbook verify audit binding", doc: runbook, want: "Verify audit artifact must validate against its contract"},
+		{name: "runbook verify default controls", doc: runbook, want: "signed-tag and evidence-bundle controls"},
 		{name: "runbook install verify input", doc: runbook, want: "`release_install_verify_run_id`: the successful `Release Install Verify` run ID"},
 		{name: "runbook install audit binding", doc: runbook, want: "verification audit artifact must validate against its contract"},
 		{name: "runbook install audit commit binding", doc: runbook, want: "promoted tag and release commit"},

@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/uesugitorachiyo/ao-forge/docs/contracts/release-verify-audit-v0.1.schema.json",
+  "title": "AO Forge Release Verify Audit v0.1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "status",
+    "tag",
+    "repository",
+    "workflow",
+    "release",
+    "controls",
+    "checks",
+    "verified_assets"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "ao.forge.release-verify-audit.v0.1"
+    },
+    "status": {
+      "const": "passed"
+    },
+    "tag": {
+      "type": "string",
+      "pattern": "^v.+"
+    },
+    "repository": {
+      "type": "string",
+      "minLength": 1
+    },
+    "workflow": {
+      "type": "object",
+      "required": ["name", "path", "ref", "run_id", "run_attempt"],
+      "properties": {
+        "name": {
+          "const": "Release Verify"
+        },
+        "path": {
+          "const": ".github/workflows/release-verify.yml"
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "run_id": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        },
+        "run_attempt": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "release": {
+      "type": "object",
+      "required": ["url", "target_commitish", "published_at"],
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target_commitish": {
+          "type": "string",
+          "minLength": 1
+        },
+        "published_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+    "controls": {
+      "type": "object",
+      "required": ["require_evidence_bundle", "require_signed_tag"],
+      "properties": {
+        "require_evidence_bundle": {
+          "type": "boolean"
+        },
+        "require_signed_tag": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "checks": {
+      "type": "object",
+      "required": [
+        "release_metadata_verified",
+        "release_tag_identity_verified",
+        "checksums_verified",
+        "release_preview_inspect_verified",
+        "archive_attestations_verified",
+        "release_evidence_bundle_verified",
+        "release_evidence_bundle_attestation_verified",
+        "binary_smoke_test_passed_or_skipped"
+      ],
+      "properties": {
+        "release_metadata_verified": {
+          "const": true
+        },
+        "release_tag_identity_verified": {
+          "const": true
+        },
+        "checksums_verified": {
+          "const": true
+        },
+        "release_preview_inspect_verified": {
+          "const": true
+        },
+        "archive_attestations_verified": {
+          "const": true
+        },
+        "release_evidence_bundle_verified": {
+          "const": true
+        },
+        "release_evidence_bundle_attestation_verified": {
+          "const": true
+        },
+        "binary_smoke_test_passed_or_skipped": {
+          "const": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "verified_assets": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "additionalProperties": false
+}

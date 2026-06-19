@@ -109,6 +109,10 @@
         "tag_matches_release",
         "soak_window_met",
         "release_verify_succeeded",
+        "release_verify_audit_run_matches",
+        "release_verify_audit_tag_matches",
+        "release_verify_audit_release_matches",
+        "release_verify_default_controls",
         "release_install_verify_succeeded",
         "install_verify_audit_run_matches",
         "install_verify_audit_tag_matches",
@@ -131,6 +135,18 @@
           "type": "boolean"
         },
         "release_verify_succeeded": {
+          "type": "boolean"
+        },
+        "release_verify_audit_run_matches": {
+          "type": "boolean"
+        },
+        "release_verify_audit_tag_matches": {
+          "type": "boolean"
+        },
+        "release_verify_audit_release_matches": {
+          "type": "boolean"
+        },
+        "release_verify_default_controls": {
           "type": "boolean"
         },
         "release_install_verify_succeeded": {
@@ -167,6 +183,10 @@
           "tag_matches_release",
           "soak_window_met",
           "release_verify_succeeded",
+          "release_verify_audit_run_matches",
+          "release_verify_audit_tag_matches",
+          "release_verify_audit_release_matches",
+          "release_verify_default_controls",
           "release_install_verify_succeeded",
           "install_verify_audit_run_matches",
           "install_verify_audit_tag_matches",

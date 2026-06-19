@@ -348,6 +348,70 @@ jobs:
             echo "binary_smoke_skipped_for_host=$(uname -s)-$(uname -m)"
           fi
 
+      - name: Write release verify audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+
+          verify_dir = pathlib.Path(os.environ["AO_FORGE_RELEASE_VERIFY_DIR"])
+          release = json.loads((verify_dir / "release.json").read_text())
+          assets = sorted(asset.get("name") for asset in release.get("assets", []) if asset.get("name"))
+          audit = {
+              "schema_version": "ao.forge.release-verify-audit.v0.1",
+              "status": "passed",
+              "tag": os.environ["AO_FORGE_RELEASE_VERIFY_TAG"],
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "workflow": {
+                  "name": "Release Verify",
+                  "path": ".github/workflows/release-verify.yml",
+                  "ref": os.environ["GITHUB_REF"],
+                  "run_id": os.environ["GITHUB_RUN_ID"],
+                  "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              },
+              "release": {
+                  "url": release.get("url"),
+                  "target_commitish": release.get("targetCommitish"),
+                  "published_at": release.get("publishedAt"),
+              },
+              "controls": {
+                  "require_evidence_bundle": os.environ["AO_FORGE_REQUIRE_EVIDENCE_BUNDLE"] == "true",
+                  "require_signed_tag": os.environ["AO_FORGE_REQUIRE_SIGNED_TAG"] == "true",
+              },
+              "checks": {
+                  "release_metadata_verified": True,
+                  "release_tag_identity_verified": True,
+                  "checksums_verified": True,
+                  "release_preview_inspect_verified": True,
+                  "archive_attestations_verified": True,
+                  "release_evidence_bundle_verified": True,
+                  "release_evidence_bundle_attestation_verified": True,
+                  "binary_smoke_test_passed_or_skipped": True,
+              },
+              "verified_assets": assets,
+          }
+          (verify_dir / "release-verify-audit.json").write_text(json.dumps(audit, indent=2, sort_keys=True) + "\n")
+          print(f"release_verify_audit={verify_dir / 'release-verify-audit.json'}")
+          PY
+
+      - name: Validate release verify audit contract
+        run: |
+          set -euo pipefail
+          "${RUNNER_TEMP}/forge" contract validate --schema docs/contracts/release-verify-audit-v0.1.schema.json --document "${AO_FORGE_RELEASE_VERIFY_DIR}/release-verify-audit.json"
+
+      - name: Upload release verify audit
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-verify-audit
+          path: |
+            ${{ runner.temp }}/ao-forge-release-verify/release.json
+            ${{ runner.temp }}/ao-forge-release-verify/release-verify-audit.json
+          if-no-files-found: error
+          retention-days: 90
+
       - name: Summarize post-release verification
         shell: bash
         run: |

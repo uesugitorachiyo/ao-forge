@@ -10,7 +10,9 @@ Before running promotion audit, collect:
 
 - the published release tag;
 - a successful `Release Verify` run for the same tag, using default
-  `require_evidence_bundle=true` and `require_signed_tag=true`;
+  `require_evidence_bundle=true` and `require_signed_tag=true`. The Release
+  Verify audit artifact must validate against its contract and prove default
+  signed-tag and evidence-bundle controls;
 - a successful `Release Install Verify` run for the same tag. The install
   verification audit artifact must validate against its contract and match the
   promoted tag and release commit;
@@ -51,6 +53,9 @@ A release may be called production-stable only when all criteria pass:
 - release tag matches the requested tag;
 - release age is at least `min_soak_hours`;
 - `Release Verify` completed successfully for the release;
+- `Release Verify` audit evidence validates against its contract, matches the
+  promoted tag and release commit, and proves default signed-tag and
+  evidence-bundle controls;
 - `Release Install Verify` completed successfully for the release;
 - `Release Install Verify` audit evidence validates against its contract and
   matches the promoted tag and release commit;
@@ -68,6 +73,8 @@ Block promotion when any of these are true:
 
 - Release Verify used legacy overrides such as `require_signed_tag=false` or
   `require_evidence_bundle=false`;
+- Release Verify audit evidence is missing, invalid, or belongs to a different
+  release tag or commit;
 - rollback audit evidence is missing, not audit-only, or does not prove
   mutation-relevant release fields stayed unchanged;
 - install verification audit evidence is missing, invalid, or belongs to a

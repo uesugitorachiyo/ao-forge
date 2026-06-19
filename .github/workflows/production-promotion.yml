@@ -110,7 +110,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "${AO_FORGE_PROMOTION_OUT}/runs" "${AO_FORGE_PROMOTION_OUT}/install" "${AO_FORGE_PROMOTION_OUT}/rollback"
+          mkdir -p "${AO_FORGE_PROMOTION_OUT}/runs" "${AO_FORGE_PROMOTION_OUT}/verify" "${AO_FORGE_PROMOTION_OUT}/install" "${AO_FORGE_PROMOTION_OUT}/rollback"
           gh release view "${AO_FORGE_PROMOTION_TAG}" \
             --repo "${GITHUB_REPOSITORY}" \
             --json isDraft,isPrerelease,tagName,targetCommitish,url,publishedAt,assets \
@@ -134,6 +134,22 @@ jobs:
             --repo "${GITHUB_REPOSITORY}" \
             --json conclusion,createdAt,databaseId,event,headSha,status,url,workflowName \
             > "${AO_FORGE_PROMOTION_OUT}/runs/release-rollback-audit-run.json"
+
+      - name: Download release verification evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download "${RELEASE_VERIFY_RUN_ID}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --name release-verify-audit \
+            --dir "${AO_FORGE_PROMOTION_OUT}/verify"
+
+      - name: Validate release verification audit contract
+        run: |
+          set -euo pipefail
+          "${RUNNER_TEMP}/forge" contract validate --schema docs/contracts/release-verify-audit-v0.1.schema.json --document "${AO_FORGE_PROMOTION_OUT}/verify/release-verify-audit.json"
 
       - name: Download install verification evidence
         env:
@@ -185,6 +201,8 @@ jobs:
           verify_run = json.loads((out / "runs" / "release-verify-run.json").read_text())
           install_verify_run = json.loads((out / "runs" / "release-install-verify-run.json").read_text())
           rollback_run = json.loads((out / "runs" / "release-rollback-audit-run.json").read_text())
+          verify_audit = json.loads((out / "verify" / "release-verify-audit.json").read_text())
+          verify_release = verify_audit.get("release", {})
           install_verify_audit = json.loads((out / "install" / "release-install-verify-audit.json").read_text())
           install_verify_release = install_verify_audit.get("release", {})
           rollback_audit = json.loads((out / "rollback" / "release-rollback-audit.json").read_text())
@@ -200,6 +218,10 @@ jobs:
               "tag_matches_release": release.get("tagName") == tag,
               "soak_window_met": soak_hours >= min_soak_hours,
               "release_verify_succeeded": verify_run.get("workflowName") == "Release Verify" and verify_run.get("conclusion") == "success",
+              "release_verify_audit_run_matches": verify_audit.get("workflow", {}).get("run_id") == str(verify_run.get("databaseId")),
+              "release_verify_audit_tag_matches": verify_audit.get("tag") == tag,
+              "release_verify_audit_release_matches": verify_release.get("target_commitish") == release.get("targetCommitish") and verify_release.get("url") == release.get("url"),
+              "release_verify_default_controls": verify_audit.get("controls", {}).get("require_evidence_bundle") is True and verify_audit.get("controls", {}).get("require_signed_tag") is True,
               "release_install_verify_succeeded": install_verify_run.get("workflowName") == "Release Install Verify" and install_verify_run.get("conclusion") == "success",
               "install_verify_audit_run_matches": install_verify_audit.get("workflow", {}).get("run_id") == str(install_verify_run.get("databaseId")),
               "install_verify_audit_tag_matches": install_verify_audit.get("tag") == tag,
@@ -284,6 +306,7 @@ jobs:
           path: |
             ${{ runner.temp }}/ao-forge-production-promotion/release.json
             ${{ runner.temp }}/ao-forge-production-promotion/runs/*.json
+            ${{ runner.temp }}/ao-forge-production-promotion/verify/release-verify-audit.json
             ${{ runner.temp }}/ao-forge-production-promotion/install/release-install-verify-audit.json
             ${{ runner.temp }}/ao-forge-production-promotion/rollback/release-rollback-audit.json
             ${{ runner.temp }}/ao-forge-production-promotion/production-promotion-audit.json

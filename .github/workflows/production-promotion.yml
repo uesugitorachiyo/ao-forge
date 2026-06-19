@@ -10,6 +10,9 @@ on:
       release_verify_run_id:
         description: "Successful Release Verify run ID for this tag"
         required: true
+      release_install_verify_run_id:
+        description: "Successful Release Install Verify run ID for this tag"
+        required: true
       release_rollback_audit_run_id:
         description: "Successful Release Rollback audit-only run ID for this tag"
         required: true
@@ -45,6 +48,7 @@ jobs:
     env:
       REQUESTED_PROMOTION_TAG: ${{ github.event.inputs.tag }}
       RELEASE_VERIFY_RUN_ID: ${{ github.event.inputs.release_verify_run_id }}
+      RELEASE_INSTALL_VERIFY_RUN_ID: ${{ github.event.inputs.release_install_verify_run_id }}
       RELEASE_ROLLBACK_AUDIT_RUN_ID: ${{ github.event.inputs.release_rollback_audit_run_id }}
       MIN_SOAK_HOURS: ${{ github.event.inputs.min_soak_hours }}
       CONFIRM_DEFAULT_RELEASE_VERIFY: ${{ github.event.inputs.confirm_default_release_verify }}
@@ -87,8 +91,8 @@ jobs:
             echo "promotion tag is required and must start with v" >&2
             exit 1
           fi
-          if [[ -z "${RELEASE_VERIFY_RUN_ID:-}" || -z "${RELEASE_ROLLBACK_AUDIT_RUN_ID:-}" ]]; then
-            echo "release_verify_run_id and release_rollback_audit_run_id are required" >&2
+          if [[ -z "${RELEASE_VERIFY_RUN_ID:-}" || -z "${RELEASE_INSTALL_VERIFY_RUN_ID:-}" || -z "${RELEASE_ROLLBACK_AUDIT_RUN_ID:-}" ]]; then
+            echo "release_verify_run_id, release_install_verify_run_id, and release_rollback_audit_run_id are required" >&2
             exit 1
           fi
           if ! [[ "${MIN_SOAK_HOURS}" =~ ^[0-9]+$ ]]; then
@@ -122,6 +126,10 @@ jobs:
             --repo "${GITHUB_REPOSITORY}" \
             --json conclusion,createdAt,databaseId,event,headSha,status,url,workflowName \
             > "${AO_FORGE_PROMOTION_OUT}/runs/release-verify-run.json"
+          gh run view "${RELEASE_INSTALL_VERIFY_RUN_ID}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --json conclusion,createdAt,databaseId,event,headSha,status,url,workflowName \
+            > "${AO_FORGE_PROMOTION_OUT}/runs/release-install-verify-run.json"
           gh run view "${RELEASE_ROLLBACK_AUDIT_RUN_ID}" \
             --repo "${GITHUB_REPOSITORY}" \
             --json conclusion,createdAt,databaseId,event,headSha,status,url,workflowName \
@@ -154,6 +162,7 @@ jobs:
           min_soak_hours = int(os.environ["MIN_SOAK_HOURS"])
           release = json.loads((out / "release.json").read_text())
           verify_run = json.loads((out / "runs" / "release-verify-run.json").read_text())
+          install_verify_run = json.loads((out / "runs" / "release-install-verify-run.json").read_text())
           rollback_run = json.loads((out / "runs" / "release-rollback-audit-run.json").read_text())
           rollback_audit = json.loads((out / "rollback" / "release-rollback-audit.json").read_text())
 
@@ -168,6 +177,7 @@ jobs:
               "tag_matches_release": release.get("tagName") == tag,
               "soak_window_met": soak_hours >= min_soak_hours,
               "release_verify_succeeded": verify_run.get("workflowName") == "Release Verify" and verify_run.get("conclusion") == "success",
+              "release_install_verify_succeeded": install_verify_run.get("workflowName") == "Release Install Verify" and install_verify_run.get("conclusion") == "success",
               "rollback_audit_succeeded": rollback_run.get("workflowName") == "Release Rollback" and rollback_run.get("conclusion") == "success",
               "rollback_audit_only": rollback_audit.get("tag") == tag and rollback_audit.get("rollback_action") == "audit-only",
           }
@@ -197,6 +207,11 @@ jobs:
                       "run_id": str(verify_run.get("databaseId")),
                       "url": verify_run.get("url"),
                       "conclusion": verify_run.get("conclusion"),
+                  },
+                  "release_install_verify": {
+                      "run_id": str(install_verify_run.get("databaseId")),
+                      "url": install_verify_run.get("url"),
+                      "conclusion": install_verify_run.get("conclusion"),
                   },
                   "release_rollback_audit": {
                       "run_id": str(rollback_run.get("databaseId")),

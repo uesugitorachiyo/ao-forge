@@ -77,6 +77,8 @@ over provider execution, release publishing, or control-plane approval.
 - [Production Promotion Audit v0.1 Schema](docs/contracts/production-promotion-audit-v0.1.schema.json)
 - [Example GoalRun](examples/goals/ao2-weekend-hardening.goal-run.json)
 - [Example GoalRun Update Audit](examples/goals/ao2-weekend-hardening.goal-run-update-audit.json)
+- [AO2 Pulse Handoff GoalRun](examples/goals/ao2-pulse-handoff.goal-run.json)
+- [AO2 Pulse Handoff Update Audit](examples/goals/ao2-pulse-handoff.goal-run-update-audit.json)
 - [Release Preview Fixtures](examples/release-preview/)
 - [Example Vertical Slice](examples/vertical-slices/risky-pr-factory.factory.json)
 - [Example Deterministic Plan](examples/plans/risky-pr-factory-plan.json)

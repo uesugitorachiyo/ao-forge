@@ -1,0 +1,48 @@
+{
+  "schema_version": "ao.forge.goal-run.v0.1",
+  "goal_id": "ao2-weekend-hardening",
+  "repo": "ao2",
+  "objective": "Harden AO2 toward production readiness without broadening mutation authority.",
+  "acceptance_criteria": [
+    "Every iteration leaves the repository with passing focused tests for touched behavior.",
+    "Changes stay inside AO2 hardening scope and preserve existing release controls.",
+    "The final handoff names remaining blockers and the next safe task."
+  ],
+  "allowed_scope": [
+    "AO2 policy, evidence, adapter, and verification hardening.",
+    "Read-only inspection and test additions needed to prove hardening behavior.",
+    "Documentation that constrains AO2 Pulse or Codex loop behavior."
+  ],
+  "stop_conditions": [
+    "The next task would require release mutation or credential access.",
+    "Tests fail repeatedly for the same unresolved cause.",
+    "The diff exceeds the declared AO2 hardening scope.",
+    "The agent cannot prove the next task matches this GoalRun."
+  ],
+  "current_phase": "implementation",
+  "next_task": "Implement the smallest verified AO2 hardening task.",
+  "last_verified_at": "2026-06-19T14:30:00Z",
+  "continuation_prompt": "Read this GoalRun before taking action. State how the next task matches objective, allowed_scope, and acceptance_criteria. If it does not match, emit backoff or stop.",
+  "loop_owner": {
+    "state_owner": "ao-forge",
+    "executor": "ao2-pulse",
+    "scheduler": "codex-cron"
+  },
+  "next_action_guard": {
+    "must_read_latest_goal_run": true,
+    "must_match_allowed_scope": true,
+    "must_satisfy_acceptance_criteria": true,
+    "on_mismatch": "backoff_or_stop"
+  },
+  "last_iteration": {
+    "status": "passed",
+    "summary": "AO2 Pulse selected a bounded implementation task after validating the latest GoalRun.",
+    "evidence": [
+      {
+        "label": "ao2-weekend-hardening.goal-run.json",
+        "path": "examples/goals/ao2-weekend-hardening.goal-run.json",
+        "sha256": "4777f6ccb640707eab3e6ab731ac2dcf3b7a196e9aa307ccf0b45fd325429341"
+      }
+    ]
+  }
+}

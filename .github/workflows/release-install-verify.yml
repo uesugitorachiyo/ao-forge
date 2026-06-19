@@ -152,8 +152,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          assets="${AO_FORGE_INSTALL_VERIFY_OUT}/assets"
           "${AO_FORGE_INSTALL_VERIFY_OUT}/extract/linux/ao-forge" --help >/dev/null
-          "${AO_FORGE_INSTALL_VERIFY_OUT}/extract/linux/ao-forge" doctor --foundation docs/foundation/foundation-baseline.v0.1.json
+          "${AO_FORGE_INSTALL_VERIFY_OUT}/extract/linux/ao-forge" artifact verify-checksums --manifest "${assets}/checksums.txt"
           echo "linux_public_asset_install_smoke=passed"
 
       - name: Write install verification audit
@@ -212,6 +213,7 @@ jobs:
                   "linux_archive_extracted": True,
                   "darwin_archive_extracted": True,
                   "windows_archive_extracted": True,
+                  "installed_binary_checksum_verification": True,
                   "linux_binary_smoke_test": True,
               },
               "installed_assets": installed,

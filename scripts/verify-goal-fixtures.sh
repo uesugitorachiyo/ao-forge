@@ -35,6 +35,11 @@ while IFS= read -r invalid_goal_run; do
   invalid_goal_runs+=("$invalid_goal_run")
 done < <(find examples -type f -name '*.goal-run.invalid.json' | sort)
 
+invalid_path_goal_runs=()
+while IFS= read -r invalid_path_goal_run; do
+  invalid_path_goal_runs+=("$invalid_path_goal_run")
+done < <(find examples -type f -name '*.goal-run.path-invalid.json' | sort)
+
 if [[ "${#goal_runs[@]}" -eq 0 ]]; then
   echo "no GoalRun fixtures found under examples/" >&2
   exit 1
@@ -45,8 +50,53 @@ if [[ "${#update_audits[@]}" -eq 0 ]]; then
   exit 1
 fi
 
+lint_goal_run_evidence_paths() {
+  python3 - "$@" <<'PY'
+import json
+import pathlib
+import re
+import sys
+
+errors = []
+
+def evidence_items(document):
+    data = json.loads(pathlib.Path(document).read_text())
+    if document.endswith(".goal-run-update-audit.json"):
+        return data.get("evidence", [])
+    return data.get("last_iteration", {}).get("evidence", [])
+
+def rejected_reason(path):
+    normalized = path.replace("\\", "/")
+    if normalized.startswith(("/", "//")):
+        return "an absolute path"
+    if re.match(r"^[A-Za-z]:/", normalized):
+        return "an absolute path"
+    if normalized.startswith(("~/", "$HOME/", "${HOME}/")):
+        return "a home-directory path"
+    parts = [part for part in normalized.split("/") if part not in ("", ".")]
+    if parts and parts[0] == "..":
+        return "a parent traversal path"
+    if any(part in {"tmp", ".tmp", "temp"} for part in parts):
+        return "a temporary path"
+    return ""
+
+for document in sys.argv[1:]:
+    for index, evidence in enumerate(evidence_items(document)):
+        path = evidence.get("path", "")
+        reason = rejected_reason(path)
+        if reason:
+            errors.append(f"{document}: evidence[{index}].path {path!r} uses {reason}")
+
+if errors:
+    for error in errors:
+        print(error, file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
 for goal_run in "${goal_runs[@]}"; do
   "$forge_bin" goal validate --goal-run "$goal_run"
+  lint_goal_run_evidence_paths "$goal_run"
   "$forge_bin" goal evidence verify --goal-run "$goal_run"
   verify_json="$verify_dir/$(basename "$goal_run").evidence-verify.json"
   "$forge_bin" goal evidence verify --goal-run "$goal_run" --json > "$verify_json"
@@ -76,6 +126,7 @@ if [[ "$retained_evidence_count" -eq 0 ]]; then
 fi
 
 for update_audit in "${update_audits[@]}"; do
+  lint_goal_run_evidence_paths "$update_audit"
   "$forge_bin" contract validate \
     --schema docs/contracts/goal-run-update-audit-v0.1.schema.json \
     --document "$update_audit"
@@ -97,7 +148,16 @@ for invalid_goal_run in "${invalid_goal_runs[@]}"; do
     --document "$verify_json"
 done
 
+for invalid_path_goal_run in "${invalid_path_goal_runs[@]}"; do
+  "$forge_bin" goal validate --goal-run "$invalid_path_goal_run"
+  if lint_goal_run_evidence_paths "$invalid_path_goal_run"; then
+    echo "expected GoalRun evidence path policy fixture to fail: $invalid_path_goal_run" >&2
+    exit 1
+  fi
+done
+
 echo "goal_run_fixtures_validated=${#goal_runs[@]}"
 echo "goal_run_update_audits_validated=${#update_audits[@]}"
 echo "goal_run_invalid_fixtures_rejected=${#invalid_goal_runs[@]}"
+echo "goal_run_invalid_path_fixtures_rejected=${#invalid_path_goal_runs[@]}"
 echo "goal_run_retained_evidence_fixtures=${retained_evidence_count}"

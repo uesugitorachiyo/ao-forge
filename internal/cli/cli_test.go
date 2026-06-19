@@ -617,6 +617,9 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	retainedEvidenceGoalRunExample := readText("examples", "goals", "ao2-retained-evidence.goal-run.json")
 	retainedEvidenceArtifact := readText("docs", "evidence", "goals", "ao2-weekend-hardening", "20260619T143000Z-implementation", "ao2-pulse-handoff-retention-proof.json")
 	staleEvidenceGoalRunExample := readText("examples", "goals", "invalid", "stale-evidence.goal-run.invalid.json")
+	tmpEvidencePathGoalRunExample := readText("examples", "goals", "invalid", "tmp-evidence-path.goal-run.path-invalid.json")
+	absoluteEvidencePathGoalRunExample := readText("examples", "goals", "invalid", "absolute-evidence-path.goal-run.path-invalid.json")
+	homeEvidencePathGoalRunExample := readText("examples", "goals", "invalid", "home-evidence-path.goal-run.path-invalid.json")
 	briefSchema := readText("docs", "contracts", "factory-brief-v0.1.schema.json")
 	planSchema := readText("docs", "contracts", "factory-plan-v0.1.schema.json")
 	releasePreviewSchema := readText("docs", "contracts", "release-preview-audit-v0.1.schema.json")
@@ -652,6 +655,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "README goal evidence verify command", doc: readme, want: "forge goal evidence verify --goal-run examples/goals/ao2-pulse-handoff.goal-run.json"},
 		{name: "README goal evidence verify schema validate command", doc: readme, want: "forge contract validate --schema docs/contracts/goal-run-evidence-verify-v0.1.schema.json --document tmp/goal-run-evidence-verify.json"},
 		{name: "README goal evidence retained paths", doc: readme, want: "Persisted GoalRun evidence is retained under repository-relative durable paths"},
+		{name: "README goal evidence path lint", doc: readme, want: "The GoalRun fixture smoke rejects retained"},
 		{name: "README brief schema link", doc: readme, want: "[Factory Brief v0.1 Schema](docs/contracts/factory-brief-v0.1.schema.json)"},
 		{name: "README plan schema link", doc: readme, want: "[Factory Plan v0.1 Schema](docs/contracts/factory-plan-v0.1.schema.json)"},
 		{name: "README release preview schema link", doc: readme, want: "[Release Preview Audit v0.1 Schema](docs/contracts/release-preview-audit-v0.1.schema.json)"},
@@ -720,6 +724,10 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run docs cleanup reviewable", doc: goalRunDocs, want: "Cleanup must be reviewable"},
 		{name: "goal run docs retained fixture", doc: goalRunDocs, want: "examples/goals/ao2-retained-evidence.goal-run.json"},
 		{name: "goal run docs retained fixture smoke", doc: goalRunDocs, want: "fails if no positive GoalRun fixture uses that"},
+		{name: "goal run docs evidence path lint", doc: goalRunDocs, want: "lints every checked-in GoalRun and GoalRun update-audit"},
+		{name: "goal run docs tmp path fixture", doc: goalRunDocs, want: "examples/goals/invalid/tmp-evidence-path.goal-run.path-invalid.json"},
+		{name: "goal run docs absolute path fixture", doc: goalRunDocs, want: "examples/goals/invalid/absolute-evidence-path.goal-run.path-invalid.json"},
+		{name: "goal run docs home path fixture", doc: goalRunDocs, want: "examples/goals/invalid/home-evidence-path.goal-run.path-invalid.json"},
 		{name: "goal run docs update audit schema", doc: goalRunDocs, want: "docs/contracts/goal-run-update-audit-v0.1.schema.json"},
 		{name: "goal run docs update audit validate command", doc: goalRunDocs, want: "forge contract validate"},
 		{name: "goal run docs AO2 Pulse link", doc: goalRunDocs, want: "docs/design/AO2-PULSE-GOAL-RUN-LOOP.md"},
@@ -746,6 +754,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "AO2 Pulse docs handoff audit", doc: ao2PulseGoalRunLoopDocs, want: "examples/goals/ao2-pulse-handoff.goal-run-update-audit.json"},
 		{name: "AO2 Pulse docs retained fixture", doc: ao2PulseGoalRunLoopDocs, want: "examples/goals/ao2-retained-evidence.goal-run.json"},
 		{name: "AO2 Pulse docs retained smoke", doc: ao2PulseGoalRunLoopDocs, want: "one positive GoalRun fixture uses the retained evidence layout"},
+		{name: "AO2 Pulse docs evidence path fixtures", doc: ao2PulseGoalRunLoopDocs, want: "path-policy fixtures under `examples/goals/invalid/`"},
 		{name: "AO2 Pulse docs stale fixture", doc: ao2PulseGoalRunLoopDocs, want: "examples/goals/invalid/stale-evidence.goal-run.invalid.json"},
 		{name: "AO2 Pulse docs audit validate command", doc: ao2PulseGoalRunLoopDocs, want: "docs/contracts/goal-run-update-audit-v0.1.schema.json"},
 		{name: "AO2 Pulse docs candidate validate", doc: ao2PulseGoalRunLoopDocs, want: "forge goal validate --goal-run tmp/ao2-weekend-hardening.goal-run.json"},
@@ -772,6 +781,12 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "stale evidence fixture schema valid", doc: staleEvidenceGoalRunExample, want: `"schema_version": "ao.forge.goal-run.v0.1"`},
 		{name: "stale evidence fixture stale hash", doc: staleEvidenceGoalRunExample, want: `"sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"`},
 		{name: "stale evidence fixture summary", doc: staleEvidenceGoalRunExample, want: "intentionally stale and must fail closed"},
+		{name: "tmp evidence path fixture schema valid", doc: tmpEvidencePathGoalRunExample, want: `"schema_version": "ao.forge.goal-run.v0.1"`},
+		{name: "tmp evidence path fixture path", doc: tmpEvidencePathGoalRunExample, want: `"path": "tmp/ao-forge-goal-evidence/tmp-local-evidence.json"`},
+		{name: "absolute evidence path fixture schema valid", doc: absoluteEvidencePathGoalRunExample, want: `"schema_version": "ao.forge.goal-run.v0.1"`},
+		{name: "absolute evidence path fixture path", doc: absoluteEvidencePathGoalRunExample, want: `"path": "/tmp/ao-forge-goal-evidence/absolute-local-evidence.json"`},
+		{name: "home evidence path fixture schema valid", doc: homeEvidencePathGoalRunExample, want: `"schema_version": "ao.forge.goal-run.v0.1"`},
+		{name: "home evidence path fixture path", doc: homeEvidencePathGoalRunExample, want: `"path": "~/ao-forge-goal-evidence/home-local-evidence.json"`},
 		{name: "brief schema id", doc: briefSchema, want: `"ao.forge.factory-brief.v0.1"`},
 		{name: "brief strict root", doc: briefSchema, want: `"additionalProperties": false`},
 		{name: "brief objective", doc: briefSchema, want: `"objective"`},
@@ -1778,8 +1793,14 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		{name: "goal fixture verifier goal validate", doc: goalFixtureVerifier, want: "goal validate --goal-run"},
 		{name: "goal fixture verifier evidence verify", doc: goalFixtureVerifier, want: "goal evidence verify --goal-run"},
 		{name: "goal fixture verifier invalid glob", doc: goalFixtureVerifier, want: "*.goal-run.invalid.json"},
+		{name: "goal fixture verifier path invalid glob", doc: goalFixtureVerifier, want: "*.goal-run.path-invalid.json"},
 		{name: "goal fixture verifier stale failure", doc: goalFixtureVerifier, want: "expected stale GoalRun evidence fixture to fail"},
+		{name: "goal fixture verifier path policy failure", doc: goalFixtureVerifier, want: "expected GoalRun evidence path policy fixture to fail"},
 		{name: "goal fixture verifier rejected count", doc: goalFixtureVerifier, want: "goal_run_invalid_fixtures_rejected"},
+		{name: "goal fixture verifier path rejected count", doc: goalFixtureVerifier, want: "goal_run_invalid_path_fixtures_rejected"},
+		{name: "goal fixture verifier rejects temp path", doc: goalFixtureVerifier, want: "temporary path"},
+		{name: "goal fixture verifier rejects absolute path", doc: goalFixtureVerifier, want: "absolute path"},
+		{name: "goal fixture verifier rejects home path", doc: goalFixtureVerifier, want: "home-directory path"},
 		{name: "goal fixture verifier retained layout", doc: goalFixtureVerifier, want: "docs/evidence/goals/"},
 		{name: "goal fixture verifier retained count", doc: goalFixtureVerifier, want: "goal_run_retained_evidence_fixtures"},
 		{name: "goal fixture verifier audit validate", doc: goalFixtureVerifier, want: "goal-run-update-audit-v0.1.schema.json"},

@@ -1503,6 +1503,7 @@ func TestReleaseRollbackWorkflowGuardsReleaseYankActions(t *testing.T) {
 		"push:",
 		"pull_request:",
 		"permissions:\n  actions: read\n  contents: write",
+		"AO_FORGE_ROLLBACK_OUT: ${{ runner.temp }}",
 		"gh release delete",
 		"gh release upload",
 		"gh release create",

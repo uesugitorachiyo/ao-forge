@@ -146,6 +146,11 @@ jobs:
             --name release-rollback-audit \
             --dir "${AO_FORGE_PROMOTION_OUT}/rollback"
 
+      - name: Validate rollback audit contract
+        run: |
+          set -euo pipefail
+          "${RUNNER_TEMP}/forge" contract validate --schema docs/contracts/release-rollback-audit-v0.1.schema.json --document "${AO_FORGE_PROMOTION_OUT}/rollback/release-rollback-audit.json"
+
       - name: Validate production-stable criteria
         shell: bash
         run: |

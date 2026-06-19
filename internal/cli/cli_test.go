@@ -132,6 +132,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	releaseAttestationPlanSchema := readText("docs", "contracts", "release-attestation-plan-v0.1.schema.json")
 	releaseEvidenceBundleSchema := readText("docs", "contracts", "release-evidence-bundle-v0.1.schema.json")
 	releaseInstallVerifyAuditSchema := readText("docs", "contracts", "release-install-verify-audit-v0.1.schema.json")
+	releaseRollbackAuditSchema := readText("docs", "contracts", "release-rollback-audit-v0.1.schema.json")
 	productionPromotionAuditSchema := readText("docs", "contracts", "production-promotion-audit-v0.1.schema.json")
 
 	for _, check := range []struct {
@@ -147,6 +148,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "README release attestation plan schema link", doc: readme, want: "[Release Attestation Plan v0.1 Schema](docs/contracts/release-attestation-plan-v0.1.schema.json)"},
 		{name: "README release evidence bundle schema link", doc: readme, want: "[Release Evidence Bundle v0.1 Schema](docs/contracts/release-evidence-bundle-v0.1.schema.json)"},
 		{name: "README release install verify audit schema link", doc: readme, want: "[Release Install Verify Audit v0.1 Schema](docs/contracts/release-install-verify-audit-v0.1.schema.json)"},
+		{name: "README release rollback audit schema link", doc: readme, want: "[Release Rollback Audit v0.1 Schema](docs/contracts/release-rollback-audit-v0.1.schema.json)"},
 		{name: "README production promotion audit schema link", doc: readme, want: "[Production Promotion Audit v0.1 Schema](docs/contracts/production-promotion-audit-v0.1.schema.json)"},
 		{name: "brief schema id", doc: briefSchema, want: `"ao.forge.factory-brief.v0.1"`},
 		{name: "brief strict root", doc: briefSchema, want: `"additionalProperties": false`},
@@ -196,6 +198,11 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "release install verify audit checks", doc: releaseInstallVerifyAuditSchema, want: `"installed_binary_checksum_verification"`},
 		{name: "release install verify audit installed assets", doc: releaseInstallVerifyAuditSchema, want: `"installed_assets"`},
 		{name: "release install verify audit checksum pattern", doc: releaseInstallVerifyAuditSchema, want: `"^[a-f0-9]{64}$"`},
+		{name: "release rollback audit schema id", doc: releaseRollbackAuditSchema, want: `"ao.forge.release-rollback-audit.v0.1"`},
+		{name: "release rollback audit strict root", doc: releaseRollbackAuditSchema, want: `"additionalProperties": false`},
+		{name: "release rollback audit action", doc: releaseRollbackAuditSchema, want: `"rollback_action"`},
+		{name: "release rollback audit release before", doc: releaseRollbackAuditSchema, want: `"release_before"`},
+		{name: "release rollback audit operator rules", doc: releaseRollbackAuditSchema, want: `"operator_rules"`},
 		{name: "production promotion audit schema id", doc: productionPromotionAuditSchema, want: `"ao.forge.production-promotion-audit.v0.1"`},
 		{name: "production promotion audit strict root", doc: productionPromotionAuditSchema, want: `"additionalProperties": false`},
 		{name: "production promotion audit evidence runs", doc: productionPromotionAuditSchema, want: `"evidence_runs"`},
@@ -219,6 +226,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "release attestation plan schema", text: releaseAttestationPlanSchema},
 		{name: "release evidence bundle schema", text: releaseEvidenceBundleSchema},
 		{name: "release install verify audit schema", text: releaseInstallVerifyAuditSchema},
+		{name: "release rollback audit schema", text: releaseRollbackAuditSchema},
 		{name: "production promotion audit schema", text: productionPromotionAuditSchema},
 	} {
 		var decoded any
@@ -280,6 +288,7 @@ func TestReleaseEvidenceBundleContractDocumentsSignedBundle(t *testing.T) {
 func TestReleaseAuditContractsValidateWorkflowEvidence(t *testing.T) {
 	root := repoRoot(t)
 	installSchema := filepath.Join(root, "docs", "contracts", "release-install-verify-audit-v0.1.schema.json")
+	rollbackSchema := filepath.Join(root, "docs", "contracts", "release-rollback-audit-v0.1.schema.json")
 	promotionSchema := filepath.Join(root, "docs", "contracts", "production-promotion-audit-v0.1.schema.json")
 	tmp := t.TempDir()
 
@@ -319,6 +328,42 @@ func TestReleaseAuditContractsValidateWorkflowEvidence(t *testing.T) {
 	installDoc := filepath.Join(tmp, "release-install-verify-audit.json")
 	if err := os.WriteFile(installDoc, installAudit, 0o600); err != nil {
 		t.Fatalf("write install audit sample: %v", err)
+	}
+
+	rollbackAudit := []byte(`{
+  "schema_version": "ao.forge.release-rollback-audit.v0.1",
+  "tag": "v0.1.0",
+  "rollback_action": "audit-only",
+  "reason": "production readiness audit",
+  "repository": "uesugitorachiyo/ao-forge",
+  "workflow": {
+    "name": "Release Rollback",
+    "path": ".github/workflows/release-rollback.yml",
+    "ref": "refs/heads/main",
+    "run_id": "27797586190",
+    "run_attempt": "1"
+  },
+  "release_before": {
+    "tag_name": "v0.1.0",
+    "target_commitish": "4291e2adf4169dc6adbe9b17317715e572dc912b",
+    "is_draft": false,
+    "is_prerelease": false,
+    "published_at": "2026-06-18T23:37:16Z",
+    "url": "https://github.com/uesugitorachiyo/ao-forge/releases/tag/v0.1.0",
+    "asset_names": [
+      "ao-forge_Linux_x86_64.tar.gz",
+      "checksums.txt"
+    ]
+  },
+  "operator_rules": [
+    "Never delete release evidence",
+    "Do not replace release assets in rollback",
+    "Use a corrective tag when artifacts or checksums changed"
+  ]
+}`)
+	rollbackDoc := filepath.Join(tmp, "release-rollback-audit.json")
+	if err := os.WriteFile(rollbackDoc, rollbackAudit, 0o600); err != nil {
+		t.Fatalf("write rollback audit sample: %v", err)
 	}
 
 	promotionAudit := []byte(`{
@@ -391,6 +436,7 @@ func TestReleaseAuditContractsValidateWorkflowEvidence(t *testing.T) {
 		document string
 	}{
 		{name: "release install verify audit", schema: installSchema, document: installDoc},
+		{name: "release rollback audit", schema: rollbackSchema, document: rollbackDoc},
 		{name: "production promotion audit", schema: promotionSchema, document: promotionDoc},
 	} {
 		code, stdout, stderr := runCLI("contract", "validate", "--schema", tc.schema, "--document", tc.document)
@@ -1432,6 +1478,8 @@ func TestReleaseRollbackWorkflowGuardsReleaseYankActions(t *testing.T) {
 		{name: "preserve evidence", doc: workflow, want: "Never delete release evidence"},
 		{name: "no silent replacement", doc: workflow, want: "Do not replace release assets in rollback"},
 		{name: "audit file", doc: workflow, want: "release-rollback-audit.json"},
+		{name: "audit contract", doc: workflow, want: "release-rollback-audit-v0.1.schema.json"},
+		{name: "audit contract validation", doc: workflow, want: `contract validate --schema docs/contracts/release-rollback-audit-v0.1.schema.json --document "${AO_FORGE_ROLLBACK_OUT}/release-rollback-audit.json"`},
 		{name: "append correction note", doc: workflow, want: "Append rollback correction note"},
 		{name: "prerelease mutation", doc: workflow, want: "gh release edit \"${AO_FORGE_ROLLBACK_TAG}\" --prerelease=true"},
 		{name: "draft mutation", doc: workflow, want: "gh release edit \"${AO_FORGE_ROLLBACK_TAG}\" --draft=true"},
@@ -1581,6 +1629,7 @@ func TestProductionPromotionWorkflowDefinesStableCriteria(t *testing.T) {
 		{name: "verify run metadata", doc: workflow, want: "Read evidence workflow runs"},
 		{name: "install verify run metadata", doc: workflow, want: "release-install-verify-run.json"},
 		{name: "download rollback evidence", doc: workflow, want: "release-rollback-audit"},
+		{name: "rollback audit contract validation", doc: workflow, want: `contract validate --schema docs/contracts/release-rollback-audit-v0.1.schema.json --document "${AO_FORGE_PROMOTION_OUT}/rollback/release-rollback-audit.json"`},
 		{name: "criteria validation", doc: workflow, want: "Validate production-stable criteria"},
 		{name: "verify workflow required", doc: workflow, want: "Release Verify"},
 		{name: "install verify workflow required", doc: workflow, want: "Release Install Verify"},

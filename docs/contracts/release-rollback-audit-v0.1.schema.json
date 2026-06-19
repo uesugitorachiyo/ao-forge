@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/uesugitorachiyo/ao-forge/docs/contracts/release-rollback-audit-v0.1.schema.json",
+  "title": "AO Forge Release Rollback Audit v0.1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "tag",
+    "rollback_action",
+    "reason",
+    "repository",
+    "workflow",
+    "release_before",
+    "operator_rules"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "ao.forge.release-rollback-audit.v0.1"
+    },
+    "tag": {
+      "type": "string",
+      "pattern": "^v.+"
+    },
+    "rollback_action": {
+      "type": "string",
+      "enum": ["audit-only", "mark-prerelease", "mark-draft"]
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    },
+    "repository": {
+      "type": "string",
+      "minLength": 1
+    },
+    "workflow": {
+      "type": "object",
+      "required": ["name", "path", "ref", "run_id", "run_attempt"],
+      "properties": {
+        "name": {
+          "const": "Release Rollback"
+        },
+        "path": {
+          "const": ".github/workflows/release-rollback.yml"
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "run_id": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        },
+        "run_attempt": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "release_before": {
+      "type": "object",
+      "required": [
+        "tag_name",
+        "target_commitish",
+        "is_draft",
+        "is_prerelease",
+        "published_at",
+        "url",
+        "asset_names"
+      ],
+      "properties": {
+        "tag_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target_commitish": {
+          "type": "string",
+          "minLength": 1
+        },
+        "is_draft": {
+          "type": "boolean"
+        },
+        "is_prerelease": {
+          "type": "boolean"
+        },
+        "published_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "asset_names": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "operator_rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "additionalProperties": false
+}

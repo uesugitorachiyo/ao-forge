@@ -198,7 +198,6 @@ jobs:
       REQUESTED_ROLLBACK_ACTION: ${{ github.event.inputs.rollback_action }}
       ROLLBACK_REASON: ${{ github.event.inputs.reason }}
       CONFIRM_ROLLBACK: ${{ github.event.inputs.confirm_rollback }}
-      AO_FORGE_ROLLBACK_OUT: ${{ runner.temp }}/ao-forge-release-rollback-mutation
 
     steps:
       - name: Resolve mutation request
@@ -230,9 +229,11 @@ jobs:
             exit 1
           fi
 
-          mkdir -p "${AO_FORGE_ROLLBACK_OUT}"
+          out="${RUNNER_TEMP}/ao-forge-release-rollback-mutation"
+          mkdir -p "${out}"
           echo "AO_FORGE_ROLLBACK_TAG=$tag" >> "$GITHUB_ENV"
           echo "AO_FORGE_ROLLBACK_ACTION=$action" >> "$GITHUB_ENV"
+          echo "AO_FORGE_ROLLBACK_OUT=$out" >> "$GITHUB_ENV"
 
       - name: Read release metadata before mutation
         env:

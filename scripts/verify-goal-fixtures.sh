@@ -40,6 +40,11 @@ while IFS= read -r invalid_path_goal_run; do
   invalid_path_goal_runs+=("$invalid_path_goal_run")
 done < <(find examples -type f -name '*.goal-run.path-invalid.json' | sort)
 
+invalid_path_update_audits=()
+while IFS= read -r invalid_path_update_audit; do
+  invalid_path_update_audits+=("$invalid_path_update_audit")
+done < <(find examples -type f -name '*.goal-run-update-audit.path-invalid.json' | sort)
+
 if [[ "${#goal_runs[@]}" -eq 0 ]]; then
   echo "no GoalRun fixtures found under examples/" >&2
   exit 1
@@ -130,8 +135,27 @@ for invalid_path_goal_run in "${invalid_path_goal_runs[@]}"; do
     --document "$lint_json"
 done
 
+for invalid_path_update_audit in "${invalid_path_update_audits[@]}"; do
+  "$forge_bin" contract validate \
+    --schema docs/contracts/goal-run-update-audit-v0.1.schema.json \
+    --document "$invalid_path_update_audit"
+  if "$forge_bin" goal evidence lint --update-audit "$invalid_path_update_audit"; then
+    echo "expected GoalRun update-audit evidence path policy fixture to fail: $invalid_path_update_audit" >&2
+    exit 1
+  fi
+  lint_json="$verify_dir/$(basename "$invalid_path_update_audit").evidence-lint.json"
+  if "$forge_bin" goal evidence lint --update-audit "$invalid_path_update_audit" --json > "$lint_json"; then
+    echo "expected GoalRun update-audit evidence path policy JSON fixture to fail: $invalid_path_update_audit" >&2
+    exit 1
+  fi
+  "$forge_bin" contract validate \
+    --schema docs/contracts/goal-run-evidence-lint-v0.1.schema.json \
+    --document "$lint_json"
+done
+
 echo "goal_run_fixtures_validated=${#goal_runs[@]}"
 echo "goal_run_update_audits_validated=${#update_audits[@]}"
 echo "goal_run_invalid_fixtures_rejected=${#invalid_goal_runs[@]}"
 echo "goal_run_invalid_path_fixtures_rejected=${#invalid_path_goal_runs[@]}"
+echo "goal_run_update_audit_invalid_path_fixtures_rejected=${#invalid_path_update_audits[@]}"
 echo "goal_run_retained_evidence_fixtures=${retained_evidence_count}"

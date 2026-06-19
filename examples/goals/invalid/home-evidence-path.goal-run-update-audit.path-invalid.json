@@ -1,0 +1,28 @@
+{
+  "audit_schema_version": "ao.forge.goal-run-update-audit.v0.1",
+  "goal_run": "examples/goals/ao2-weekend-hardening.goal-run.json",
+  "out": "examples/goals/ao2-pulse-handoff.goal-run.json",
+  "goal_id": "ao2-weekend-hardening",
+  "previous_phase": "planning",
+  "current_phase": "implementation",
+  "phase_transition": "planning->implementation",
+  "updated_fields": [
+    "current_phase",
+    "next_task",
+    "last_verified_at",
+    "last_iteration.status",
+    "last_iteration.summary",
+    "last_iteration.evidence"
+  ],
+  "last_verified_at": "2026-06-19T14:30:00Z",
+  "last_iteration_status": "passed",
+  "last_iteration_summary": "Negative fixture: home-directory evidence paths must not be retained in GoalRun update audits.",
+  "evidence": [
+    {
+      "label": "home-local-evidence.json",
+      "path": "~/ao-forge-goal-evidence/home-local-evidence.json",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "status": "updated"
+}

@@ -66,6 +66,7 @@ over provider execution, release publishing, or control-plane approval.
 - [Release Artifact Inventory v0.1 Schema](docs/contracts/release-artifact-inventory-v0.1.schema.json)
 - [Release Attestation Plan v0.1 Schema](docs/contracts/release-attestation-plan-v0.1.schema.json)
 - [Release Evidence Bundle v0.1 Schema](docs/contracts/release-evidence-bundle-v0.1.schema.json)
+- [Release Verify Audit v0.1 Schema](docs/contracts/release-verify-audit-v0.1.schema.json)
 - [Release Install Verify Audit v0.1 Schema](docs/contracts/release-install-verify-audit-v0.1.schema.json)
 - [Release Rollback Audit v0.1 Schema](docs/contracts/release-rollback-audit-v0.1.schema.json)
 - [Production Promotion Audit v0.1 Schema](docs/contracts/production-promotion-audit-v0.1.schema.json)
@@ -233,6 +234,8 @@ archive attestations, the release evidence bundle, bundle attestation, and a
 host-compatible binary smoke test. Future releases require both the evidence
 bundle and a signed annotated release tag by default; use explicit legacy
 overrides only for releases published before those controls existed.
+It uploads `release-verify-audit.json` so promotion can validate the exact
+post-release controls used for the tag.
 Signed release tags must be made by an active signer in
 `RELEASE-SIGNERS.json`; the public keys live under `docs/release/signers/` and
 are imported by the release workflows before tag verification.
@@ -253,10 +256,12 @@ releases, tags, assets, or evidence.
 
 The `Production Promotion` workflow is the read-only gate for production-stable
 release language. It requires a successful `Release Verify` run, a successful
-`Release Install Verify` run with contract-valid install audit evidence for the
-same release, a successful `Release Rollback` audit-only run, rollback evidence
-proving mutation-relevant release fields stayed unchanged, and a completed soak
-window before it uploads `production-promotion-audit.json`.
+`Release Verify` run with contract-valid verify audit evidence proving default
+signed-tag and evidence-bundle controls, a successful `Release Install Verify`
+run with contract-valid install audit evidence for the same release, a
+successful `Release Rollback` audit-only run, rollback evidence proving
+mutation-relevant release fields stayed unchanged, and a completed soak window
+before it uploads `production-promotion-audit.json`.
 Until that audit passes, releases should stay described as public-preview or
 candidate releases.
 

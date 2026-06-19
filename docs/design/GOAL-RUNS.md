@@ -120,6 +120,18 @@ fails if an artifact is missing, has no recorded hash, or no longer matches the
 recorded hash. JSON output uses
 `ao.forge.goal-run-evidence-verify.v0.1` and must validate against the evidence
 verification schema before AO2 Pulse treats it as durable loop evidence.
+
+Lint retained evidence paths before preserving a GoalRun or update audit:
+
+```sh
+forge goal evidence lint --goal-run examples/goals/ao2-retained-evidence.goal-run.json
+forge goal evidence lint --update-audit examples/goals/ao2-pulse-handoff.goal-run-update-audit.json
+```
+
+The linter validates the source document schema, then rejects persisted evidence
+paths under `tmp/`, `/tmp/`, home directories, parent traversal, or
+machine-local absolute paths.
+
 The negative fixture
 `examples/goals/invalid/stale-evidence.goal-run.invalid.json` is schema-valid
 but intentionally records a stale evidence hash; CI must reject it through
@@ -165,10 +177,9 @@ for this policy. Its retained artifact lives under `docs/evidence/goals/`, and
 `scripts/verify-goal-fixtures.sh` fails if no positive GoalRun fixture uses that
 durable layout.
 
-The same fixture smoke lints every checked-in GoalRun and GoalRun update-audit
-evidence path. It rejects retained evidence under `tmp/`, `/tmp/`, home
-directories, parent traversal, or machine-local absolute paths. The checked-in
-negative fixtures are:
+The same fixture smoke runs `forge goal evidence lint` against every checked-in
+GoalRun and GoalRun update-audit evidence path. The checked-in negative fixtures
+are:
 
 - `examples/goals/invalid/tmp-evidence-path.goal-run.path-invalid.json`
 - `examples/goals/invalid/absolute-evidence-path.goal-run.path-invalid.json`

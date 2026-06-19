@@ -30,7 +30,6 @@ jobs:
       RELEASE_EVENT_TAG: ${{ github.event.release.tag_name }}
       REQUESTED_VERIFY_TAG: ${{ github.event.inputs.tag }}
       REQUIRE_EVIDENCE_BUNDLE_INPUT: ${{ github.event.inputs.require_evidence_bundle }}
-      AO_FORGE_RELEASE_VERIFY_DIR: ${{ runner.temp }}/ao-forge-release-verify
 
     steps:
       - name: Checkout
@@ -72,6 +71,7 @@ jobs:
 
           echo "AO_FORGE_RELEASE_VERIFY_TAG=$tag" >> "$GITHUB_ENV"
           echo "AO_FORGE_REQUIRE_EVIDENCE_BUNDLE=$require_bundle" >> "$GITHUB_ENV"
+          echo "AO_FORGE_RELEASE_VERIFY_DIR=${RUNNER_TEMP}/ao-forge-release-verify" >> "$GITHUB_ENV"
           echo "tag=$tag" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Read published release metadata

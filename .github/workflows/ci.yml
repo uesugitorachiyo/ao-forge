@@ -30,6 +30,23 @@ jobs:
       - name: Actionlint
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= -pyflakes= .github/workflows/*.yml
 
+  goal-fixtures:
+    name: GoalRun fixture smoke
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Validate GoalRun fixtures
+        run: scripts/verify-goal-fixtures.sh
+
   go:
     name: Go ${{ matrix.os }}
     runs-on: ${{ matrix.os }}

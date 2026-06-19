@@ -1564,6 +1564,7 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 	runbook := readText("docs", "release", "BRANCH-PROTECTION.md")
 	evidence := readText("docs", "release", "BRANCH-PROTECTION-EVIDENCE.md")
 	verifier := readText("scripts", "verify-branch-protection.sh")
+	goalFixtureVerifier := readText("scripts", "verify-goal-fixtures.sh")
 	ciWorkflow := readText(".github", "workflows", "ci.yml")
 
 	for _, check := range []struct {
@@ -1602,9 +1603,16 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		{name: "verifier gh api protection", doc: verifier, want: "branches/${branch}/protection"},
 		{name: "verifier gh api rulesets", doc: verifier, want: "repos/${repository}/rulesets"},
 		{name: "verifier required release preview", doc: verifier, want: "Release preview dry-run audit"},
+		{name: "goal fixture verifier goal run glob", doc: goalFixtureVerifier, want: "*.goal-run.json"},
+		{name: "goal fixture verifier update audit glob", doc: goalFixtureVerifier, want: "*.goal-run-update-audit.json"},
+		{name: "goal fixture verifier goal validate", doc: goalFixtureVerifier, want: "goal validate --goal-run"},
+		{name: "goal fixture verifier audit validate", doc: goalFixtureVerifier, want: "goal-run-update-audit-v0.1.schema.json"},
 		{name: "ci actionlint job", doc: ciWorkflow, want: "workflow-lint:"},
 		{name: "ci actionlint name", doc: ciWorkflow, want: "name: Workflow lint"},
 		{name: "ci actionlint command", doc: ciWorkflow, want: "go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= -pyflakes= .github/workflows/*.yml"},
+		{name: "ci goal fixture job", doc: ciWorkflow, want: "goal-fixtures:"},
+		{name: "ci goal fixture name", doc: ciWorkflow, want: "name: GoalRun fixture smoke"},
+		{name: "ci goal fixture command", doc: ciWorkflow, want: "scripts/verify-goal-fixtures.sh"},
 	} {
 		if !strings.Contains(check.doc, check.want) {
 			t.Fatalf("%s missing %q", check.name, check.want)

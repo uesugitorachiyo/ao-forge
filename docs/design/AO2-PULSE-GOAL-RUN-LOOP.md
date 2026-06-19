@@ -137,13 +137,19 @@ preserve after a successful iteration:
 - `examples/goals/ao2-retained-evidence.goal-run.json` shows a GoalRun whose
   retained evidence path is durable and repository-relative under
   `docs/evidence/goals/`.
+- `docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/goal-run-readiness-audit.json`
+  is the retained readiness audit AO2 Pulse should preserve before continuing
+  from `implementation` to `verification`.
 
 CI runs `scripts/verify-goal-fixtures.sh` to validate every checked-in GoalRun
 and GoalRun update-audit fixture, and to verify every recorded GoalRun evidence
 hash, including this handoff pair. The same smoke test also verifies that
 `scripts/ao2-pulse-goal-readiness.sh` produces schema-valid readiness audit JSON
 for positive fixtures and fails closed while preserving failed readiness JSON for
-negative fixtures. The same smoke test verifies that
+negative fixtures. It validates retained readiness audit JSON under
+`docs/evidence/goals/` against
+`docs/contracts/goal-run-readiness-audit-v0.1.schema.json`. The same smoke test
+verifies that
 `examples/goals/invalid/stale-evidence.goal-run.invalid.json` fails closed when
 its recorded evidence hash does not match the artifact bytes, and that at least
 one positive GoalRun fixture uses the retained evidence layout. It also runs

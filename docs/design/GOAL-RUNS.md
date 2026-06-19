@@ -196,6 +196,10 @@ for this policy. Its retained artifact lives under `docs/evidence/goals/`, and
 durable layout. The same fixture smoke validates every retained artifact JSON
 under `docs/evidence/goals/` against
 `docs/contracts/goal-run-retained-evidence-v0.1.schema.json`.
+Retained readiness audit JSON, such as
+`docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/goal-run-readiness-audit.json`,
+is validated separately against
+`docs/contracts/goal-run-readiness-audit-v0.1.schema.json`.
 Retained artifacts must include machine-readable retention metadata: when the
 artifact was retained, its retention class, whether it must be retained while
 the GoalRun is active, and the review fields a cleanup change must name.

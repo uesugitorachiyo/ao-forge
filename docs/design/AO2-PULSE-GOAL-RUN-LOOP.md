@@ -118,7 +118,9 @@ and GoalRun update-audit fixture, and to verify every recorded GoalRun evidence
 hash, including this handoff pair. The same smoke test also verifies that
 `examples/goals/invalid/stale-evidence.goal-run.invalid.json` fails closed when
 its recorded evidence hash does not match the artifact bytes, and that at least
-one positive GoalRun fixture uses the retained evidence layout.
+one positive GoalRun fixture uses the retained evidence layout. It also rejects
+the path-policy fixtures under `examples/goals/invalid/` that record retained
+evidence in `tmp/`, `/tmp/`, or a home-directory path.
 
 ## Stop And Backoff
 

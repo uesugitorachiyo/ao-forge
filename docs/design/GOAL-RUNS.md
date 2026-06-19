@@ -165,6 +165,15 @@ for this policy. Its retained artifact lives under `docs/evidence/goals/`, and
 `scripts/verify-goal-fixtures.sh` fails if no positive GoalRun fixture uses that
 durable layout.
 
+The same fixture smoke lints every checked-in GoalRun and GoalRun update-audit
+evidence path. It rejects retained evidence under `tmp/`, `/tmp/`, home
+directories, parent traversal, or machine-local absolute paths. The checked-in
+negative fixtures are:
+
+- `examples/goals/invalid/tmp-evidence-path.goal-run.path-invalid.json`
+- `examples/goals/invalid/absolute-evidence-path.goal-run.path-invalid.json`
+- `examples/goals/invalid/home-evidence-path.goal-run.path-invalid.json`
+
 Retention rules:
 
 - Keep evidence for any non-terminal GoalRun while the loop may continue.

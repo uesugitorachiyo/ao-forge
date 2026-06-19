@@ -239,11 +239,11 @@ summary = json.loads(pathlib.Path(sys.argv[1]).read_text())
 expected = {
     "status": "passed",
     "mode": "dry-run",
-    "artifacts_scanned": 3,
+    "artifacts_scanned": 4,
     "eligible_artifacts": 1,
-    "protected_artifacts": 2,
+    "protected_artifacts": 3,
     "failed_artifacts": 0,
-    "public_provenance_excluded": 1,
+    "public_provenance_excluded": 2,
     "active_goal_excluded": 1,
 }
 for key, value in expected.items():
@@ -259,8 +259,11 @@ public_provenance = [
     audit for audit in summary.get("retention_audits", [])
     if audit.get("cleanup_review_status") == "not_eligible_public_provenance"
 ]
-if len(public_provenance) != 1:
-    raise SystemExit(f"expected exactly one public provenance exclusion, got {len(public_provenance)}")
+if len(public_provenance) != 2:
+    raise SystemExit(f"expected exactly two public provenance exclusions, got {len(public_provenance)}")
+classes = {audit.get("retention_class") for audit in public_provenance}
+if classes != {"release_provenance", "promotion_provenance"}:
+    raise SystemExit(f"public provenance cleanup exclusions drifted: {sorted(classes)}")
 PY
 
 for retained_readiness_audit in "${retained_readiness_audits[@]}"; do

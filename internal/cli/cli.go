@@ -6994,7 +6994,7 @@ func productionReadinessGateSpecs() []productionReadinessGateSpec {
 			GateID:   "goalrun.evidence_retention",
 			Category: "goalrun",
 			Summary:  "retained evidence policy includes cleanup dry-run plus release/promotion provenance protection",
-			Evidence: []string{"docs/contracts/goal-run-retained-evidence-v0.1.schema.json", "docs/contracts/goal-run-retained-evidence-audit-v0.1.schema.json", "docs/contracts/goal-run-retained-evidence-cleanup-v0.1.schema.json", "docs/evidence/goals/ao2-weekend-hardening/20260101T000000Z-complete/release-provenance-retention-proof.json"},
+			Evidence: []string{"docs/contracts/goal-run-retained-evidence-v0.1.schema.json", "docs/contracts/goal-run-retained-evidence-audit-v0.1.schema.json", "docs/contracts/goal-run-retained-evidence-cleanup-v0.1.schema.json", "docs/evidence/goals/ao2-weekend-hardening/20260101T000000Z-complete/release-provenance-retention-proof.json", "docs/evidence/goals/ao2-weekend-hardening/20260101T020000Z-complete/promotion-provenance-retention-proof.json"},
 			Requires: []productionReadinessRequirement{
 				{Path: "docs/contracts/goal-run-retained-evidence-v0.1.schema.json", Pattern: "release_provenance"},
 				{Path: "docs/contracts/goal-run-retained-evidence-v0.1.schema.json", Pattern: "promotion_provenance"},
@@ -7004,6 +7004,7 @@ func productionReadinessGateSpecs() []productionReadinessGateSpec {
 				{Path: "scripts/verify-goal-fixtures.sh", Pattern: "goal evidence cleanup"},
 				{Path: "scripts/verify-goal-fixtures.sh", Pattern: "not_eligible_public_provenance"},
 				{Path: "docs/evidence/goals/ao2-weekend-hardening/20260101T000000Z-complete/release-provenance-retention-proof.json", Pattern: `"retention_class": "release_provenance"`},
+				{Path: "docs/evidence/goals/ao2-weekend-hardening/20260101T020000Z-complete/promotion-provenance-retention-proof.json", Pattern: `"retention_class": "promotion_provenance"`},
 				{Path: "docs/evidence/goals/ao2-weekend-hardening/20260101T010000Z-complete/old-loop-retention-proof.json", Pattern: `"retention_class": "loop_evidence"`},
 			},
 		},

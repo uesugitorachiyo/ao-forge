@@ -26,6 +26,11 @@ Run the `Production Promotion` workflow manually with:
 - `release_rollback_audit_run_id`: the successful `Release Rollback` audit-only
   run ID;
 - `min_soak_hours`: the minimum published-release soak window;
+- `confirm_default_release_verify=true`: confirms the Release Verify run did not
+  use legacy overrides such as `require_signed_tag=false` or
+  `require_evidence_bundle=false`;
+- `confirm_no_known_blockers=true`: confirms there are no known severity-high or
+  severity-critical blockers for the release;
 - `confirm_promotion_audit=true`.
 
 The workflow is read-only. It must not publish releases, edit notes, move tags,

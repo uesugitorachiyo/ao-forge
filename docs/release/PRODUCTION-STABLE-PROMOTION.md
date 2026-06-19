@@ -11,6 +11,7 @@ Before running promotion audit, collect:
 - the published release tag;
 - a successful `Release Verify` run for the same tag, using default
   `require_evidence_bundle=true` and `require_signed_tag=true`;
+- a successful `Release Install Verify` run for the same tag;
 - confirmation that the tag signer is active in `RELEASE-SIGNERS.json`;
 - a successful `Release Rollback` audit-only run for the same tag;
 - confirmation that the release has completed the agreed soak window.
@@ -24,6 +25,7 @@ Run the `Production Promotion` workflow manually with:
 
 - `tag`: the published release tag;
 - `release_verify_run_id`: the successful `Release Verify` run ID;
+- the successful `Release Install Verify` run ID recorded in operator notes;
 - `release_rollback_audit_run_id`: the successful `Release Rollback` audit-only
   run ID;
 - `min_soak_hours`: the minimum published-release soak window;
@@ -47,6 +49,7 @@ A release may be called production-stable only when all criteria pass:
 - release tag matches the requested tag;
 - release age is at least `min_soak_hours`;
 - `Release Verify` completed successfully for the release;
+- `Release Install Verify` completed successfully for the release;
 - `Release Rollback` audit-only completed successfully for the release;
 - rollback audit evidence proves no release mutation was requested.
 

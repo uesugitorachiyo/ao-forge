@@ -233,6 +233,11 @@ Signed release tags must be made by an active signer in
 `RELEASE-SIGNERS.json`; the public keys live under `docs/release/signers/` and
 are imported by the release workflows before tag verification.
 
+The `Release Install Verify` workflow is read-only public asset installation
+verification. It downloads the published release assets from GitHub, verifies
+checksums, extracts the platform archives, runs the Linux binary from the
+downloaded asset, and uploads `release-install-verify-audit.json`.
+
 The `Release Rollback` workflow is the guarded release yank path. It is
 manual-only, requires the `production-release` environment, explicit
 `confirm_rollback=true`, and a public correction reason. It can run
@@ -241,9 +246,10 @@ it must not delete releases, tags, assets, or evidence.
 
 The `Production Promotion` workflow is the read-only gate for production-stable
 release language. It requires a successful `Release Verify` run, a successful
-`Release Rollback` audit-only run, and a completed soak window before it uploads
-`production-promotion-audit.json`. Until that audit passes, releases should stay
-described as public-preview or candidate releases.
+`Release Install Verify` run, a successful `Release Rollback` audit-only run,
+and a completed soak window before it uploads `production-promotion-audit.json`.
+Until that audit passes, releases should stay described as public-preview or
+candidate releases.
 
 ## Continuous Integration
 

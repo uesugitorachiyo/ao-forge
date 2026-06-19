@@ -1171,6 +1171,78 @@ func TestReleaseVerifyWorkflowChecksPublishedReleaseEvidence(t *testing.T) {
 	}
 }
 
+func TestReleaseInstallVerifyWorkflowChecksPublicAssets(t *testing.T) {
+	root := repoRoot(t)
+	readText := func(path ...string) string {
+		t.Helper()
+		bytes, err := os.ReadFile(filepath.Join(append([]string{root}, path...)...))
+		if err != nil {
+			t.Fatalf("read %s: %v", filepath.Join(path...), err)
+		}
+		return string(bytes)
+	}
+
+	workflow := readText(".github", "workflows", "release-install-verify.yml")
+	runbook := readText("docs", "release", "PUBLIC-ASSET-INSTALL-VERIFY.md")
+	readme := readText("README.md")
+	promotion := readText("docs", "release", "PRODUCTION-STABLE-PROMOTION.md")
+	threatModel := readText("docs", "security", "RELEASE-THREAT-MODEL.md")
+
+	for _, check := range []struct {
+		name string
+		doc  string
+		want string
+	}{
+		{name: "workflow name", doc: workflow, want: "name: Release Install Verify"},
+		{name: "manual trigger", doc: workflow, want: "workflow_dispatch:"},
+		{name: "tag input", doc: workflow, want: "tag:"},
+		{name: "legacy bundle input", doc: workflow, want: "require_evidence_bundle:"},
+		{name: "read contents", doc: workflow, want: "contents: read"},
+		{name: "read attestations", doc: workflow, want: "attestations: read"},
+		{name: "setup go", doc: workflow, want: "actions/setup-go@v6"},
+		{name: "resolve request", doc: workflow, want: "Resolve install verification request"},
+		{name: "download public release assets", doc: workflow, want: "Download public release assets"},
+		{name: "release download", doc: workflow, want: "gh release download"},
+		{name: "checksum verification", doc: workflow, want: "artifact verify-checksums"},
+		{name: "linux archive", doc: workflow, want: "ao-forge_Linux_x86_64.tar.gz"},
+		{name: "darwin archive", doc: workflow, want: "ao-forge_Darwin_arm64.tar.gz"},
+		{name: "windows archive", doc: workflow, want: "ao-forge_Windows_x86_64.zip"},
+		{name: "linux smoke", doc: workflow, want: "Run Linux install smoke test"},
+		{name: "windows inspection", doc: workflow, want: "ao-forge.exe"},
+		{name: "audit schema", doc: workflow, want: "ao.forge.release-install-verify.v0.1"},
+		{name: "audit output", doc: workflow, want: "release-install-verify-audit.json"},
+		{name: "upload audit", doc: workflow, want: "release-install-verify-audit"},
+		{name: "summary", doc: workflow, want: "release_install_verify=passed"},
+		{name: "runbook title", doc: runbook, want: "# Public Asset Install Verification"},
+		{name: "runbook promotion", doc: runbook, want: "`Production Promotion`"},
+		{name: "readme workflow", doc: readme, want: "`Release Install Verify`"},
+		{name: "promotion workflow", doc: promotion, want: "`Release Install Verify`"},
+		{name: "threat model workflow", doc: threatModel, want: "`Release Install Verify`"},
+	} {
+		if !strings.Contains(check.doc, check.want) {
+			t.Fatalf("%s missing %q", check.name, check.want)
+		}
+	}
+
+	for _, forbidden := range []string{
+		"push:",
+		"pull_request:",
+		"contents: write",
+		"id-token: write",
+		"attestations: write",
+		"gh release create",
+		"gh release edit",
+		"gh release delete",
+		"softprops/action-gh-release",
+		"actions/upload-artifact@v4",
+		"actions/upload-artifact@v5",
+	} {
+		if strings.Contains(workflow, forbidden) {
+			t.Fatalf("release install verify workflow must not contain %q\n%s", forbidden, workflow)
+		}
+	}
+}
+
 func TestReleaseRollbackWorkflowGuardsReleaseYankActions(t *testing.T) {
 	root := repoRoot(t)
 	readText := func(path ...string) string {

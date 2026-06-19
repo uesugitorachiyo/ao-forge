@@ -19,7 +19,7 @@ permissions:
   attestations: read
 
 concurrency:
-  group: release-verify-${{ github.event.release.tag_name || github.event.inputs.tag }}
+  group: release-verify-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:

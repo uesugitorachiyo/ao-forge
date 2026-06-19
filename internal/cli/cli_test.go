@@ -1072,6 +1072,7 @@ func TestV012ReleaseNotesDraftIsPublicSafeAndEvidenceBacked(t *testing.T) {
 		"not production-stable infrastructure yet",
 		"Do not present it as production-stable until Production Promotion",
 		"Production Promotion must remain read-only and should pass only after",
+		"still needs branch-protection evidence",
 	} {
 		if strings.Contains(notes, staleStatus) {
 			t.Fatalf("release notes draft contains stale status text %q", staleStatus)
@@ -1106,6 +1107,8 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 	readme := readText("README.md")
 	threatModel := readText("docs", "security", "RELEASE-THREAT-MODEL.md")
 	runbook := readText("docs", "release", "BRANCH-PROTECTION.md")
+	evidence := readText("docs", "release", "BRANCH-PROTECTION-EVIDENCE.md")
+	verifier := readText("scripts", "verify-branch-protection.sh")
 	ciWorkflow := readText(".github", "workflows", "ci.yml")
 
 	for _, check := range []struct {
@@ -1114,8 +1117,12 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		want string
 	}{
 		{name: "README branch protection link", doc: readme, want: "[Branch Protection Runbook](docs/release/BRANCH-PROTECTION.md)"},
+		{name: "README branch protection evidence link", doc: readme, want: "[Branch Protection Evidence](docs/release/BRANCH-PROTECTION-EVIDENCE.md)"},
 		{name: "threat model branch protection link", doc: threatModel, want: "../release/BRANCH-PROTECTION.md"},
+		{name: "threat model branch protection evidence link", doc: threatModel, want: "../release/BRANCH-PROTECTION-EVIDENCE.md"},
 		{name: "runbook title", doc: runbook, want: "# AO Forge Branch Protection Runbook"},
+		{name: "runbook evidence link", doc: runbook, want: "BRANCH-PROTECTION-EVIDENCE.md"},
+		{name: "runbook live verifier", doc: runbook, want: "scripts/verify-branch-protection.sh"},
 		{name: "main branch", doc: runbook, want: "`main`"},
 		{name: "require PR", doc: runbook, want: "Require a pull request before merging"},
 		{name: "stale reviews", doc: runbook, want: "Dismiss stale pull request approvals"},
@@ -1132,6 +1139,14 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		{name: "local actionlint fallback", doc: runbook, want: "go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= -pyflakes= .github/workflows/*.yml"},
 		{name: "checksum verification", doc: runbook, want: "artifact verify-checksums --manifest"},
 		{name: "secret scan", doc: runbook, want: "gitleaks detect --source . --redact --verbose"},
+		{name: "evidence title", doc: evidence, want: "# AO Forge Branch Protection Evidence"},
+		{name: "evidence status", doc: evidence, want: "Status: `passed`"},
+		{name: "evidence required checks", doc: evidence, want: "`Release preview dry-run audit`"},
+		{name: "evidence force pushes", doc: evidence, want: "Force pushes are disabled"},
+		{name: "verifier schema", doc: verifier, want: "ao.forge.branch-protection-audit.v0.1"},
+		{name: "verifier gh api protection", doc: verifier, want: "branches/${branch}/protection"},
+		{name: "verifier gh api rulesets", doc: verifier, want: "repos/${repository}/rulesets"},
+		{name: "verifier required release preview", doc: verifier, want: "Release preview dry-run audit"},
 		{name: "ci actionlint job", doc: ciWorkflow, want: "workflow-lint:"},
 		{name: "ci actionlint name", doc: ciWorkflow, want: "name: Workflow lint"},
 		{name: "ci actionlint command", doc: ciWorkflow, want: "go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= -pyflakes= .github/workflows/*.yml"},

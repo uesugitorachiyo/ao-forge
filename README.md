@@ -236,6 +236,12 @@ manual-only, requires the `production-release` environment, explicit
 `audit-only`, mark a release as prerelease, or move a release back to draft, but
 it must not delete releases, tags, assets, or evidence.
 
+The `Production Promotion` workflow is the read-only gate for production-stable
+release language. It requires a successful `Release Verify` run, a successful
+`Release Rollback` audit-only run, and a completed soak window before it uploads
+`production-promotion-audit.json`. Until that audit passes, releases should stay
+described as public-preview or candidate releases.
+
 ## Continuous Integration
 
 This repository is public. The GitHub Actions workflow runs automatically on every push to a branch and every pull request targeting `main`.

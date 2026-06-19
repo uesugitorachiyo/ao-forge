@@ -1242,6 +1242,77 @@ func TestReleaseRollbackWorkflowGuardsReleaseYankActions(t *testing.T) {
 	}
 }
 
+func TestProductionPromotionWorkflowDefinesStableCriteria(t *testing.T) {
+	root := repoRoot(t)
+	readText := func(path ...string) string {
+		t.Helper()
+		bytes, err := os.ReadFile(filepath.Join(append([]string{root}, path...)...))
+		if err != nil {
+			t.Fatalf("read %s: %v", filepath.Join(path...), err)
+		}
+		return string(bytes)
+	}
+
+	workflow := readText(".github", "workflows", "production-promotion.yml")
+	runbook := readText("docs", "release", "PRODUCTION-STABLE-PROMOTION.md")
+	readme := readText("README.md")
+	threatModel := readText("docs", "security", "RELEASE-THREAT-MODEL.md")
+
+	for _, check := range []struct {
+		name string
+		doc  string
+		want string
+	}{
+		{name: "workflow name", doc: workflow, want: "name: Production Promotion"},
+		{name: "manual trigger", doc: workflow, want: "workflow_dispatch:"},
+		{name: "tag input", doc: workflow, want: "tag:"},
+		{name: "verify run input", doc: workflow, want: "release_verify_run_id:"},
+		{name: "rollback run input", doc: workflow, want: "release_rollback_audit_run_id:"},
+		{name: "soak input", doc: workflow, want: "min_soak_hours:"},
+		{name: "confirmation input", doc: workflow, want: "confirm_promotion_audit:"},
+		{name: "read contents", doc: workflow, want: "contents: read"},
+		{name: "read actions", doc: workflow, want: "actions: read"},
+		{name: "resolve request", doc: workflow, want: "Resolve promotion request"},
+		{name: "confirmation gate", doc: workflow, want: "confirm_promotion_audit must be exactly true"},
+		{name: "metadata read", doc: workflow, want: "Read release metadata"},
+		{name: "verify run metadata", doc: workflow, want: "Read evidence workflow runs"},
+		{name: "download rollback evidence", doc: workflow, want: "release-rollback-audit"},
+		{name: "criteria validation", doc: workflow, want: "Validate production-stable criteria"},
+		{name: "verify workflow required", doc: workflow, want: "Release Verify"},
+		{name: "rollback workflow required", doc: workflow, want: "Release Rollback"},
+		{name: "audit schema", doc: workflow, want: "ao.forge.production-promotion-audit.v0.1"},
+		{name: "audit output", doc: workflow, want: "production-promotion-audit.json"},
+		{name: "summary", doc: workflow, want: "production_promotion_audit=passed"},
+		{name: "upload audit", doc: workflow, want: "production-promotion-audit"},
+		{name: "runbook title", doc: runbook, want: "# Production-Stable Promotion"},
+		{name: "runbook status language", doc: runbook, want: "Do not describe a release as production-stable"},
+		{name: "runbook rollback evidence", doc: runbook, want: "`Release Rollback` audit-only"},
+		{name: "readme workflow", doc: readme, want: "`Production Promotion`"},
+		{name: "threat model workflow", doc: threatModel, want: "`Production Promotion`"},
+	} {
+		if !strings.Contains(check.doc, check.want) {
+			t.Fatalf("%s missing %q", check.name, check.want)
+		}
+	}
+
+	for _, forbidden := range []string{
+		"push:",
+		"pull_request:",
+		"contents: write",
+		"gh release create",
+		"gh release edit",
+		"gh release delete",
+		"git push",
+		"environment: production-release",
+		"actions/upload-artifact@v4",
+		"actions/upload-artifact@v5",
+	} {
+		if strings.Contains(workflow, forbidden) {
+			t.Fatalf("production promotion workflow must not contain %q\n%s", forbidden, workflow)
+		}
+	}
+}
+
 func TestArtifactChecksumsWritesStableSHA256Manifest(t *testing.T) {
 	tmpDir := t.TempDir()
 	firstPath := filepath.Join(tmpDir, "ao-forge_Darwin_arm64.tar.gz")

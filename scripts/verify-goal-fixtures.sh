@@ -222,6 +222,47 @@ for retained_evidence_artifact in "${retained_evidence_artifacts[@]}"; do
     --document "$retention_json"
 done
 
+cleanup_json="$verify_dir/goal-run-retained-evidence-cleanup.json"
+"$forge_bin" goal evidence cleanup \
+  --dry-run \
+  --now 2026-06-19T18:00:00Z \
+  --json > "$cleanup_json"
+"$forge_bin" contract validate \
+  --schema docs/contracts/goal-run-retained-evidence-cleanup-v0.1.schema.json \
+  --document "$cleanup_json"
+python3 - "$cleanup_json" <<'PY'
+import json
+import pathlib
+import sys
+
+summary = json.loads(pathlib.Path(sys.argv[1]).read_text())
+expected = {
+    "status": "passed",
+    "mode": "dry-run",
+    "artifacts_scanned": 3,
+    "eligible_artifacts": 1,
+    "protected_artifacts": 2,
+    "failed_artifacts": 0,
+    "public_provenance_excluded": 1,
+    "active_goal_excluded": 1,
+}
+for key, value in expected.items():
+    if summary.get(key) != value:
+        raise SystemExit(f"retained evidence cleanup {key} drifted: expected {value!r}, got {summary.get(key)!r}")
+eligible = [
+    audit for audit in summary.get("retention_audits", [])
+    if audit.get("cleanup_review_status") == "eligible_after_review"
+]
+if len(eligible) != 1:
+    raise SystemExit(f"expected exactly one cleanup-review-eligible artifact, got {len(eligible)}")
+public_provenance = [
+    audit for audit in summary.get("retention_audits", [])
+    if audit.get("cleanup_review_status") == "not_eligible_public_provenance"
+]
+if len(public_provenance) != 1:
+    raise SystemExit(f"expected exactly one public provenance exclusion, got {len(public_provenance)}")
+PY
+
 for retained_readiness_audit in "${retained_readiness_audits[@]}"; do
   "$forge_bin" contract validate \
     --schema docs/contracts/goal-run-readiness-audit-v0.1.schema.json \
@@ -377,6 +418,7 @@ echo "goal_run_update_audit_invalid_path_fixtures_rejected=${#invalid_path_updat
 echo "goal_run_retained_evidence_fixtures=${retained_evidence_count}"
 echo "goal_run_retained_evidence_artifacts_validated=${#retained_evidence_artifacts[@]}"
 echo "goal_run_retained_evidence_audits_validated=${#retained_evidence_artifacts[@]}"
+echo "goal_run_retained_evidence_cleanup_dry_run_validated=1"
 echo "goal_run_retained_readiness_audits_validated=${#retained_readiness_audits[@]}"
 echo "goal_run_retained_readiness_provenance_verified=${#retained_readiness_audits[@]}"
 echo "goal_run_retained_evidence_invalid_fixtures_rejected=${#invalid_retained_evidence_artifacts[@]}"

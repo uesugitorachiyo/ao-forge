@@ -223,6 +223,12 @@ validated by
 `complete` and `stopped` artifacts are classified as mandatory retention until
 their `minimum_retention_days_after_terminal_phase` window ends, then as cleanup
 review eligible.
+Run `forge goal evidence cleanup --dry-run` before proposing any retained
+evidence cleanup. The dry run scans retained evidence under `docs/evidence/goals`
+by default, emits `ao.forge.goal-run-retained-evidence-cleanup.v0.1` JSON, lists
+cleanup-review-eligible loop evidence, and separately counts active-goal,
+minimum-window, and public-provenance artifacts that are excluded from cleanup.
+It never deletes files; cleanup remains a separate reviewed change.
 It also rejects schema-invalid retained artifact fixtures under
 `examples/goals/invalid/`:
 

@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,6 +48,7 @@ const (
 	goalRunUpdateAuditSchemaPath = "docs/contracts/goal-run-update-audit-v0.1.schema.json"
 	goalRetainedEvidenceVersion  = "ao.forge.goal-run-retained-evidence.v0.1"
 	goalRetainedEvidencePath     = "docs/contracts/goal-run-retained-evidence-v0.1.schema.json"
+	goalEvidenceCleanupVersion   = "ao.forge.goal-run-retained-evidence-cleanup.v0.1"
 )
 
 var (
@@ -347,6 +349,7 @@ Usage:
   forge goal evidence lint --goal-run <goal-run.json> [--json]
   forge goal evidence lint --update-audit <goal-run-update-audit.json> [--json]
   forge goal evidence retention --artifact <retained-evidence.json> [--now <RFC3339>] [--json]
+  forge goal evidence cleanup --dry-run [--root <dir>] [--now <RFC3339>] [--json]
 
 Factory terms:
   factory brief   normalized operator objective and constraints
@@ -4518,6 +4521,13 @@ type goalEvidenceRetentionFlags struct {
 	json         bool
 }
 
+type goalEvidenceCleanupFlags struct {
+	root   string
+	now    string
+	dryRun bool
+	json   bool
+}
+
 type goalValidationSummary struct {
 	GoalRun         string   `json:"goal_run"`
 	Schema          string   `json:"schema"`
@@ -4637,6 +4647,23 @@ type goalEvidenceRetentionSummary struct {
 	Errors                                 []string `json:"errors"`
 }
 
+type goalEvidenceCleanupSummary struct {
+	CleanupSchemaVersion     string                         `json:"cleanup_schema_version"`
+	Root                     string                         `json:"root"`
+	Now                      string                         `json:"now"`
+	Mode                     string                         `json:"mode"`
+	Status                   string                         `json:"status"`
+	ArtifactsScanned         int                            `json:"artifacts_scanned"`
+	EligibleArtifacts        int                            `json:"eligible_artifacts"`
+	ProtectedArtifacts       int                            `json:"protected_artifacts"`
+	FailedArtifacts          int                            `json:"failed_artifacts"`
+	PublicProvenanceExcluded int                            `json:"public_provenance_excluded"`
+	ActiveGoalExcluded       int                            `json:"active_goal_excluded"`
+	MinimumWindowExcluded    int                            `json:"minimum_window_excluded"`
+	RetentionAudits          []goalEvidenceRetentionSummary `json:"retention_audits"`
+	Errors                   []string                       `json:"errors"`
+}
+
 type goalReadinessSummary struct {
 	ReadinessSchemaVersion string                         `json:"readiness_schema_version"`
 	GoalRun                string                         `json:"goal_run"`
@@ -4687,7 +4714,7 @@ func runGoal(args []string, stdout, stderr io.Writer) int {
 	case "evidence":
 		return runGoalEvidence(args[1:], stdout, stderr)
 	case "--help", "-h":
-		fmt.Fprintln(stderr, "forge goal: use `forge goal validate --goal-run <goal-run.json> [--json]`, `forge goal inspect --goal-run <goal-run.json> [--json]`, `forge goal transitions --goal-run <goal-run.json> [--to <phase>] [--json]`, `forge goal readiness --goal-run <goal-run.json> [--to <phase>] [--now <RFC3339>] [--json]`, `forge goal update --goal-run <goal-run.json> --out <goal-run.json> [--phase <phase>] [--next-task <text>] [--last-verified-at <RFC3339>] [--last-iteration-status <status>] [--last-iteration-summary <text>] [--evidence <path> ...] [--json]`, `forge goal evidence verify --goal-run <goal-run.json> [--json]`, `forge goal evidence lint --goal-run <goal-run.json> [--json]`, or `forge goal evidence retention --artifact <retained-evidence.json> [--now <RFC3339>] [--json]`")
+		fmt.Fprintln(stderr, "forge goal: use `forge goal validate --goal-run <goal-run.json> [--json]`, `forge goal inspect --goal-run <goal-run.json> [--json]`, `forge goal transitions --goal-run <goal-run.json> [--to <phase>] [--json]`, `forge goal readiness --goal-run <goal-run.json> [--to <phase>] [--now <RFC3339>] [--json]`, `forge goal update --goal-run <goal-run.json> --out <goal-run.json> [--phase <phase>] [--next-task <text>] [--last-verified-at <RFC3339>] [--last-iteration-status <status>] [--last-iteration-summary <text>] [--evidence <path> ...] [--json]`, `forge goal evidence verify --goal-run <goal-run.json> [--json]`, `forge goal evidence lint --goal-run <goal-run.json> [--json]`, `forge goal evidence retention --artifact <retained-evidence.json> [--now <RFC3339>] [--json]`, or `forge goal evidence cleanup --dry-run [--root <dir>] [--now <RFC3339>] [--json]`")
 		return 0
 	default:
 		fmt.Fprintf(stderr, "forge goal: unknown subcommand %q\n", args[0])
@@ -4707,8 +4734,10 @@ func runGoalEvidence(args []string, stdout, stderr io.Writer) int {
 		return runGoalEvidenceLint(args[1:], stdout, stderr)
 	case "retention":
 		return runGoalEvidenceRetention(args[1:], stdout, stderr)
+	case "cleanup":
+		return runGoalEvidenceCleanup(args[1:], stdout, stderr)
 	case "--help", "-h":
-		fmt.Fprintln(stderr, "forge goal evidence: use `forge goal evidence verify --goal-run <goal-run.json> [--json]`, `forge goal evidence lint --goal-run <goal-run.json> [--json]`, `forge goal evidence lint --update-audit <goal-run-update-audit.json> [--json]`, or `forge goal evidence retention --artifact <retained-evidence.json> [--now <RFC3339>] [--json]`")
+		fmt.Fprintln(stderr, "forge goal evidence: use `forge goal evidence verify --goal-run <goal-run.json> [--json]`, `forge goal evidence lint --goal-run <goal-run.json> [--json]`, `forge goal evidence lint --update-audit <goal-run-update-audit.json> [--json]`, `forge goal evidence retention --artifact <retained-evidence.json> [--now <RFC3339>] [--json]`, or `forge goal evidence cleanup --dry-run [--root <dir>] [--now <RFC3339>] [--json]`")
 		return 0
 	default:
 		fmt.Fprintf(stderr, "forge goal evidence: unknown subcommand %q\n", args[0])
@@ -4816,6 +4845,51 @@ func parseGoalEvidenceRetentionFlags(args []string) (goalEvidenceRetentionFlags,
 	if flags.now != "" {
 		if _, err := time.Parse(time.RFC3339, flags.now); err != nil {
 			return goalEvidenceRetentionFlags{}, fmt.Errorf("--now must be RFC3339: %w", err)
+		}
+	}
+	return flags, nil
+}
+
+func parseGoalEvidenceCleanupFlags(args []string) (goalEvidenceCleanupFlags, error) {
+	flags := goalEvidenceCleanupFlags{root: "docs/evidence/goals"}
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--dry-run":
+			flags.dryRun = true
+		case "--root":
+			value, next, err := readFlagValue(args, i, "--root")
+			if err != nil {
+				return goalEvidenceCleanupFlags{}, err
+			}
+			flags.root = value
+			i = next
+		case "--now":
+			value, next, err := readFlagValue(args, i, "--now")
+			if err != nil {
+				return goalEvidenceCleanupFlags{}, err
+			}
+			flags.now = value
+			i = next
+		case "--json":
+			flags.json = true
+		case "--help", "-h":
+			return goalEvidenceCleanupFlags{}, fmt.Errorf("help is available with `forge --help`")
+		default:
+			if strings.HasPrefix(args[i], "--") {
+				return goalEvidenceCleanupFlags{}, fmt.Errorf("unknown flag %s", args[i])
+			}
+			return goalEvidenceCleanupFlags{}, fmt.Errorf("unexpected argument %s", args[i])
+		}
+	}
+	if !flags.dryRun {
+		return goalEvidenceCleanupFlags{}, fmt.Errorf("missing required --dry-run")
+	}
+	if strings.TrimSpace(flags.root) == "" {
+		return goalEvidenceCleanupFlags{}, fmt.Errorf("--root must not be empty")
+	}
+	if flags.now != "" {
+		if _, err := time.Parse(time.RFC3339, flags.now); err != nil {
+			return goalEvidenceCleanupFlags{}, fmt.Errorf("--now must be RFC3339: %w", err)
 		}
 	}
 	return flags, nil
@@ -5345,6 +5419,32 @@ func runGoalEvidenceRetention(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func runGoalEvidenceCleanup(args []string, stdout, stderr io.Writer) int {
+	flags, err := parseGoalEvidenceCleanupFlags(args)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge goal evidence cleanup: %v\n", err)
+		return 2
+	}
+
+	now := time.Now().UTC()
+	if flags.now != "" {
+		parsedNow, err := time.Parse(time.RFC3339, flags.now)
+		if err != nil {
+			fmt.Fprintf(stderr, "forge goal evidence cleanup: --now must be RFC3339: %v\n", err)
+			return 2
+		}
+		now = parsedNow.UTC()
+	}
+
+	summary := buildGoalEvidenceCleanupSummary(flags.root, now)
+	writeGoalEvidenceCleanupSummary(stdout, summary, flags.json)
+	if summary.Status != "passed" {
+		fmt.Fprintf(stderr, "forge goal evidence cleanup: dry-run failed for %s\n", summary.Root)
+		return 1
+	}
+	return 0
+}
+
 func validateAndReadGoalRun(path string) (goalRun, error) {
 	if err := validateJSONSchemaDocument(resolveDefaultContractPath(goalRunSchemaPath), path); err != nil {
 		return goalRun{}, err
@@ -5568,6 +5668,98 @@ func buildGoalEvidenceRetentionSummary(path string, now time.Time) goalEvidenceR
 		summary.CleanupReviewStatus = "not_eligible_active_goal"
 	}
 	return summary
+}
+
+func buildGoalEvidenceCleanupSummary(root string, now time.Time) goalEvidenceCleanupSummary {
+	resolvedRoot := resolveDefaultContractPath(root)
+	summary := goalEvidenceCleanupSummary{
+		CleanupSchemaVersion: goalEvidenceCleanupVersion,
+		Root:                 displayPath(resolvedRoot),
+		Now:                  now.UTC().Format(time.RFC3339),
+		Mode:                 "dry-run",
+		Status:               "passed",
+		RetentionAudits:      []goalEvidenceRetentionSummary{},
+		Errors:               []string{},
+	}
+
+	artifacts, err := discoverRetainedEvidenceArtifacts(resolvedRoot)
+	if err != nil {
+		summary.Status = "failed"
+		summary.Errors = []string{err.Error()}
+		return summary
+	}
+
+	for _, artifactPath := range artifacts {
+		audit := buildGoalEvidenceRetentionSummary(artifactPath, now)
+		summary.RetentionAudits = append(summary.RetentionAudits, audit)
+		summary.ArtifactsScanned++
+		if audit.Status != "passed" {
+			summary.FailedArtifacts++
+			summary.Status = "failed"
+			summary.Errors = append(summary.Errors, fmt.Sprintf("%s: %s", audit.Artifact, strings.Join(audit.Errors, "; ")))
+			continue
+		}
+		switch audit.CleanupReviewStatus {
+		case "eligible_after_review":
+			summary.EligibleArtifacts++
+		case "not_eligible_public_provenance":
+			summary.ProtectedArtifacts++
+			summary.PublicProvenanceExcluded++
+		case "not_eligible_active_goal":
+			summary.ProtectedArtifacts++
+			summary.ActiveGoalExcluded++
+		case "not_eligible_minimum_window":
+			summary.ProtectedArtifacts++
+			summary.MinimumWindowExcluded++
+		default:
+			summary.ProtectedArtifacts++
+		}
+	}
+	return summary
+}
+
+func discoverRetainedEvidenceArtifacts(root string) ([]string, error) {
+	resolvedRoot := resolveDefaultContractPath(root)
+	info, err := os.Stat(resolvedRoot)
+	if err != nil {
+		return nil, fmt.Errorf("%s is not readable: %v", root, err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("%s is not a directory", root)
+	}
+
+	var artifacts []string
+	err = filepath.WalkDir(resolvedRoot, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() || filepath.Ext(path) != ".json" {
+			return nil
+		}
+		if retainedEvidenceFileHasSchema(path) {
+			artifacts = append(artifacts, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("scan retained evidence root: %w", err)
+	}
+	sort.Strings(artifacts)
+	return artifacts, nil
+}
+
+func retainedEvidenceFileHasSchema(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	var header struct {
+		SchemaVersion string `json:"schema_version"`
+	}
+	if err := json.Unmarshal(data, &header); err != nil {
+		return false
+	}
+	return header.SchemaVersion == goalRetainedEvidenceVersion
 }
 
 func isPublicProvenanceRetentionClass(retentionClass string) bool {
@@ -6139,6 +6331,35 @@ func writeGoalEvidenceRetentionSummary(stdout io.Writer, summary goalEvidenceRet
 	}
 	for _, auditErr := range summary.Errors {
 		fmt.Fprintf(stdout, "error=%s\n", auditErr)
+	}
+}
+
+func writeGoalEvidenceCleanupSummary(stdout io.Writer, summary goalEvidenceCleanupSummary, asJSON bool) {
+	if asJSON {
+		data, err := marshalIndented(summary)
+		if err != nil {
+			fmt.Fprintf(stdout, "{\"cleanup_schema_version\":\"%s\",\"mode\":\"dry-run\",\"status\":\"failed\",\"errors\":[%q]}\n", goalEvidenceCleanupVersion, err.Error())
+			return
+		}
+		_, _ = stdout.Write(data)
+		return
+	}
+	fmt.Fprintf(stdout, "goal_evidence_cleanup=%s\n", summary.Status)
+	fmt.Fprintf(stdout, "mode=%s\n", summary.Mode)
+	fmt.Fprintf(stdout, "root=%s\n", summary.Root)
+	fmt.Fprintf(stdout, "now=%s\n", summary.Now)
+	fmt.Fprintf(stdout, "artifacts_scanned=%d\n", summary.ArtifactsScanned)
+	fmt.Fprintf(stdout, "eligible_artifacts=%d\n", summary.EligibleArtifacts)
+	fmt.Fprintf(stdout, "protected_artifacts=%d\n", summary.ProtectedArtifacts)
+	fmt.Fprintf(stdout, "failed_artifacts=%d\n", summary.FailedArtifacts)
+	fmt.Fprintf(stdout, "public_provenance_excluded=%d\n", summary.PublicProvenanceExcluded)
+	fmt.Fprintf(stdout, "active_goal_excluded=%d\n", summary.ActiveGoalExcluded)
+	fmt.Fprintf(stdout, "minimum_window_excluded=%d\n", summary.MinimumWindowExcluded)
+	for _, audit := range summary.RetentionAudits {
+		fmt.Fprintf(stdout, "artifact=%s retention_status=%s cleanup_review_status=%s retention_class=%s\n", audit.Artifact, audit.RetentionStatus, audit.CleanupReviewStatus, audit.RetentionClass)
+	}
+	for _, cleanupErr := range summary.Errors {
+		fmt.Fprintf(stdout, "error=%s\n", cleanupErr)
 	}
 }
 
@@ -6772,13 +6993,18 @@ func productionReadinessGateSpecs() []productionReadinessGateSpec {
 		{
 			GateID:   "goalrun.evidence_retention",
 			Category: "goalrun",
-			Summary:  "retained evidence policy includes loop evidence plus release/promotion provenance protection",
-			Evidence: []string{"docs/contracts/goal-run-retained-evidence-v0.1.schema.json", "docs/contracts/goal-run-retained-evidence-audit-v0.1.schema.json", "docs/evidence/goals/ao2-weekend-hardening/20260101T000000Z-complete/release-provenance-retention-proof.json"},
+			Summary:  "retained evidence policy includes cleanup dry-run plus release/promotion provenance protection",
+			Evidence: []string{"docs/contracts/goal-run-retained-evidence-v0.1.schema.json", "docs/contracts/goal-run-retained-evidence-audit-v0.1.schema.json", "docs/contracts/goal-run-retained-evidence-cleanup-v0.1.schema.json", "docs/evidence/goals/ao2-weekend-hardening/20260101T000000Z-complete/release-provenance-retention-proof.json"},
 			Requires: []productionReadinessRequirement{
 				{Path: "docs/contracts/goal-run-retained-evidence-v0.1.schema.json", Pattern: "release_provenance"},
 				{Path: "docs/contracts/goal-run-retained-evidence-v0.1.schema.json", Pattern: "promotion_provenance"},
 				{Path: "docs/contracts/goal-run-retained-evidence-audit-v0.1.schema.json", Pattern: "not_eligible_public_provenance"},
+				{Path: "docs/contracts/goal-run-retained-evidence-cleanup-v0.1.schema.json", Pattern: goalEvidenceCleanupVersion},
+				{Path: "docs/contracts/goal-run-retained-evidence-cleanup-v0.1.schema.json", Pattern: `"mode"`},
+				{Path: "scripts/verify-goal-fixtures.sh", Pattern: "goal evidence cleanup"},
+				{Path: "scripts/verify-goal-fixtures.sh", Pattern: "not_eligible_public_provenance"},
 				{Path: "docs/evidence/goals/ao2-weekend-hardening/20260101T000000Z-complete/release-provenance-retention-proof.json", Pattern: `"retention_class": "release_provenance"`},
+				{Path: "docs/evidence/goals/ao2-weekend-hardening/20260101T010000Z-complete/old-loop-retention-proof.json", Pattern: `"retention_class": "loop_evidence"`},
 			},
 		},
 		{

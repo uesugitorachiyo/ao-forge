@@ -1,0 +1,210 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/uesugitorachiyo/ao-forge/docs/contracts/goal-run-retained-evidence-cleanup-v0.1.schema.json",
+  "title": "AO Forge GoalRun Retained Evidence Cleanup v0.1",
+  "type": "object",
+  "required": [
+    "cleanup_schema_version",
+    "root",
+    "now",
+    "mode",
+    "status",
+    "artifacts_scanned",
+    "eligible_artifacts",
+    "protected_artifacts",
+    "failed_artifacts",
+    "public_provenance_excluded",
+    "active_goal_excluded",
+    "minimum_window_excluded",
+    "retention_audits",
+    "errors"
+  ],
+  "properties": {
+    "cleanup_schema_version": {
+      "const": "ao.forge.goal-run-retained-evidence-cleanup.v0.1"
+    },
+    "root": {
+      "type": "string",
+      "minLength": 1
+    },
+    "now": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "mode": {
+      "const": "dry-run"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["passed", "failed"]
+    },
+    "artifacts_scanned": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "eligible_artifacts": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "protected_artifacts": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "failed_artifacts": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "public_provenance_excluded": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "active_goal_excluded": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "minimum_window_excluded": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "retention_audits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "retention_audit_schema_version",
+          "artifact",
+          "goal_id",
+          "iteration",
+          "phase",
+          "retention_class",
+          "retained_at",
+          "now",
+          "status",
+          "retention_status",
+          "cleanup_review_status",
+          "age_days",
+          "minimum_retention_days_after_terminal_phase",
+          "errors"
+        ],
+        "properties": {
+          "retention_audit_schema_version": {
+            "const": "ao.forge.goal-run-retained-evidence-audit.v0.1"
+          },
+          "artifact": {
+            "type": "string",
+            "minLength": 1
+          },
+          "goal_id": {
+            "type": "string"
+          },
+          "iteration": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "retention_class": {
+            "type": "string"
+          },
+          "retained_at": {
+            "type": "string"
+          },
+          "now": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["passed", "failed"]
+          },
+          "retention_status": {
+            "type": "string",
+            "enum": [
+              "active_retention",
+              "mandatory_retention",
+              "cleanup_review_eligible",
+              "unknown"
+            ]
+          },
+          "cleanup_review_status": {
+            "type": "string",
+            "enum": [
+              "not_eligible_active_goal",
+              "not_eligible_minimum_window",
+              "not_eligible_public_provenance",
+              "eligible_after_review",
+              "unknown"
+            ]
+          },
+          "age_days": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "minimum_retention_days_after_terminal_phase": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "mandatory_retention_until": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "passed"
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "failed_artifacts": {
+            "const": 0
+          },
+          "errors": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "failed"
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "errors": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

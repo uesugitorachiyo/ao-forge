@@ -29,16 +29,20 @@ Require these status checks before merge:
 - `Go windows-latest`
 - `Workflow lint`
 - `GoalRun fixture smoke`
+- `Production readiness audit`
 - `Release preview dry-run audit`
 
-The Go checks, Workflow lint check, and GoalRun fixture smoke check come from
-`.github/workflows/ci.yml`. Workflow lint runs `actionlint` against
+The Go checks, Workflow lint check, GoalRun fixture smoke check, and Production
+readiness audit check come from `.github/workflows/ci.yml`. Workflow lint runs
+`actionlint` against
 `.github/workflows/*.yml` so GitHub Actions context and expression errors are
 caught before merge. GoalRun fixture smoke validates checked-in GoalRun
 fixtures, update-audit fixtures, evidence verifier JSON, and stale-evidence
 failure behavior before merge. Optional external shell and Python linters are
-disabled for this gate so local and hosted results stay deterministic. The
-release preview check
+disabled for this gate so local and hosted results stay deterministic.
+Production readiness audit runs `forge production-readiness audit`, validates
+the JSON output against its published schema, and uploads the machine-readable
+score artifact before merge. The release preview check
 comes from `.github/workflows/release-preview.yml` and verifies the non-mutating
 release rehearsal, human inspect output, JSON inspect output, and uploaded
 release evidence artifacts.
@@ -84,6 +88,8 @@ go build -o /tmp/ao-forge-smoke ./cmd/forge
 /tmp/ao-forge-smoke contract validate --schema docs/contracts/release-preview-inspect-v0.1.schema.json --document examples/release-preview/dirty-workspace-blocked.inspect.expected.json
 /tmp/ao-forge-smoke contract validate --schema docs/contracts/release-artifact-inventory-v0.1.schema.json --document examples/release-preview/release-artifact-inventory.v0.1.example.json
 /tmp/ao-forge-smoke contract validate --schema docs/contracts/release-attestation-plan-v0.1.schema.json --document examples/release-preview/release-attestation-plan.v0.1.example.json
+/tmp/ao-forge-smoke production-readiness audit --json >/tmp/ao-forge-production-readiness-audit.json
+/tmp/ao-forge-smoke contract validate --schema docs/contracts/production-readiness-audit-v0.1.schema.json --document /tmp/ao-forge-production-readiness-audit.json
 /tmp/ao-forge-smoke artifact verify-checksums --manifest examples/release-preview/checksums.txt
 gitleaks detect --source . --redact --verbose
 gitleaks dir . --redact --verbose

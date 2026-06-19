@@ -47,6 +47,40 @@ jobs:
       - name: Validate GoalRun fixtures
         run: scripts/verify-goal-fixtures.sh
 
+  production-readiness:
+    name: Production readiness audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run production readiness audit
+        run: |
+          set -euo pipefail
+          out="${RUNNER_TEMP}/ao-forge-production-readiness"
+          mkdir -p "$out"
+          go run ./cmd/forge production-readiness audit | tee "$out/production-readiness-audit.txt"
+          go run ./cmd/forge production-readiness audit --json > "$out/production-readiness-audit.json"
+
+      - name: Validate production readiness audit schema
+        run: go run ./cmd/forge contract validate --schema docs/contracts/production-readiness-audit-v0.1.schema.json --document "${RUNNER_TEMP}/ao-forge-production-readiness/production-readiness-audit.json"
+
+      - name: Upload production readiness audit
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: production-readiness-audit
+          path: ${{ runner.temp }}/ao-forge-production-readiness/
+          if-no-files-found: error
+          retention-days: 14
+
   go:
     name: Go ${{ matrix.os }}
     runs-on: ${{ matrix.os }}

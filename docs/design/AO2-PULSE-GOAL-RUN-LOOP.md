@@ -149,7 +149,10 @@ for positive fixtures and fails closed while preserving failed readiness JSON fo
 negative fixtures. It validates retained readiness audit JSON under
 `docs/evidence/goals/` against
 `docs/contracts/goal-run-readiness-audit-v0.1.schema.json`. The same smoke test
-verifies that
+rejects
+`examples/goals/invalid/tampered-readiness-audit.goal-run-readiness-audit.invalid.json`
+to prove tampered readiness evidence cannot be accepted before loop
+continuation. The same smoke test verifies that
 `examples/goals/invalid/stale-evidence.goal-run.invalid.json` fails closed when
 its recorded evidence hash does not match the artifact bytes, and that at least
 one positive GoalRun fixture uses the retained evidence layout. It also runs

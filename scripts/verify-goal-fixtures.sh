@@ -60,6 +60,11 @@ while IFS= read -r invalid_retained_evidence_artifact; do
   invalid_retained_evidence_artifacts+=("$invalid_retained_evidence_artifact")
 done < <(find examples -type f -name '*.goal-run-retained-evidence.invalid.json' | sort)
 
+invalid_readiness_audits=()
+while IFS= read -r invalid_readiness_audit; do
+  invalid_readiness_audits+=("$invalid_readiness_audit")
+done < <(find examples -type f -name '*.goal-run-readiness-audit.invalid.json' | sort)
+
 if [[ "${#goal_runs[@]}" -eq 0 ]]; then
   echo "no GoalRun fixtures found under examples/" >&2
   exit 1
@@ -135,6 +140,11 @@ if [[ "${#invalid_retained_evidence_artifacts[@]}" -eq 0 ]]; then
   exit 1
 fi
 
+if [[ "${#invalid_readiness_audits[@]}" -eq 0 ]]; then
+  echo "no invalid GoalRun readiness audit fixtures found under examples/" >&2
+  exit 1
+fi
+
 for retained_evidence_artifact in "${retained_evidence_artifacts[@]}"; do
   "$forge_bin" contract validate \
     --schema docs/contracts/goal-run-retained-evidence-v0.1.schema.json \
@@ -163,6 +173,15 @@ for invalid_retained_evidence_artifact in "${invalid_retained_evidence_artifacts
     --schema docs/contracts/goal-run-retained-evidence-v0.1.schema.json \
     --document "$invalid_retained_evidence_artifact"; then
     echo "expected retained GoalRun evidence artifact fixture to fail: $invalid_retained_evidence_artifact" >&2
+    exit 1
+  fi
+done
+
+for invalid_readiness_audit in "${invalid_readiness_audits[@]}"; do
+  if "$forge_bin" contract validate \
+    --schema docs/contracts/goal-run-readiness-audit-v0.1.schema.json \
+    --document "$invalid_readiness_audit"; then
+    echo "expected GoalRun readiness audit fixture to fail: $invalid_readiness_audit" >&2
     exit 1
   fi
 done
@@ -252,3 +271,4 @@ echo "goal_run_retained_evidence_artifacts_validated=${#retained_evidence_artifa
 echo "goal_run_retained_evidence_audits_validated=${#retained_evidence_artifacts[@]}"
 echo "goal_run_retained_readiness_audits_validated=${#retained_readiness_audits[@]}"
 echo "goal_run_retained_evidence_invalid_fixtures_rejected=${#invalid_retained_evidence_artifacts[@]}"
+echo "goal_run_readiness_audit_invalid_fixtures_rejected=${#invalid_readiness_audits[@]}"

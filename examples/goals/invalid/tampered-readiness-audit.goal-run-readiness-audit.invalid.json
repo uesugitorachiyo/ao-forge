@@ -1,0 +1,35 @@
+{
+  "readiness_schema_version": "ao.forge.goal-run-readiness-audit.v0.1",
+  "goal_run": "examples/goals/ao2-retained-evidence.goal-run.json",
+  "goal_id": "ao2-weekend-hardening",
+  "current_phase": "implementation",
+  "requested_phase": "verification",
+  "status": "passed",
+  "checks": [
+    {
+      "check_id": "goal_validate",
+      "status": "passed",
+      "summary": "GoalRun schema validation passed"
+    }
+  ],
+  "evidence_lint": {
+    "lint_schema_version": "ao.forge.goal-run-evidence-lint.v0.1",
+    "document": "examples/goals/ao2-retained-evidence.goal-run.json",
+    "document_type": "goal_run",
+    "status": "passed",
+    "evidence_linted": 0,
+    "evidence": [],
+    "errors": []
+  },
+  "evidence_verify": {
+    "verify_schema_version": "ao.forge.goal-run-evidence-verify.v0.1",
+    "goal_run": "examples/goals/ao2-retained-evidence.goal-run.json",
+    "status": "passed",
+    "evidence_verified": 0,
+    "evidence": [],
+    "errors": []
+  },
+  "retention_audits": [],
+  "errors": [],
+  "tampered_after_validation": true
+}

@@ -27,6 +27,7 @@ required_checks = [
     "Go windows-latest",
     "Workflow lint",
     "GoalRun fixture smoke",
+    "Production readiness audit",
     "Release preview dry-run audit",
 ]
 observed_checks = protection.get("required_status_checks", {}).get("contexts") or []

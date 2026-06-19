@@ -55,6 +55,26 @@ for goal_run in "${goal_runs[@]}"; do
     --document "$verify_json"
 done
 
+retained_evidence_count="$(
+  python3 - "${goal_runs[@]}" <<'PY'
+import json
+import pathlib
+import sys
+
+count = 0
+for goal_run in sys.argv[1:]:
+    data = json.loads(pathlib.Path(goal_run).read_text())
+    for evidence in data.get("last_iteration", {}).get("evidence", []):
+        if evidence.get("path", "").startswith("docs/evidence/goals/"):
+            count += 1
+print(count)
+PY
+)"
+if [[ "$retained_evidence_count" -eq 0 ]]; then
+  echo "no retained GoalRun evidence fixture found under docs/evidence/goals/" >&2
+  exit 1
+fi
+
 for update_audit in "${update_audits[@]}"; do
   "$forge_bin" contract validate \
     --schema docs/contracts/goal-run-update-audit-v0.1.schema.json \
@@ -80,3 +100,4 @@ done
 echo "goal_run_fixtures_validated=${#goal_runs[@]}"
 echo "goal_run_update_audits_validated=${#update_audits[@]}"
 echo "goal_run_invalid_fixtures_rejected=${#invalid_goal_runs[@]}"
+echo "goal_run_retained_evidence_fixtures=${retained_evidence_count}"

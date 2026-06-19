@@ -109,12 +109,16 @@ preserve after a successful iteration:
 - `examples/goals/ao2-pulse-handoff.goal-run-update-audit.json` is the matching
   update audit, including the candidate path, changed fields, and hashed
   evidence attachment.
+- `examples/goals/ao2-retained-evidence.goal-run.json` shows a GoalRun whose
+  retained evidence path is durable and repository-relative under
+  `docs/evidence/goals/`.
 
 CI runs `scripts/verify-goal-fixtures.sh` to validate every checked-in GoalRun
 and GoalRun update-audit fixture, and to verify every recorded GoalRun evidence
 hash, including this handoff pair. The same smoke test also verifies that
 `examples/goals/invalid/stale-evidence.goal-run.invalid.json` fails closed when
-its recorded evidence hash does not match the artifact bytes.
+its recorded evidence hash does not match the artifact bytes, and that at least
+one positive GoalRun fixture uses the retained evidence layout.
 
 ## Stop And Backoff
 

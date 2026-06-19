@@ -25,7 +25,7 @@ Run the `Production Promotion` workflow manually with:
 
 - `tag`: the published release tag;
 - `release_verify_run_id`: the successful `Release Verify` run ID;
-- the successful `Release Install Verify` run ID recorded in operator notes;
+- `release_install_verify_run_id`: the successful `Release Install Verify` run ID;
 - `release_rollback_audit_run_id`: the successful `Release Rollback` audit-only
   run ID;
 - `min_soak_hours`: the minimum published-release soak window;

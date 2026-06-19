@@ -87,9 +87,12 @@
     },
     "evidence_runs": {
       "type": "object",
-      "required": ["release_verify", "release_rollback_audit"],
+      "required": ["release_verify", "release_install_verify", "release_rollback_audit"],
       "properties": {
         "release_verify": {
+          "$ref": "#/$defs/evidence_run"
+        },
+        "release_install_verify": {
           "$ref": "#/$defs/evidence_run"
         },
         "release_rollback_audit": {
@@ -106,6 +109,7 @@
         "tag_matches_release",
         "soak_window_met",
         "release_verify_succeeded",
+        "release_install_verify_succeeded",
         "rollback_audit_succeeded",
         "rollback_audit_only"
       ],
@@ -123,6 +127,9 @@
           "type": "boolean"
         },
         "release_verify_succeeded": {
+          "type": "boolean"
+        },
+        "release_install_verify_succeeded": {
           "type": "boolean"
         },
         "rollback_audit_succeeded": {
@@ -144,6 +151,7 @@
           "tag_matches_release",
           "soak_window_met",
           "release_verify_succeeded",
+          "release_install_verify_succeeded",
           "rollback_audit_succeeded",
           "rollback_audit_only"
         ]

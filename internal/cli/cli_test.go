@@ -346,6 +346,11 @@ func TestReleaseAuditContractsValidateWorkflowEvidence(t *testing.T) {
       "url": "https://github.com/uesugitorachiyo/ao-forge/actions/runs/27798832320",
       "conclusion": "success"
     },
+    "release_install_verify": {
+      "run_id": "27799774456",
+      "url": "https://github.com/uesugitorachiyo/ao-forge/actions/runs/27799774456",
+      "conclusion": "success"
+    },
     "release_rollback_audit": {
       "run_id": "27797586190",
       "url": "https://github.com/uesugitorachiyo/ao-forge/actions/runs/27797586190",
@@ -358,6 +363,7 @@ func TestReleaseAuditContractsValidateWorkflowEvidence(t *testing.T) {
     "tag_matches_release": true,
     "soak_window_met": true,
     "release_verify_succeeded": true,
+    "release_install_verify_succeeded": true,
     "rollback_audit_succeeded": true,
     "rollback_audit_only": true
   },
@@ -1559,6 +1565,7 @@ func TestProductionPromotionWorkflowDefinesStableCriteria(t *testing.T) {
 		{name: "manual trigger", doc: workflow, want: "workflow_dispatch:"},
 		{name: "tag input", doc: workflow, want: "tag:"},
 		{name: "verify run input", doc: workflow, want: "release_verify_run_id:"},
+		{name: "install verify run input", doc: workflow, want: "release_install_verify_run_id:"},
 		{name: "rollback run input", doc: workflow, want: "release_rollback_audit_run_id:"},
 		{name: "soak input", doc: workflow, want: "min_soak_hours:"},
 		{name: "default verify assertion input", doc: workflow, want: "confirm_default_release_verify:"},
@@ -1572,10 +1579,13 @@ func TestProductionPromotionWorkflowDefinesStableCriteria(t *testing.T) {
 		{name: "blocker assertion gate", doc: workflow, want: "confirm_no_known_blockers must be exactly true"},
 		{name: "metadata read", doc: workflow, want: "Read release metadata"},
 		{name: "verify run metadata", doc: workflow, want: "Read evidence workflow runs"},
+		{name: "install verify run metadata", doc: workflow, want: "release-install-verify-run.json"},
 		{name: "download rollback evidence", doc: workflow, want: "release-rollback-audit"},
 		{name: "criteria validation", doc: workflow, want: "Validate production-stable criteria"},
 		{name: "verify workflow required", doc: workflow, want: "Release Verify"},
+		{name: "install verify workflow required", doc: workflow, want: "Release Install Verify"},
 		{name: "rollback workflow required", doc: workflow, want: "Release Rollback"},
+		{name: "install verify criterion", doc: workflow, want: "release_install_verify_succeeded"},
 		{name: "audit schema", doc: workflow, want: "ao.forge.production-promotion-audit.v0.1"},
 		{name: "operator assertions", doc: workflow, want: "operator_assertions"},
 		{name: "audit output", doc: workflow, want: "production-promotion-audit.json"},
@@ -1585,6 +1595,7 @@ func TestProductionPromotionWorkflowDefinesStableCriteria(t *testing.T) {
 		{name: "upload audit", doc: workflow, want: "production-promotion-audit"},
 		{name: "runbook title", doc: runbook, want: "# Production-Stable Promotion"},
 		{name: "runbook status language", doc: runbook, want: "Do not describe a release as production-stable"},
+		{name: "runbook install verify input", doc: runbook, want: "`release_install_verify_run_id`: the successful `Release Install Verify` run ID"},
 		{name: "runbook rollback evidence", doc: runbook, want: "`Release Rollback` audit-only"},
 		{name: "readme workflow", doc: readme, want: "`Production Promotion`"},
 		{name: "threat model workflow", doc: threatModel, want: "`Production Promotion`"},

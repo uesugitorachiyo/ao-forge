@@ -211,6 +211,8 @@ evidence bytes they summarize; `scripts/verify-goal-fixtures.sh` recomputes
 those hashes from the checked-in files before accepting the audit.
 Tampered readiness audits are rejected by
 `examples/goals/invalid/tampered-readiness-audit.goal-run-readiness-audit.invalid.json`.
+Schema-valid readiness audits with mismatched provenance hashes are rejected by
+`examples/goals/invalid/mismatched-provenance-readiness-audit.goal-run-readiness-audit.provenance-invalid.json`.
 Retained artifacts must include machine-readable retention metadata: when the
 artifact was retained, its retention class, whether it must be retained while
 the GoalRun is active, and the review fields a cleanup change must name.

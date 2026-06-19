@@ -75,6 +75,12 @@ Run these commands from the repository that owns the GoalRun contract.
    forge goal validate --goal-run tmp/ao2-weekend-hardening.goal-run.json
    ```
 
+8. Verify every recorded evidence attachment before preserving the candidate:
+
+   ```sh
+   forge goal evidence verify --goal-run tmp/ao2-weekend-hardening.goal-run.json
+   ```
+
 ## Handoff Fixture
 
 The checked-in handoff pair shows the durable artifact AO2 Pulse should
@@ -87,7 +93,8 @@ preserve after a successful iteration:
   evidence attachment.
 
 CI runs `scripts/verify-goal-fixtures.sh` to validate every checked-in GoalRun
-and GoalRun update-audit fixture, including this handoff pair.
+and GoalRun update-audit fixture, and to verify every recorded GoalRun evidence
+hash, including this handoff pair.
 
 ## Stop And Backoff
 
@@ -100,7 +107,8 @@ AO2 Pulse must not continue when any of these checks fail:
 - `forge goal transitions` denies the proposed phase change;
 - `forge goal update` fails;
 - the update audit does not validate;
-- the candidate GoalRun does not validate.
+- the candidate GoalRun does not validate;
+- any recorded evidence attachment is missing or has a SHA-256 mismatch.
 
 For a denied transition or scope mismatch, AO2 Pulse should emit a backoff or
 stopped result and leave the existing GoalRun unchanged. For terminal phases
@@ -117,7 +125,8 @@ Each successful loop iteration must preserve:
 - the `forge goal update` audit JSON;
 - every hashed evidence attachment listed by the update audit;
 - the `forge contract validate` result for that audit;
-- the final `forge goal validate` result for the candidate GoalRun.
+- the final `forge goal validate` result for the candidate GoalRun;
+- the final `forge goal evidence verify` result for the candidate GoalRun.
 
 This keeps AO2 Pulse useful for hardening work while keeping durable goal state,
 transition policy, and mutation auditability inside AO Forge.

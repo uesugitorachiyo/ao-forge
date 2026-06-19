@@ -4,10 +4,17 @@ set -euo pipefail
 root="$(git rev-parse --show-toplevel)"
 cd "$root"
 
-forge_bin="${AO_FORGE_BIN:-${RUNNER_TEMP:-/tmp}/ao-forge-goal-fixtures/forge}"
-mkdir -p "$(dirname "$forge_bin")"
-if [[ ! -x "$forge_bin" ]]; then
+if [[ -n "${AO_FORGE_BIN:-}" ]]; then
+  forge_bin="$AO_FORGE_BIN"
+else
+  forge_bin="${RUNNER_TEMP:-/tmp}/ao-forge-goal-fixtures/forge"
+  mkdir -p "$(dirname "$forge_bin")"
   go build -o "$forge_bin" ./cmd/forge
+fi
+
+if [[ ! -x "$forge_bin" ]]; then
+  echo "forge binary is not executable: $forge_bin" >&2
+  exit 1
 fi
 
 goal_runs=()
@@ -32,6 +39,7 @@ fi
 
 for goal_run in "${goal_runs[@]}"; do
   "$forge_bin" goal validate --goal-run "$goal_run"
+  "$forge_bin" goal evidence verify --goal-run "$goal_run"
 done
 
 for update_audit in "${update_audits[@]}"; do

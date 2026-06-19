@@ -101,6 +101,7 @@ Validate and inspect a durable GoalRun before a loop iteration:
 ./bin/forge goal transitions --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --to implementation
 ./bin/forge goal update --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --out tmp/ao2-weekend-hardening.goal-run.json --phase implementation --next-task "Implement the smallest verified AO2 hardening task." --evidence examples/goals/ao2-weekend-hardening.goal-run.json
 ./bin/forge contract validate --schema docs/contracts/goal-run-update-audit-v0.1.schema.json --document examples/goals/ao2-weekend-hardening.goal-run-update-audit.json
+./bin/forge goal evidence verify --goal-run examples/goals/ao2-pulse-handoff.goal-run.json
 ```
 
 Build and run the current skeleton:

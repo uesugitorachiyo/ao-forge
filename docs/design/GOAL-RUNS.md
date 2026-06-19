@@ -101,3 +101,14 @@ forge contract validate \
   --schema docs/contracts/goal-run-update-audit-v0.1.schema.json \
   --document examples/goals/ao2-weekend-hardening.goal-run-update-audit.json
 ```
+
+Verify the bytes behind recorded GoalRun evidence before using a candidate as
+the latest durable state:
+
+```sh
+forge goal evidence verify --goal-run examples/goals/ao2-pulse-handoff.goal-run.json
+```
+
+The verifier recalculates SHA-256 for every `last_iteration.evidence` path and
+fails if an artifact is missing, has no recorded hash, or no longer matches the
+recorded hash.

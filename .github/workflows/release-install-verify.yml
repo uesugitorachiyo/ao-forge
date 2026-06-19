@@ -1,0 +1,231 @@
+name: Release Install Verify
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Published release tag to install-verify"
+        required: true
+        default: "v0.1.0"
+      require_evidence_bundle:
+        description: "Require release-evidence-bundle.json and its attestation"
+        required: true
+        default: "true"
+
+permissions:
+  contents: read
+  attestations: read
+
+concurrency:
+  group: release-install-verify-${{ github.event.inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  install-verify:
+    name: Verify public release asset installation
+    runs-on: ubuntu-latest
+    env:
+      REQUESTED_INSTALL_VERIFY_TAG: ${{ github.event.inputs.tag }}
+      REQUIRE_EVIDENCE_BUNDLE_INPUT: ${{ github.event.inputs.require_evidence_bundle }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build verification CLI
+        run: go build -o "${RUNNER_TEMP}/forge" ./cmd/forge
+
+      - name: Resolve install verification request
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${REQUESTED_INSTALL_VERIFY_TAG:-}"
+          if [[ -z "$tag" || "$tag" != v* ]]; then
+            echo "release install verify tag is required and must start with v" >&2
+            exit 1
+          fi
+
+          require_bundle="${REQUIRE_EVIDENCE_BUNDLE_INPUT:-true}"
+          if [[ "$require_bundle" != "true" && "$require_bundle" != "false" ]]; then
+            echo "require_evidence_bundle must be true or false" >&2
+            exit 1
+          fi
+          if [[ "$require_bundle" == "false" ]]; then
+            echo "require_evidence_bundle=false allows legacy releases only"
+          fi
+
+          echo "AO_FORGE_INSTALL_VERIFY_TAG=$tag" >> "$GITHUB_ENV"
+          echo "AO_FORGE_REQUIRE_EVIDENCE_BUNDLE=$require_bundle" >> "$GITHUB_ENV"
+          echo "AO_FORGE_INSTALL_VERIFY_OUT=${RUNNER_TEMP}/ao-forge-release-install-verify" >> "$GITHUB_ENV"
+          echo "tag=$tag" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Read release metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${AO_FORGE_INSTALL_VERIFY_OUT}/assets" "${AO_FORGE_INSTALL_VERIFY_OUT}/extract"
+          gh release view "${AO_FORGE_INSTALL_VERIFY_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --json isDraft,isPrerelease,tagName,targetCommitish,url,publishedAt,assets \
+            > "${AO_FORGE_INSTALL_VERIFY_OUT}/release.json"
+
+      - name: Download public release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release download "${AO_FORGE_INSTALL_VERIFY_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --dir "${AO_FORGE_INSTALL_VERIFY_OUT}/assets"
+
+      - name: Verify checksums and required assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${AO_FORGE_INSTALL_VERIFY_OUT}/assets"
+          "${RUNNER_TEMP}/forge" artifact verify-checksums --manifest checksums.txt
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import sys
+
+          require_bundle = os.environ["AO_FORGE_REQUIRE_EVIDENCE_BUNDLE"] == "true"
+          expected = {
+              "ao-forge_Linux_x86_64.tar.gz",
+              "ao-forge_Darwin_arm64.tar.gz",
+              "ao-forge_Windows_x86_64.zip",
+              "checksums.txt",
+          }
+          if require_bundle:
+              expected.update({
+                  "release-evidence-bundle.json",
+                  "release-evidence-bundle.attestation.json",
+              })
+          assets = {path.name for path in pathlib.Path(".").iterdir() if path.is_file()}
+          missing = sorted(expected - assets)
+          if missing:
+              print(f"missing public release assets: {missing}", file=sys.stderr)
+              sys.exit(1)
+          print("public_release_assets_present=true")
+          PY
+
+      - name: Extract public release archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          assets="${AO_FORGE_INSTALL_VERIFY_OUT}/assets"
+          extract="${AO_FORGE_INSTALL_VERIFY_OUT}/extract"
+          mkdir -p "${extract}/linux" "${extract}/darwin" "${extract}/windows"
+
+          tar -xzf "${assets}/ao-forge_Linux_x86_64.tar.gz" -C "${extract}/linux"
+          test -x "${extract}/linux/ao-forge"
+
+          tar -xzf "${assets}/ao-forge_Darwin_arm64.tar.gz" -C "${extract}/darwin"
+          test -f "${extract}/darwin/ao-forge"
+
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import zipfile
+
+          assets = pathlib.Path(os.environ["AO_FORGE_INSTALL_VERIFY_OUT"]) / "assets"
+          extract = pathlib.Path(os.environ["AO_FORGE_INSTALL_VERIFY_OUT"]) / "extract" / "windows"
+          with zipfile.ZipFile(assets / "ao-forge_Windows_x86_64.zip") as archive:
+              archive.extractall(extract)
+          if not (extract / "ao-forge.exe").is_file():
+              raise SystemExit("ao-forge.exe missing from Windows release archive")
+          print("windows_archive_contains=ao-forge.exe")
+          PY
+
+      - name: Run Linux install smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          "${AO_FORGE_INSTALL_VERIFY_OUT}/extract/linux/ao-forge" --help >/dev/null
+          "${AO_FORGE_INSTALL_VERIFY_OUT}/extract/linux/ao-forge" doctor --foundation docs/foundation/foundation-baseline.v0.1.json
+          echo "linux_public_asset_install_smoke=passed"
+
+      - name: Write install verification audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+
+          out = pathlib.Path(os.environ["AO_FORGE_INSTALL_VERIFY_OUT"])
+          assets_dir = out / "assets"
+          release = json.loads((out / "release.json").read_text())
+
+          def sha256(path):
+              digest = hashlib.sha256()
+              with path.open("rb") as handle:
+                  for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              return digest.hexdigest()
+
+          installed = []
+          for name in [
+              "ao-forge_Linux_x86_64.tar.gz",
+              "ao-forge_Darwin_arm64.tar.gz",
+              "ao-forge_Windows_x86_64.zip",
+          ]:
+              path = assets_dir / name
+              installed.append({
+                  "name": name,
+                  "sha256": sha256(path),
+                  "size_bytes": path.stat().st_size,
+              })
+
+          audit = {
+              "schema_version": "ao.forge.release-install-verify.v0.1",
+              "status": "passed",
+              "tag": os.environ["AO_FORGE_INSTALL_VERIFY_TAG"],
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "workflow": {
+                  "name": "Release Install Verify",
+                  "path": ".github/workflows/release-install-verify.yml",
+                  "ref": os.environ["GITHUB_REF"],
+                  "run_id": os.environ["GITHUB_RUN_ID"],
+                  "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              },
+              "release": {
+                  "url": release.get("url"),
+                  "target_commitish": release.get("targetCommitish"),
+                  "published_at": release.get("publishedAt"),
+              },
+              "checks": {
+                  "checksums_verified": True,
+                  "linux_archive_extracted": True,
+                  "darwin_archive_extracted": True,
+                  "windows_archive_extracted": True,
+                  "linux_binary_smoke_test": True,
+              },
+              "installed_assets": installed,
+          }
+          (out / "release-install-verify-audit.json").write_text(json.dumps(audit, indent=2, sort_keys=True) + "\n")
+          print("release_install_verify=passed")
+          PY
+
+      - name: Upload release install verification audit
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-install-verify-audit
+          path: |
+            ${{ runner.temp }}/ao-forge-release-install-verify/release.json
+            ${{ runner.temp }}/ao-forge-release-install-verify/release-install-verify-audit.json
+          if-no-files-found: error
+          retention-days: 90

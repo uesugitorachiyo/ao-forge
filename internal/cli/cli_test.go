@@ -1051,6 +1051,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	retainedEvidenceGoalRunExample := readText("examples", "goals", "ao2-retained-evidence.goal-run.json")
 	retainedEvidenceArtifact := readText("docs", "evidence", "goals", "ao2-weekend-hardening", "20260619T143000Z-implementation", "ao2-pulse-handoff-retention-proof.json")
 	retainedReadinessAudit := readText("docs", "evidence", "goals", "ao2-weekend-hardening", "20260619T180000Z-verification", "goal-run-readiness-audit.json")
+	tamperedReadinessAuditExample := readText("examples", "goals", "invalid", "tampered-readiness-audit.goal-run-readiness-audit.invalid.json")
 	missingRetentionMetadataExample := readText("examples", "goals", "invalid", "missing-retention-metadata.goal-run-retained-evidence.invalid.json")
 	unsafeCleanupRetentionExample := readText("examples", "goals", "invalid", "unsafe-cleanup-retention.goal-run-retained-evidence.invalid.json")
 	staleEvidenceGoalRunExample := readText("examples", "goals", "invalid", "stale-evidence.goal-run.invalid.json")
@@ -1198,6 +1199,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run docs retained evidence audit schema", doc: goalRunDocs, want: "docs/contracts/goal-run-retained-evidence-audit-v0.1.schema.json"},
 		{name: "goal run docs readiness audit schema", doc: goalRunDocs, want: "docs/contracts/goal-run-readiness-audit-v0.1.schema.json"},
 		{name: "goal run docs retained readiness audit fixture", doc: goalRunDocs, want: "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/goal-run-readiness-audit.json"},
+		{name: "goal run docs tampered readiness audit fixture", doc: goalRunDocs, want: "examples/goals/invalid/tampered-readiness-audit.goal-run-readiness-audit.invalid.json"},
 		{name: "goal run docs retained readiness audit schema", doc: goalRunDocs, want: "Retained readiness audit JSON"},
 		{name: "goal run docs readiness command", doc: goalRunDocs, want: "forge goal readiness --goal-run examples/goals/ao2-retained-evidence.goal-run.json --to verification --json"},
 		{name: "goal run docs readiness combined gate", doc: goalRunDocs, want: "`forge goal readiness` is the combined pre-loop gate for AO2 Pulse"},
@@ -1267,6 +1269,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "AO2 Pulse docs handoff audit", doc: ao2PulseGoalRunLoopDocs, want: "examples/goals/ao2-pulse-handoff.goal-run-update-audit.json"},
 		{name: "AO2 Pulse docs retained fixture", doc: ao2PulseGoalRunLoopDocs, want: "examples/goals/ao2-retained-evidence.goal-run.json"},
 		{name: "AO2 Pulse docs retained readiness fixture", doc: ao2PulseGoalRunLoopDocs, want: "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/goal-run-readiness-audit.json"},
+		{name: "AO2 Pulse docs tampered readiness audit fixture", doc: ao2PulseGoalRunLoopDocs, want: "examples/goals/invalid/tampered-readiness-audit.goal-run-readiness-audit.invalid.json"},
 		{name: "AO2 Pulse docs retained readiness schema validation", doc: ao2PulseGoalRunLoopDocs, want: "validates retained readiness audit JSON under"},
 		{name: "AO2 Pulse docs readiness script smoke", doc: ao2PulseGoalRunLoopDocs, want: "`scripts/ao2-pulse-goal-readiness.sh` produces schema-valid readiness audit JSON"},
 		{name: "AO2 Pulse docs retained smoke", doc: ao2PulseGoalRunLoopDocs, want: "one positive GoalRun fixture uses the retained evidence layout"},
@@ -1311,6 +1314,8 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "retained readiness audit requested phase", doc: retainedReadinessAudit, want: `"requested_phase": "verification"`},
 		{name: "retained readiness audit retained evidence check", doc: retainedReadinessAudit, want: `"check_id": "retained_evidence"`},
 		{name: "retained readiness audit retention audit", doc: retainedReadinessAudit, want: `"retention_audits"`},
+		{name: "tampered readiness audit schema marker", doc: tamperedReadinessAuditExample, want: `"readiness_schema_version": "ao.forge.goal-run-readiness-audit.v0.1"`},
+		{name: "tampered readiness audit extra field", doc: tamperedReadinessAuditExample, want: `"tampered_after_validation": true`},
 		{name: "missing retention metadata fixture schema", doc: missingRetentionMetadataExample, want: `"schema_version": "ao.forge.goal-run-retained-evidence.v0.1"`},
 		{name: "missing retention metadata fixture summary", doc: missingRetentionMetadataExample, want: "must declare machine-readable retention metadata"},
 		{name: "unsafe cleanup retention fixture review disabled", doc: unsafeCleanupRetentionExample, want: `"deletion_requires_review": false`},
@@ -2353,13 +2358,16 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		{name: "goal fixture verifier retained invalid glob", doc: goalFixtureVerifier, want: "*.goal-run-retained-evidence.invalid.json"},
 		{name: "goal fixture verifier path invalid glob", doc: goalFixtureVerifier, want: "*.goal-run.path-invalid.json"},
 		{name: "goal fixture verifier path invalid audit glob", doc: goalFixtureVerifier, want: "*.goal-run-update-audit.path-invalid.json"},
+		{name: "goal fixture verifier readiness invalid glob", doc: goalFixtureVerifier, want: "*.goal-run-readiness-audit.invalid.json"},
 		{name: "goal fixture verifier stale failure", doc: goalFixtureVerifier, want: "expected stale GoalRun evidence fixture to fail"},
 		{name: "goal fixture verifier retained artifact failure", doc: goalFixtureVerifier, want: "expected retained GoalRun evidence artifact fixture to fail"},
+		{name: "goal fixture verifier readiness audit failure", doc: goalFixtureVerifier, want: "expected GoalRun readiness audit fixture to fail"},
 		{name: "goal fixture verifier path policy failure", doc: goalFixtureVerifier, want: "expected GoalRun evidence path policy fixture to fail"},
 		{name: "goal fixture verifier update audit path policy failure", doc: goalFixtureVerifier, want: "expected GoalRun update-audit evidence path policy fixture to fail"},
 		{name: "goal fixture verifier rejected count", doc: goalFixtureVerifier, want: "goal_run_invalid_fixtures_rejected"},
 		{name: "goal fixture verifier path rejected count", doc: goalFixtureVerifier, want: "goal_run_invalid_path_fixtures_rejected"},
 		{name: "goal fixture verifier update audit path rejected count", doc: goalFixtureVerifier, want: "goal_run_update_audit_invalid_path_fixtures_rejected"},
+		{name: "goal fixture verifier readiness audit rejected count", doc: goalFixtureVerifier, want: "goal_run_readiness_audit_invalid_fixtures_rejected"},
 		{name: "goal fixture verifier retained layout", doc: goalFixtureVerifier, want: "docs/evidence/goals/"},
 		{name: "goal fixture verifier readiness command", doc: goalFixtureVerifier, want: "goal readiness --goal-run"},
 		{name: "goal fixture verifier AO2 Pulse readiness script", doc: goalFixtureVerifier, want: "scripts/ao2-pulse-goal-readiness.sh"},

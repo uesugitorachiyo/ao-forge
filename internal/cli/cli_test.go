@@ -307,6 +307,7 @@ func TestGoalRunCLILintsEvidencePaths(t *testing.T) {
 	retainedPath := filepath.Join(root, "examples", "goals", "ao2-retained-evidence.goal-run.json")
 	auditPath := filepath.Join(root, "examples", "goals", "ao2-pulse-handoff.goal-run-update-audit.json")
 	tmpPath := filepath.Join(root, "examples", "goals", "invalid", "tmp-evidence-path.goal-run.path-invalid.json")
+	lintSchemaPath := filepath.Join(root, "docs", "contracts", "goal-run-evidence-lint-v0.1.schema.json")
 
 	code, stdout, stderr := runCLI("goal", "evidence", "lint", "--goal-run", retainedPath)
 	if code != 0 {
@@ -365,6 +366,13 @@ func TestGoalRunCLILintsEvidencePaths(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &summary); err != nil {
 		t.Fatalf("goal evidence lint --json emitted invalid JSON: %v\n%s", err, stdout)
 	}
+	var lintDocument any
+	if err := json.Unmarshal([]byte(stdout), &lintDocument); err != nil {
+		t.Fatalf("goal evidence lint --json emitted invalid JSON document: %v\n%s", err, stdout)
+	}
+	if err := validateJSONSchemaValue(lintSchemaPath, lintDocument); err != nil {
+		t.Fatalf("goal evidence lint --json failed schema validation: %v\n%s", err, stdout)
+	}
 	if summary.LintSchemaVersion != "ao.forge.goal-run-evidence-lint.v0.1" ||
 		summary.DocumentType != "goal_run" ||
 		summary.Status != "passed" ||
@@ -403,6 +411,20 @@ func TestGoalRunCLILintsEvidencePaths(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "evidence path lint failed") {
 		t.Fatalf("goal evidence lint invalid path stderr drifted: %s", stderr)
+	}
+
+	code, stdout, stderr = runCLI("goal", "evidence", "lint", "--goal-run", tmpPath, "--json")
+	if code != 1 {
+		t.Fatalf("goal evidence lint invalid path --json exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if err := json.Unmarshal([]byte(stdout), &lintDocument); err != nil {
+		t.Fatalf("goal evidence lint invalid path --json emitted invalid JSON: %v\n%s", err, stdout)
+	}
+	if err := validateJSONSchemaValue(lintSchemaPath, lintDocument); err != nil {
+		t.Fatalf("goal evidence lint invalid path --json failed schema validation: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stderr, "evidence path lint failed") {
+		t.Fatalf("goal evidence lint invalid path --json stderr drifted: %s", stderr)
 	}
 }
 
@@ -716,6 +738,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	goalRunSchema := readText("docs", "contracts", "goal-run-v0.1.schema.json")
 	goalRunUpdateAuditSchema := readText("docs", "contracts", "goal-run-update-audit-v0.1.schema.json")
 	goalRunEvidenceVerifySchema := readText("docs", "contracts", "goal-run-evidence-verify-v0.1.schema.json")
+	goalRunEvidenceLintSchema := readText("docs", "contracts", "goal-run-evidence-lint-v0.1.schema.json")
 	goalRunDocs := readText("docs", "design", "GOAL-RUNS.md")
 	goalRunExample := readText("examples", "goals", "ao2-weekend-hardening.goal-run.json")
 	goalRunUpdateAuditExample := readText("examples", "goals", "ao2-weekend-hardening.goal-run-update-audit.json")
@@ -749,6 +772,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "README goal run schema link", doc: readme, want: "[GoalRun v0.1 Schema](docs/contracts/goal-run-v0.1.schema.json)"},
 		{name: "README goal run update audit schema link", doc: readme, want: "[GoalRun Update Audit v0.1 Schema](docs/contracts/goal-run-update-audit-v0.1.schema.json)"},
 		{name: "README goal run evidence verify schema link", doc: readme, want: "[GoalRun Evidence Verify v0.1 Schema](docs/contracts/goal-run-evidence-verify-v0.1.schema.json)"},
+		{name: "README goal run evidence lint schema link", doc: readme, want: "[GoalRun Evidence Lint v0.1 Schema](docs/contracts/goal-run-evidence-lint-v0.1.schema.json)"},
 		{name: "README goal run example link", doc: readme, want: "[Example GoalRun](examples/goals/ao2-weekend-hardening.goal-run.json)"},
 		{name: "README goal run update audit example link", doc: readme, want: "[Example GoalRun Update Audit](examples/goals/ao2-weekend-hardening.goal-run-update-audit.json)"},
 		{name: "README AO2 Pulse handoff goal run link", doc: readme, want: "[AO2 Pulse Handoff GoalRun](examples/goals/ao2-pulse-handoff.goal-run.json)"},
@@ -762,6 +786,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "README goal evidence verify command", doc: readme, want: "forge goal evidence verify --goal-run examples/goals/ao2-pulse-handoff.goal-run.json"},
 		{name: "README goal evidence lint command", doc: readme, want: "forge goal evidence lint --goal-run examples/goals/ao2-retained-evidence.goal-run.json"},
 		{name: "README goal evidence lint audit command", doc: readme, want: "forge goal evidence lint --update-audit examples/goals/ao2-pulse-handoff.goal-run-update-audit.json"},
+		{name: "README goal evidence lint schema validate command", doc: readme, want: "forge contract validate --schema docs/contracts/goal-run-evidence-lint-v0.1.schema.json --document tmp/goal-run-evidence-lint.json"},
 		{name: "README goal evidence verify schema validate command", doc: readme, want: "forge contract validate --schema docs/contracts/goal-run-evidence-verify-v0.1.schema.json --document tmp/goal-run-evidence-verify.json"},
 		{name: "README goal evidence retained paths", doc: readme, want: "Persisted GoalRun evidence is retained under repository-relative durable paths"},
 		{name: "README goal evidence path lint", doc: readme, want: "The GoalRun fixture smoke rejects retained"},
@@ -804,6 +829,11 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run evidence verify expected hash", doc: goalRunEvidenceVerifySchema, want: `"expected_sha256"`},
 		{name: "goal run evidence verify actual hash", doc: goalRunEvidenceVerifySchema, want: `"actual_sha256"`},
 		{name: "goal run evidence verify failed status", doc: goalRunEvidenceVerifySchema, want: `"failed"`},
+		{name: "goal run evidence lint schema id", doc: goalRunEvidenceLintSchema, want: `"ao.forge.goal-run-evidence-lint.v0.1"`},
+		{name: "goal run evidence lint strict root", doc: goalRunEvidenceLintSchema, want: `"additionalProperties": false`},
+		{name: "goal run evidence lint document type", doc: goalRunEvidenceLintSchema, want: `"goal_run_update_audit"`},
+		{name: "goal run evidence lint evidence", doc: goalRunEvidenceLintSchema, want: `"evidence_linted"`},
+		{name: "goal run evidence lint failed status", doc: goalRunEvidenceLintSchema, want: `"failed"`},
 		{name: "goal run docs title", doc: goalRunDocs, want: "# AO Forge GoalRun Contract"},
 		{name: "goal run docs ownership", doc: goalRunDocs, want: "AO Forge owns durable goal and task state"},
 		{name: "goal run docs cron boundary", doc: goalRunDocs, want: "codex-cron should only trigger the loop"},
@@ -819,6 +849,8 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run docs evidence verify", doc: goalRunDocs, want: "forge goal evidence verify --goal-run examples/goals/ao2-pulse-handoff.goal-run.json"},
 		{name: "goal run docs evidence verify schema", doc: goalRunDocs, want: "docs/contracts/goal-run-evidence-verify-v0.1.schema.json"},
 		{name: "goal run docs evidence verify schema version", doc: goalRunDocs, want: "ao.forge.goal-run-evidence-verify.v0.1"},
+		{name: "goal run docs evidence lint schema", doc: goalRunDocs, want: "docs/contracts/goal-run-evidence-lint-v0.1.schema.json"},
+		{name: "goal run docs evidence lint schema version", doc: goalRunDocs, want: "ao.forge.goal-run-evidence-lint.v0.1"},
 		{name: "goal run docs stale fixture", doc: goalRunDocs, want: "examples/goals/invalid/stale-evidence.goal-run.invalid.json"},
 		{name: "goal run docs evidence mismatch", doc: goalRunDocs, want: "has no recorded hash"},
 		{name: "goal run docs evidence freshness title", doc: goalRunDocs, want: "## Evidence Freshness Policy"},
@@ -1909,6 +1941,7 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		{name: "goal fixture verifier evidence verify", doc: goalFixtureVerifier, want: "goal evidence verify --goal-run"},
 		{name: "goal fixture verifier evidence lint goal run", doc: goalFixtureVerifier, want: "goal evidence lint --goal-run"},
 		{name: "goal fixture verifier evidence lint update audit", doc: goalFixtureVerifier, want: "goal evidence lint --update-audit"},
+		{name: "goal fixture verifier evidence lint schema", doc: goalFixtureVerifier, want: "goal-run-evidence-lint-v0.1.schema.json"},
 		{name: "goal fixture verifier invalid glob", doc: goalFixtureVerifier, want: "*.goal-run.invalid.json"},
 		{name: "goal fixture verifier path invalid glob", doc: goalFixtureVerifier, want: "*.goal-run.path-invalid.json"},
 		{name: "goal fixture verifier stale failure", doc: goalFixtureVerifier, want: "expected stale GoalRun evidence fixture to fail"},

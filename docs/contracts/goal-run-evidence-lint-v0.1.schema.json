@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/uesugitorachiyo/ao-forge/docs/contracts/goal-run-evidence-lint-v0.1.schema.json",
+  "title": "AO Forge GoalRun Evidence Lint v0.1",
+  "type": "object",
+  "required": [
+    "lint_schema_version",
+    "document",
+    "document_type",
+    "status",
+    "evidence_linted",
+    "evidence",
+    "errors"
+  ],
+  "properties": {
+    "lint_schema_version": {
+      "const": "ao.forge.goal-run-evidence-lint.v0.1"
+    },
+    "document": {
+      "type": "string",
+      "minLength": 1
+    },
+    "document_type": {
+      "type": "string",
+      "enum": ["goal_run", "goal_run_update_audit"]
+    },
+    "goal_id": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["passed", "failed"]
+    },
+    "evidence_linted": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["label", "path", "status"],
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": ["passed", "failed"]
+          },
+          "error": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "passed"
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "goal_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "errors": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "failed"
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "errors": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

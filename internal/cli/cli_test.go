@@ -204,6 +204,7 @@ func TestGoalRunCLIValidatesAndInspectsContract(t *testing.T) {
 func TestGoalRunCLIVerifiesEvidenceHashes(t *testing.T) {
 	root := repoRoot(t)
 	handoffPath := filepath.Join(root, "examples", "goals", "ao2-pulse-handoff.goal-run.json")
+	verifySchemaPath := filepath.Join(root, "docs", "contracts", "goal-run-evidence-verify-v0.1.schema.json")
 
 	code, stdout, stderr := runCLI("goal", "evidence", "verify", "--goal-run", handoffPath)
 	if code != 0 {
@@ -241,6 +242,13 @@ func TestGoalRunCLIVerifiesEvidenceHashes(t *testing.T) {
 	}
 	if err := json.Unmarshal([]byte(stdout), &summary); err != nil {
 		t.Fatalf("goal evidence verify --json emitted invalid JSON: %v\n%s", err, stdout)
+	}
+	var verifyDocument any
+	if err := json.Unmarshal([]byte(stdout), &verifyDocument); err != nil {
+		t.Fatalf("goal evidence verify --json emitted invalid JSON document: %v\n%s", err, stdout)
+	}
+	if err := validateJSONSchemaValue(verifySchemaPath, verifyDocument); err != nil {
+		t.Fatalf("goal evidence verify --json failed schema validation: %v\n%s", err, stdout)
 	}
 	if summary.VerifySchemaVersion != "ao.forge.goal-run-evidence-verify.v0.1" ||
 		summary.Status != "passed" ||
@@ -282,6 +290,20 @@ func TestGoalRunCLIVerifiesEvidenceHashes(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "evidence verification failed") {
 		t.Fatalf("goal evidence verify stale stderr drifted: %s", stderr)
+	}
+
+	code, stdout, stderr = runCLI("goal", "evidence", "verify", "--goal-run", stalePath, "--json")
+	if code != 1 {
+		t.Fatalf("goal evidence verify stale --json exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if err := json.Unmarshal([]byte(stdout), &verifyDocument); err != nil {
+		t.Fatalf("goal evidence verify stale --json emitted invalid JSON: %v\n%s", err, stdout)
+	}
+	if err := validateJSONSchemaValue(verifySchemaPath, verifyDocument); err != nil {
+		t.Fatalf("goal evidence verify stale --json failed schema validation: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stderr, "evidence verification failed") {
+		t.Fatalf("goal evidence verify stale --json stderr drifted: %s", stderr)
 	}
 }
 
@@ -594,6 +616,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	ao2PulseGoalRunLoopDocs := readText("docs", "design", "AO2-PULSE-GOAL-RUN-LOOP.md")
 	goalRunSchema := readText("docs", "contracts", "goal-run-v0.1.schema.json")
 	goalRunUpdateAuditSchema := readText("docs", "contracts", "goal-run-update-audit-v0.1.schema.json")
+	goalRunEvidenceVerifySchema := readText("docs", "contracts", "goal-run-evidence-verify-v0.1.schema.json")
 	goalRunDocs := readText("docs", "design", "GOAL-RUNS.md")
 	goalRunExample := readText("examples", "goals", "ao2-weekend-hardening.goal-run.json")
 	goalRunUpdateAuditExample := readText("examples", "goals", "ao2-weekend-hardening.goal-run-update-audit.json")
@@ -620,6 +643,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "README AO2 Pulse goal run loop link", doc: readme, want: "[AO2 Pulse GoalRun Loop](docs/design/AO2-PULSE-GOAL-RUN-LOOP.md)"},
 		{name: "README goal run schema link", doc: readme, want: "[GoalRun v0.1 Schema](docs/contracts/goal-run-v0.1.schema.json)"},
 		{name: "README goal run update audit schema link", doc: readme, want: "[GoalRun Update Audit v0.1 Schema](docs/contracts/goal-run-update-audit-v0.1.schema.json)"},
+		{name: "README goal run evidence verify schema link", doc: readme, want: "[GoalRun Evidence Verify v0.1 Schema](docs/contracts/goal-run-evidence-verify-v0.1.schema.json)"},
 		{name: "README goal run example link", doc: readme, want: "[Example GoalRun](examples/goals/ao2-weekend-hardening.goal-run.json)"},
 		{name: "README goal run update audit example link", doc: readme, want: "[Example GoalRun Update Audit](examples/goals/ao2-weekend-hardening.goal-run-update-audit.json)"},
 		{name: "README AO2 Pulse handoff goal run link", doc: readme, want: "[AO2 Pulse Handoff GoalRun](examples/goals/ao2-pulse-handoff.goal-run.json)"},
@@ -630,6 +654,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "README goal run update command", doc: readme, want: `./bin/forge goal update --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --out tmp/ao2-weekend-hardening.goal-run.json --phase implementation`},
 		{name: "README goal run update audit validate command", doc: readme, want: "forge contract validate --schema docs/contracts/goal-run-update-audit-v0.1.schema.json --document examples/goals/ao2-weekend-hardening.goal-run-update-audit.json"},
 		{name: "README goal evidence verify command", doc: readme, want: "forge goal evidence verify --goal-run examples/goals/ao2-pulse-handoff.goal-run.json"},
+		{name: "README goal evidence verify schema validate command", doc: readme, want: "forge contract validate --schema docs/contracts/goal-run-evidence-verify-v0.1.schema.json --document tmp/goal-run-evidence-verify.json"},
 		{name: "README brief schema link", doc: readme, want: "[Factory Brief v0.1 Schema](docs/contracts/factory-brief-v0.1.schema.json)"},
 		{name: "README plan schema link", doc: readme, want: "[Factory Plan v0.1 Schema](docs/contracts/factory-plan-v0.1.schema.json)"},
 		{name: "README release preview schema link", doc: readme, want: "[Release Preview Audit v0.1 Schema](docs/contracts/release-preview-audit-v0.1.schema.json)"},
@@ -663,6 +688,12 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run update audit evidence", doc: goalRunUpdateAuditSchema, want: `"evidence"`},
 		{name: "goal run update audit evidence hash", doc: goalRunUpdateAuditSchema, want: `"sha256"`},
 		{name: "goal run update audit status", doc: goalRunUpdateAuditSchema, want: `"updated"`},
+		{name: "goal run evidence verify schema id", doc: goalRunEvidenceVerifySchema, want: `"ao.forge.goal-run-evidence-verify.v0.1"`},
+		{name: "goal run evidence verify strict root", doc: goalRunEvidenceVerifySchema, want: `"additionalProperties": false`},
+		{name: "goal run evidence verify result evidence", doc: goalRunEvidenceVerifySchema, want: `"evidence"`},
+		{name: "goal run evidence verify expected hash", doc: goalRunEvidenceVerifySchema, want: `"expected_sha256"`},
+		{name: "goal run evidence verify actual hash", doc: goalRunEvidenceVerifySchema, want: `"actual_sha256"`},
+		{name: "goal run evidence verify failed status", doc: goalRunEvidenceVerifySchema, want: `"failed"`},
 		{name: "goal run docs title", doc: goalRunDocs, want: "# AO Forge GoalRun Contract"},
 		{name: "goal run docs ownership", doc: goalRunDocs, want: "AO Forge owns durable goal and task state"},
 		{name: "goal run docs cron boundary", doc: goalRunDocs, want: "codex-cron should only trigger the loop"},
@@ -676,6 +707,8 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run docs update no in-place", doc: goalRunDocs, want: "refuses to write over the input file"},
 		{name: "goal run docs update evidence", doc: goalRunDocs, want: "Each `--evidence` path must be readable"},
 		{name: "goal run docs evidence verify", doc: goalRunDocs, want: "forge goal evidence verify --goal-run examples/goals/ao2-pulse-handoff.goal-run.json"},
+		{name: "goal run docs evidence verify schema", doc: goalRunDocs, want: "docs/contracts/goal-run-evidence-verify-v0.1.schema.json"},
+		{name: "goal run docs evidence verify schema version", doc: goalRunDocs, want: "ao.forge.goal-run-evidence-verify.v0.1"},
 		{name: "goal run docs evidence mismatch", doc: goalRunDocs, want: "has no recorded hash"},
 		{name: "goal run docs evidence freshness title", doc: goalRunDocs, want: "## Evidence Freshness Policy"},
 		{name: "goal run docs duplicate evidence denied", doc: goalRunDocs, want: "Duplicate paths are denied before the candidate GoalRun is written"},
@@ -802,6 +835,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "release install verify audit schema", text: releaseInstallVerifyAuditSchema},
 		{name: "release rollback audit schema", text: releaseRollbackAuditSchema},
 		{name: "production promotion audit schema", text: productionPromotionAuditSchema},
+		{name: "goal run evidence verify schema", text: goalRunEvidenceVerifySchema},
 	} {
 		var decoded any
 		if err := json.Unmarshal([]byte(doc.text), &decoded); err != nil {

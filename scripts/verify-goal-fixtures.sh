@@ -17,6 +17,9 @@ if [[ ! -x "$forge_bin" ]]; then
   exit 1
 fi
 
+verify_dir="$(mktemp -d "${TMPDIR:-/tmp}/ao-forge-goal-verify.XXXXXX")"
+trap 'rm -rf "$verify_dir"' EXIT
+
 goal_runs=()
 while IFS= read -r goal_run; do
   goal_runs+=("$goal_run")
@@ -40,6 +43,11 @@ fi
 for goal_run in "${goal_runs[@]}"; do
   "$forge_bin" goal validate --goal-run "$goal_run"
   "$forge_bin" goal evidence verify --goal-run "$goal_run"
+  verify_json="$verify_dir/$(basename "$goal_run").evidence-verify.json"
+  "$forge_bin" goal evidence verify --goal-run "$goal_run" --json > "$verify_json"
+  "$forge_bin" contract validate \
+    --schema docs/contracts/goal-run-evidence-verify-v0.1.schema.json \
+    --document "$verify_json"
 done
 
 for update_audit in "${update_audits[@]}"; do

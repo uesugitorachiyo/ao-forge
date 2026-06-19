@@ -61,6 +61,7 @@ over provider execution, release publishing, or control-plane approval.
 - [AO2 Pulse GoalRun Loop](docs/design/AO2-PULSE-GOAL-RUN-LOOP.md)
 - [GoalRun v0.1 Schema](docs/contracts/goal-run-v0.1.schema.json)
 - [GoalRun Update Audit v0.1 Schema](docs/contracts/goal-run-update-audit-v0.1.schema.json)
+- [GoalRun Evidence Verify v0.1 Schema](docs/contracts/goal-run-evidence-verify-v0.1.schema.json)
 - [Factory Brief v0.1 Schema](docs/contracts/factory-brief-v0.1.schema.json)
 - [Factory Plan v0.1 Schema](docs/contracts/factory-plan-v0.1.schema.json)
 - [Factory Packet v0.1 Schema](docs/contracts/factory-packet-v0.1.schema.json)
@@ -102,6 +103,8 @@ Validate and inspect a durable GoalRun before a loop iteration:
 ./bin/forge goal update --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --out tmp/ao2-weekend-hardening.goal-run.json --phase implementation --next-task "Implement the smallest verified AO2 hardening task." --evidence examples/goals/ao2-weekend-hardening.goal-run.json
 ./bin/forge contract validate --schema docs/contracts/goal-run-update-audit-v0.1.schema.json --document examples/goals/ao2-weekend-hardening.goal-run-update-audit.json
 ./bin/forge goal evidence verify --goal-run examples/goals/ao2-pulse-handoff.goal-run.json
+./bin/forge goal evidence verify --goal-run examples/goals/ao2-pulse-handoff.goal-run.json --json > tmp/goal-run-evidence-verify.json
+./bin/forge contract validate --schema docs/contracts/goal-run-evidence-verify-v0.1.schema.json --document tmp/goal-run-evidence-verify.json
 ```
 
 Build and run the current skeleton:

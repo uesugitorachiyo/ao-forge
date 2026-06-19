@@ -26,8 +26,9 @@ work:
 The GoalRun schema is `docs/contracts/goal-run-v0.1.schema.json`. The update
 audit schema is `docs/contracts/goal-run-update-audit-v0.1.schema.json`. The
 evidence verification schema is
-`docs/contracts/goal-run-evidence-verify-v0.1.schema.json`. The examples are
-`examples/goals/ao2-weekend-hardening.goal-run.json` and
+`docs/contracts/goal-run-evidence-verify-v0.1.schema.json`. The evidence path
+lint schema is `docs/contracts/goal-run-evidence-lint-v0.1.schema.json`. The
+examples are `examples/goals/ao2-weekend-hardening.goal-run.json` and
 `examples/goals/ao2-weekend-hardening.goal-run-update-audit.json`.
 AO2 Pulse integration rules live in
 `docs/design/AO2-PULSE-GOAL-RUN-LOOP.md`.
@@ -126,11 +127,17 @@ Lint retained evidence paths before preserving a GoalRun or update audit:
 ```sh
 forge goal evidence lint --goal-run examples/goals/ao2-retained-evidence.goal-run.json
 forge goal evidence lint --update-audit examples/goals/ao2-pulse-handoff.goal-run-update-audit.json
+forge goal evidence lint --goal-run examples/goals/ao2-retained-evidence.goal-run.json --json > tmp/goal-run-evidence-lint.json
+forge contract validate \
+  --schema docs/contracts/goal-run-evidence-lint-v0.1.schema.json \
+  --document tmp/goal-run-evidence-lint.json
 ```
 
 The linter validates the source document schema, then rejects persisted evidence
 paths under `tmp/`, `/tmp/`, home directories, parent traversal, or
-machine-local absolute paths.
+machine-local absolute paths. JSON output uses
+`ao.forge.goal-run-evidence-lint.v0.1` and must validate against the evidence
+lint schema before AO2 Pulse treats retained evidence paths as durable.
 
 The negative fixture
 `examples/goals/invalid/stale-evidence.goal-run.invalid.json` is schema-valid

@@ -53,6 +53,11 @@ fi
 for goal_run in "${goal_runs[@]}"; do
   "$forge_bin" goal validate --goal-run "$goal_run"
   "$forge_bin" goal evidence lint --goal-run "$goal_run"
+  lint_json="$verify_dir/$(basename "$goal_run").evidence-lint.json"
+  "$forge_bin" goal evidence lint --goal-run "$goal_run" --json > "$lint_json"
+  "$forge_bin" contract validate \
+    --schema docs/contracts/goal-run-evidence-lint-v0.1.schema.json \
+    --document "$lint_json"
   "$forge_bin" goal evidence verify --goal-run "$goal_run"
   verify_json="$verify_dir/$(basename "$goal_run").evidence-verify.json"
   "$forge_bin" goal evidence verify --goal-run "$goal_run" --json > "$verify_json"
@@ -83,6 +88,11 @@ fi
 
 for update_audit in "${update_audits[@]}"; do
   "$forge_bin" goal evidence lint --update-audit "$update_audit"
+  lint_json="$verify_dir/$(basename "$update_audit").evidence-lint.json"
+  "$forge_bin" goal evidence lint --update-audit "$update_audit" --json > "$lint_json"
+  "$forge_bin" contract validate \
+    --schema docs/contracts/goal-run-evidence-lint-v0.1.schema.json \
+    --document "$lint_json"
   "$forge_bin" contract validate \
     --schema docs/contracts/goal-run-update-audit-v0.1.schema.json \
     --document "$update_audit"
@@ -110,6 +120,14 @@ for invalid_path_goal_run in "${invalid_path_goal_runs[@]}"; do
     echo "expected GoalRun evidence path policy fixture to fail: $invalid_path_goal_run" >&2
     exit 1
   fi
+  lint_json="$verify_dir/$(basename "$invalid_path_goal_run").evidence-lint.json"
+  if "$forge_bin" goal evidence lint --goal-run "$invalid_path_goal_run" --json > "$lint_json"; then
+    echo "expected GoalRun evidence path policy JSON fixture to fail: $invalid_path_goal_run" >&2
+    exit 1
+  fi
+  "$forge_bin" contract validate \
+    --schema docs/contracts/goal-run-evidence-lint-v0.1.schema.json \
+    --document "$lint_json"
 done
 
 echo "goal_run_fixtures_validated=${#goal_runs[@]}"

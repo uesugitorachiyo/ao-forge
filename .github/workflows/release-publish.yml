@@ -81,6 +81,33 @@ jobs:
           echo "AO_FORGE_RELEASE_PUBLISH_NOTES=${RUNNER_TEMP}/ao-forge-release-publish/release-notes.md" >> "$GITHUB_ENV"
           echo "tag=$tag" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Verify signed release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --force --tags origin "refs/tags/${AO_FORGE_RELEASE_PUBLISH_TAG}:refs/tags/${AO_FORGE_RELEASE_PUBLISH_TAG}"
+
+          tag_ref="refs/tags/${AO_FORGE_RELEASE_PUBLISH_TAG}"
+          if ! git rev-parse -q --verify "${tag_ref}" >/dev/null; then
+            echo "release publish tag not found: ${AO_FORGE_RELEASE_PUBLISH_TAG}" >&2
+            exit 1
+          fi
+
+          tag_type="$(git cat-file -t "${tag_ref}")"
+          if [[ "$tag_type" != "tag" ]]; then
+            echo "release publish tag must be an annotated tag" >&2
+            exit 1
+          fi
+
+          git tag -v "${AO_FORGE_RELEASE_PUBLISH_TAG}"
+          tag_commit="$(git rev-parse "${tag_ref}^{commit}")"
+          if [[ "$tag_commit" != "${GITHUB_SHA}" ]]; then
+            echo "release publish tag target mismatch: ${tag_commit} != ${GITHUB_SHA}" >&2
+            exit 1
+          fi
+
+          echo "signed_release_tag_verified=${AO_FORGE_RELEASE_PUBLISH_TAG}"
+
       - name: Download release rehearsal evidence
         env:
           GH_TOKEN: ${{ github.token }}

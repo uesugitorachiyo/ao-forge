@@ -214,21 +214,21 @@ against the expected repository, ref, commit, and artifact digests, and does not
 publish a GitHub release.
 
 The `Release Publish` workflow is manual-only and draft-only. It requires a
-successful `Release Rehearsal` run ID, explicit `confirm_publish=true`, fresh
-checksums, release preview, contract validation, GitHub Artifact Attestation
-verification, and public-safe release notes before it creates a draft GitHub
-release. It also generates `release-evidence-bundle.json`, validates it against
-the release evidence bundle contract, signs it with a GitHub Artifact
-Attestation, verifies that attestation, and uploads both bundle files with the
-release assets.
+successful `Release Rehearsal` run ID, an existing signed annotated tag that
+resolves to the publish commit, explicit `confirm_publish=true`, fresh checksums,
+release preview, contract validation, GitHub Artifact Attestation verification,
+and public-safe release notes before it creates a draft GitHub release. It also
+generates `release-evidence-bundle.json`, validates it against the release
+evidence bundle contract, signs it with a GitHub Artifact Attestation, verifies
+that attestation, and uploads both bundle files with the release assets.
 
 The `Release Verify` workflow is read-only post-release verification. It runs on
 published GitHub releases and can also be dispatched manually for a tag. It
 checks release metadata, expected assets, checksums, release preview evidence,
 archive attestations, the release evidence bundle, bundle attestation, and a
-host-compatible binary smoke test. Future releases require the evidence bundle
-by default; use the explicit legacy override only for releases published before
-that asset existed.
+host-compatible binary smoke test. Future releases require both the evidence
+bundle and a signed annotated release tag by default; use explicit legacy
+overrides only for releases published before those controls existed.
 
 The `Release Rollback` workflow is the guarded release yank path. It is
 manual-only, requires the `production-release` environment, explicit

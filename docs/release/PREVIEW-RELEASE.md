@@ -182,11 +182,12 @@ the job can mutate GitHub release state.
 
 In the publish job, AO Forge rebuilds the release archives, regenerates and
 verifies `dist/checksums.txt`, reruns release preview for the requested tag,
-validates release contracts, produces and verifies GitHub Artifact Attestations,
-generates and verifies an attested release evidence bundle, checks release notes
-for public-unsafe text, and then creates a draft GitHub release with the
-archives, checksum manifest, release-preview evidence, release inventory,
-attestation plan, `release-evidence-bundle.json`,
+verifies that the requested tag is an existing signed annotated tag resolving to
+the publish commit, validates release contracts, produces and verifies GitHub
+Artifact Attestations, generates and verifies an attested release evidence
+bundle, checks release notes for public-unsafe text, and then creates a draft
+GitHub release with the archives, checksum manifest, release-preview evidence,
+release inventory, attestation plan, `release-evidence-bundle.json`,
 `release-evidence-bundle.attestation.json`, and `dist/*.attestation.json`.
 
 Do not mark the draft release public until the maintainer has reviewed the

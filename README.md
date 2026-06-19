@@ -93,6 +93,7 @@ Validate and inspect a durable GoalRun before a loop iteration:
 ```sh
 ./bin/forge goal validate --goal-run examples/goals/ao2-weekend-hardening.goal-run.json
 ./bin/forge goal inspect --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --json
+./bin/forge goal transitions --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --to implementation
 ```
 
 Build and run the current skeleton:

@@ -39,3 +39,29 @@ state why the next action matches:
 If the next action does not match, the agent must emit backoff or stop instead
 of continuing. This keeps AO2 Pulse and Codex from converting a scheduler tick
 into unbounded repository mutation.
+
+## Phase Transitions
+
+`current_phase` is not free text. AO Forge owns the phase transition policy and
+agents must check it before proposing or applying a phase change:
+
+| Current phase | Allowed next phases |
+| --- | --- |
+| `planning` | `implementation`, `blocked`, `backoff`, `stopped` |
+| `implementation` | `verification`, `blocked`, `backoff`, `stopped` |
+| `verification` | `implementation`, `complete`, `blocked`, `backoff`, `stopped` |
+| `blocked` | `planning`, `stopped` |
+| `backoff` | `planning`, `stopped` |
+| `stopped` | none; terminal |
+| `complete` | none; terminal |
+
+Use the non-mutating transition gate before any loop writes a new phase:
+
+```sh
+forge goal transitions --goal-run examples/goals/ao2-weekend-hardening.goal-run.json
+forge goal transitions --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --to implementation
+```
+
+A denied `--to` check returns non-zero. `stopped` and `complete` are terminal
+states, so an automated loop must not resume from them without a new operator
+approved `GoalRun`.

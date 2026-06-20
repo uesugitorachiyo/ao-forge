@@ -125,54 +125,19 @@ factory plan -> task graph -> covenant policy gate -> AO2 execution adapter
 This slice is intentionally narrow. It proves the factory loop without taking
 over provider execution, release publishing, or control-plane approval.
 
-## Design Documents
+## Public Documentation
 
-- [AO Forge v0.1 Design](docs/design/AO-FORGE-V0.1.md)
-- [AO Command v0.1 Design](docs/design/AO-COMMAND-V0.1.md)
-- [Phase 0 Roadmap](docs/roadmap/PHASE-0.md)
-- [Branch Protection Runbook](docs/release/BRANCH-PROTECTION.md)
-- [Branch Protection Evidence](docs/release/BRANCH-PROTECTION-EVIDENCE.md)
-- [First Public Release Checklist](docs/release/FIRST-PUBLIC-RELEASE.md)
-- [v0.1.0 Release Notes Draft](docs/release/V0.1.0-RELEASE-NOTES.md)
-- [v0.1.2 Release Notes Draft](docs/release/V0.1.2-RELEASE-NOTES.md)
-- [Verified Foundation Baseline](docs/foundation/VERIFIED-BASELINE.md)
-- [Foundation Baseline JSON](docs/foundation/foundation-baseline.v0.1.json)
-- [Release Threat Model](docs/security/RELEASE-THREAT-MODEL.md)
+Start with the focused public docs:
+
+- [AO Forge v0.1 Architecture](docs/design/AO-FORGE-V0.1.md)
 - [GoalRun Contract](docs/design/GOAL-RUNS.md)
 - [AO2 Pulse GoalRun Loop](docs/design/AO2-PULSE-GOAL-RUN-LOOP.md)
-- [GoalRun v0.1 Schema](docs/contracts/goal-run-v0.1.schema.json)
-- [GoalRun Update Audit v0.1 Schema](docs/contracts/goal-run-update-audit-v0.1.schema.json)
-- [GoalRun Evidence Verify v0.1 Schema](docs/contracts/goal-run-evidence-verify-v0.1.schema.json)
-- [GoalRun Evidence Lint v0.1 Schema](docs/contracts/goal-run-evidence-lint-v0.1.schema.json)
-- [GoalRun Retained Evidence v0.1 Schema](docs/contracts/goal-run-retained-evidence-v0.1.schema.json)
-- [GoalRun Retained Evidence Audit v0.1 Schema](docs/contracts/goal-run-retained-evidence-audit-v0.1.schema.json)
-- [GoalRun Retained Evidence Cleanup v0.1 Schema](docs/contracts/goal-run-retained-evidence-cleanup-v0.1.schema.json)
-- [GoalRun Readiness Audit v0.1 Schema](docs/contracts/goal-run-readiness-audit-v0.1.schema.json)
-- [Factory Brief v0.1 Schema](docs/contracts/factory-brief-v0.1.schema.json)
-- [Factory Plan v0.1 Schema](docs/contracts/factory-plan-v0.1.schema.json)
-- [Factory Packet v0.1 Schema](docs/contracts/factory-packet-v0.1.schema.json)
-- [Covenant Decision Fixture v0.1 Schema](docs/contracts/covenant-decision-fixture-v0.1.schema.json)
-- [Covenant Gate Result v0.1 Schema](docs/contracts/covenant-gate-result-v0.1.schema.json)
-- [Release Preview Audit v0.1 Schema](docs/contracts/release-preview-audit-v0.1.schema.json)
-- [Release Preview Inspect v0.1 Schema](docs/contracts/release-preview-inspect-v0.1.schema.json)
-- [Release Artifact Inventory v0.1 Schema](docs/contracts/release-artifact-inventory-v0.1.schema.json)
-- [Release Attestation Plan v0.1 Schema](docs/contracts/release-attestation-plan-v0.1.schema.json)
-- [Release Evidence Bundle v0.1 Schema](docs/contracts/release-evidence-bundle-v0.1.schema.json)
-- [Release Verify Audit v0.1 Schema](docs/contracts/release-verify-audit-v0.1.schema.json)
-- [Release Install Verify Audit v0.1 Schema](docs/contracts/release-install-verify-audit-v0.1.schema.json)
-- [Release Rollback Audit v0.1 Schema](docs/contracts/release-rollback-audit-v0.1.schema.json)
-- [Production Promotion Audit v0.1 Schema](docs/contracts/production-promotion-audit-v0.1.schema.json)
-- [Production Readiness Audit v0.1 Schema](docs/contracts/production-readiness-audit-v0.1.schema.json)
-- [Example GoalRun](examples/goals/ao2-weekend-hardening.goal-run.json)
-- [Example GoalRun Update Audit](examples/goals/ao2-weekend-hardening.goal-run-update-audit.json)
-- [AO2 Pulse Handoff GoalRun](examples/goals/ao2-pulse-handoff.goal-run.json)
-- [AO2 Pulse Handoff Update Audit](examples/goals/ao2-pulse-handoff.goal-run-update-audit.json)
-- [Retained GoalRun Evidence Fixture](examples/goals/ao2-retained-evidence.goal-run.json)
-- [Release Preview Fixtures](examples/release-preview/)
-- [Example Vertical Slice](examples/vertical-slices/risky-pr-factory.factory.json)
-- [Example Deterministic Plan](examples/plans/risky-pr-factory-plan.json)
-- [Example Covenant Gate Result](examples/gates/allow-local-plan.gate.json)
-- [Example Factory Packet](examples/packets/risky-pr-factory-packet.json)
+- [Release Threat Model](docs/security/RELEASE-THREAT-MODEL.md)
+- [Branch Protection Runbook](docs/release/BRANCH-PROTECTION.md)
+- [Production Readiness Audit Schema](docs/contracts/production-readiness-audit-v0.1.schema.json)
+
+For the full public documentation index, including schemas, release docs,
+foundation evidence, and examples, see [docs/README.md](docs/README.md).
 
 ## Local CLI
 
@@ -424,3 +389,8 @@ go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= -pyflakes
 go test ./...
 go vet ./...
 ```
+
+## License
+
+AO Forge is licensed under `MIT OR Apache-2.0`, at your option. See
+`LICENSE`, `LICENSE-MIT`, and `LICENSE-APACHE`.

@@ -1,6 +1,14 @@
-AO Forge is licensed under either of:
+SPDX-License-Identifier: MIT OR Apache-2.0
 
-- Apache License, Version 2.0; see LICENSE-APACHE.
-- MIT License; see LICENSE-MIT.
+AO Forge is licensed under `MIT OR Apache-2.0`, at your option.
 
-You may choose either license for your use.
+That means you may use this project under either:
+
+- the MIT License; or
+- the Apache License, Version 2.0.
+
+The canonical license texts are published by the Open Source Initiative and the
+Apache Software Foundation:
+
+- MIT: https://opensource.org/license/mit
+- Apache-2.0: https://www.apache.org/licenses/LICENSE-2.0.txt

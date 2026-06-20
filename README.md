@@ -392,4 +392,4 @@ go vet ./...
 
 ## License
 
-AO Forge is licensed under `MIT OR Apache-2.0`, at your option. See `LICENSE`.
+AO Forge is licensed under `Apache-2.0`. See `LICENSE`.

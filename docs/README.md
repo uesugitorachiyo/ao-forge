@@ -39,6 +39,7 @@ evidence, and examples.
 
 ## Release And Readiness
 
+- [Public Repo Policy](security/PUBLIC-REPO-POLICY.md)
 - [Branch Protection Runbook](release/BRANCH-PROTECTION.md)
 - [Branch Protection Evidence](release/BRANCH-PROTECTION-EVIDENCE.md)
 - [First Public Release Checklist](release/FIRST-PUBLIC-RELEASE.md)

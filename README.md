@@ -132,6 +132,7 @@ Start with the focused public docs:
 - [AO Forge v0.1 Architecture](docs/design/AO-FORGE-V0.1.md)
 - [GoalRun Contract](docs/design/GOAL-RUNS.md)
 - [AO2 Pulse GoalRun Loop](docs/design/AO2-PULSE-GOAL-RUN-LOOP.md)
+- [Public Repo Policy](docs/security/PUBLIC-REPO-POLICY.md)
 - [Release Threat Model](docs/security/RELEASE-THREAT-MODEL.md)
 - [Branch Protection Runbook](docs/release/BRANCH-PROTECTION.md)
 - [Production Readiness Audit Schema](docs/contracts/production-readiness-audit-v0.1.schema.json)

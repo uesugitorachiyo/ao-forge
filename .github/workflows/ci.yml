@@ -13,6 +13,17 @@ permissions:
   contents: read
 
 jobs:
+  license-policy:
+    name: License policy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Check license policy
+        run: scripts/check-license-policy.sh
+
   workflow-lint:
     name: Workflow lint
     runs-on: ubuntu-latest

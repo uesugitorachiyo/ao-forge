@@ -64,11 +64,12 @@ jobs:
           mkdir -p dist build
 
           GOOS=linux GOARCH=amd64 go build -o build/ao-forge ./cmd/forge
-          tar -C build -czf dist/ao-forge_Linux_x86_64.tar.gz ao-forge
+          cp LICENSE NOTICE build/
+          tar -C build -czf dist/ao-forge_Linux_x86_64.tar.gz ao-forge LICENSE NOTICE
           rm -f build/ao-forge
 
           GOOS=darwin GOARCH=arm64 go build -o build/ao-forge ./cmd/forge
-          tar -C build -czf dist/ao-forge_Darwin_arm64.tar.gz ao-forge
+          tar -C build -czf dist/ao-forge_Darwin_arm64.tar.gz ao-forge LICENSE NOTICE
           rm -f build/ao-forge
 
           GOOS=windows GOARCH=amd64 go build -o build/ao-forge.exe ./cmd/forge
@@ -80,8 +81,13 @@ jobs:
           binary = Path("build/ao-forge.exe")
           with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
               zf.write(binary, arcname="ao-forge.exe")
+              zf.write("LICENSE", arcname="LICENSE")
+              zf.write("NOTICE", arcname="NOTICE")
           PY
           rm -rf build
+
+      - name: Check release archive license files
+        run: scripts/check-license-policy.sh --scan-archives
 
       - name: Build verification CLI
         run: go build -o "${RUNNER_TEMP}/forge" ./cmd/forge

@@ -1254,7 +1254,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	}
 
 	readme := readText("README.md")
-	aoCommandDocs := readText("docs", "design", "AO-COMMAND-V0.1.md")
+	docsIndex := readText("docs", "README.md")
 	ao2PulseGoalRunLoopDocs := readText("docs", "design", "AO2-PULSE-GOAL-RUN-LOOP.md")
 	ao2PulseReadinessScript := readText("scripts", "ao2-pulse-goal-readiness.sh")
 	goalRunSchema := readText("docs", "contracts", "goal-run-v0.1.schema.json")
@@ -1311,22 +1311,23 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	}{
 		{name: "README current status", doc: readme, want: "AO Forge v0.1.x now has schema-backed factory contracts"},
 		{name: "README governed execution status", doc: readme, want: "Mutating paths remain fail-closed behind Covenant"},
-		{name: "README AO Command design link", doc: readme, want: "[AO Command v0.1 Design](docs/design/AO-COMMAND-V0.1.md)"},
+		{name: "README docs index link", doc: readme, want: "[docs/README.md](docs/README.md)"},
 		{name: "README goal run docs link", doc: readme, want: "[GoalRun Contract](docs/design/GOAL-RUNS.md)"},
 		{name: "README AO2 Pulse goal run loop link", doc: readme, want: "[AO2 Pulse GoalRun Loop](docs/design/AO2-PULSE-GOAL-RUN-LOOP.md)"},
-		{name: "README goal run schema link", doc: readme, want: "[GoalRun v0.1 Schema](docs/contracts/goal-run-v0.1.schema.json)"},
-		{name: "README goal run update audit schema link", doc: readme, want: "[GoalRun Update Audit v0.1 Schema](docs/contracts/goal-run-update-audit-v0.1.schema.json)"},
-		{name: "README goal run evidence verify schema link", doc: readme, want: "[GoalRun Evidence Verify v0.1 Schema](docs/contracts/goal-run-evidence-verify-v0.1.schema.json)"},
-		{name: "README goal run evidence lint schema link", doc: readme, want: "[GoalRun Evidence Lint v0.1 Schema](docs/contracts/goal-run-evidence-lint-v0.1.schema.json)"},
-		{name: "README goal run retained evidence schema link", doc: readme, want: "[GoalRun Retained Evidence v0.1 Schema](docs/contracts/goal-run-retained-evidence-v0.1.schema.json)"},
-		{name: "README goal run retained evidence audit schema link", doc: readme, want: "[GoalRun Retained Evidence Audit v0.1 Schema](docs/contracts/goal-run-retained-evidence-audit-v0.1.schema.json)"},
-		{name: "README goal run retained evidence cleanup schema link", doc: readme, want: "[GoalRun Retained Evidence Cleanup v0.1 Schema](docs/contracts/goal-run-retained-evidence-cleanup-v0.1.schema.json)"},
-		{name: "README goal run readiness audit schema link", doc: readme, want: "[GoalRun Readiness Audit v0.1 Schema](docs/contracts/goal-run-readiness-audit-v0.1.schema.json)"},
-		{name: "README goal run example link", doc: readme, want: "[Example GoalRun](examples/goals/ao2-weekend-hardening.goal-run.json)"},
-		{name: "README goal run update audit example link", doc: readme, want: "[Example GoalRun Update Audit](examples/goals/ao2-weekend-hardening.goal-run-update-audit.json)"},
-		{name: "README AO2 Pulse handoff goal run link", doc: readme, want: "[AO2 Pulse Handoff GoalRun](examples/goals/ao2-pulse-handoff.goal-run.json)"},
-		{name: "README AO2 Pulse handoff audit link", doc: readme, want: "[AO2 Pulse Handoff Update Audit](examples/goals/ao2-pulse-handoff.goal-run-update-audit.json)"},
-		{name: "README retained goal evidence fixture link", doc: readme, want: "[Retained GoalRun Evidence Fixture](examples/goals/ao2-retained-evidence.goal-run.json)"},
+		{name: "docs index architecture link", doc: docsIndex, want: "[AO Forge v0.1 Architecture](design/AO-FORGE-V0.1.md)"},
+		{name: "docs index goal run schema link", doc: docsIndex, want: "[GoalRun v0.1 Schema](contracts/goal-run-v0.1.schema.json)"},
+		{name: "docs index goal run update audit schema link", doc: docsIndex, want: "[GoalRun Update Audit v0.1 Schema](contracts/goal-run-update-audit-v0.1.schema.json)"},
+		{name: "docs index goal run evidence verify schema link", doc: docsIndex, want: "[GoalRun Evidence Verify v0.1 Schema](contracts/goal-run-evidence-verify-v0.1.schema.json)"},
+		{name: "docs index goal run evidence lint schema link", doc: docsIndex, want: "[GoalRun Evidence Lint v0.1 Schema](contracts/goal-run-evidence-lint-v0.1.schema.json)"},
+		{name: "docs index goal run retained evidence schema link", doc: docsIndex, want: "[GoalRun Retained Evidence v0.1 Schema](contracts/goal-run-retained-evidence-v0.1.schema.json)"},
+		{name: "docs index goal run retained evidence audit schema link", doc: docsIndex, want: "[GoalRun Retained Evidence Audit v0.1 Schema](contracts/goal-run-retained-evidence-audit-v0.1.schema.json)"},
+		{name: "docs index goal run retained evidence cleanup schema link", doc: docsIndex, want: "[GoalRun Retained Evidence Cleanup v0.1 Schema](contracts/goal-run-retained-evidence-cleanup-v0.1.schema.json)"},
+		{name: "docs index goal run readiness audit schema link", doc: docsIndex, want: "[GoalRun Readiness Audit v0.1 Schema](contracts/goal-run-readiness-audit-v0.1.schema.json)"},
+		{name: "docs index goal run example link", doc: docsIndex, want: "[Example GoalRun](../examples/goals/ao2-weekend-hardening.goal-run.json)"},
+		{name: "docs index goal run update audit example link", doc: docsIndex, want: "[Example GoalRun Update Audit](../examples/goals/ao2-weekend-hardening.goal-run-update-audit.json)"},
+		{name: "docs index AO2 Pulse handoff goal run link", doc: docsIndex, want: "[AO2 Pulse Handoff GoalRun](../examples/goals/ao2-pulse-handoff.goal-run.json)"},
+		{name: "docs index AO2 Pulse handoff audit link", doc: docsIndex, want: "[AO2 Pulse Handoff Update Audit](../examples/goals/ao2-pulse-handoff.goal-run-update-audit.json)"},
+		{name: "docs index retained goal evidence fixture link", doc: docsIndex, want: "[Retained GoalRun Evidence Fixture](../examples/goals/ao2-retained-evidence.goal-run.json)"},
 		{name: "README goal run validate command", doc: readme, want: "./bin/forge goal validate --goal-run examples/goals/ao2-weekend-hardening.goal-run.json"},
 		{name: "README goal run inspect command", doc: readme, want: "./bin/forge goal inspect --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --json"},
 		{name: "README goal run transitions command", doc: readme, want: "./bin/forge goal transitions --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --to implementation"},
@@ -1348,30 +1349,21 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "README goal evidence verify schema validate command", doc: readme, want: "forge contract validate --schema docs/contracts/goal-run-evidence-verify-v0.1.schema.json --document tmp/goal-run-evidence-verify.json"},
 		{name: "README goal evidence retained paths", doc: readme, want: "Persisted GoalRun evidence is retained under repository-relative durable paths"},
 		{name: "README goal evidence path lint", doc: readme, want: "The GoalRun fixture smoke rejects retained"},
-		{name: "README brief schema link", doc: readme, want: "[Factory Brief v0.1 Schema](docs/contracts/factory-brief-v0.1.schema.json)"},
-		{name: "README plan schema link", doc: readme, want: "[Factory Plan v0.1 Schema](docs/contracts/factory-plan-v0.1.schema.json)"},
-		{name: "README release preview schema link", doc: readme, want: "[Release Preview Audit v0.1 Schema](docs/contracts/release-preview-audit-v0.1.schema.json)"},
-		{name: "README release preview inspect schema link", doc: readme, want: "[Release Preview Inspect v0.1 Schema](docs/contracts/release-preview-inspect-v0.1.schema.json)"},
-		{name: "README release artifact inventory schema link", doc: readme, want: "[Release Artifact Inventory v0.1 Schema](docs/contracts/release-artifact-inventory-v0.1.schema.json)"},
-		{name: "README release attestation plan schema link", doc: readme, want: "[Release Attestation Plan v0.1 Schema](docs/contracts/release-attestation-plan-v0.1.schema.json)"},
-		{name: "README release evidence bundle schema link", doc: readme, want: "[Release Evidence Bundle v0.1 Schema](docs/contracts/release-evidence-bundle-v0.1.schema.json)"},
-		{name: "README release verify audit schema link", doc: readme, want: "[Release Verify Audit v0.1 Schema](docs/contracts/release-verify-audit-v0.1.schema.json)"},
-		{name: "README release install verify audit schema link", doc: readme, want: "[Release Install Verify Audit v0.1 Schema](docs/contracts/release-install-verify-audit-v0.1.schema.json)"},
-		{name: "README release rollback audit schema link", doc: readme, want: "[Release Rollback Audit v0.1 Schema](docs/contracts/release-rollback-audit-v0.1.schema.json)"},
-		{name: "README production promotion audit schema link", doc: readme, want: "[Production Promotion Audit v0.1 Schema](docs/contracts/production-promotion-audit-v0.1.schema.json)"},
-		{name: "README production readiness audit schema link", doc: readme, want: "[Production Readiness Audit v0.1 Schema](docs/contracts/production-readiness-audit-v0.1.schema.json)"},
+		{name: "docs index brief schema link", doc: docsIndex, want: "[Factory Brief v0.1 Schema](contracts/factory-brief-v0.1.schema.json)"},
+		{name: "docs index plan schema link", doc: docsIndex, want: "[Factory Plan v0.1 Schema](contracts/factory-plan-v0.1.schema.json)"},
+		{name: "docs index release preview schema link", doc: docsIndex, want: "[Release Preview Audit v0.1 Schema](contracts/release-preview-audit-v0.1.schema.json)"},
+		{name: "docs index release preview inspect schema link", doc: docsIndex, want: "[Release Preview Inspect v0.1 Schema](contracts/release-preview-inspect-v0.1.schema.json)"},
+		{name: "docs index release artifact inventory schema link", doc: docsIndex, want: "[Release Artifact Inventory v0.1 Schema](contracts/release-artifact-inventory-v0.1.schema.json)"},
+		{name: "docs index release attestation plan schema link", doc: docsIndex, want: "[Release Attestation Plan v0.1 Schema](contracts/release-attestation-plan-v0.1.schema.json)"},
+		{name: "docs index release evidence bundle schema link", doc: docsIndex, want: "[Release Evidence Bundle v0.1 Schema](contracts/release-evidence-bundle-v0.1.schema.json)"},
+		{name: "docs index release verify audit schema link", doc: docsIndex, want: "[Release Verify Audit v0.1 Schema](contracts/release-verify-audit-v0.1.schema.json)"},
+		{name: "docs index release install verify audit schema link", doc: docsIndex, want: "[Release Install Verify Audit v0.1 Schema](contracts/release-install-verify-audit-v0.1.schema.json)"},
+		{name: "docs index release rollback audit schema link", doc: docsIndex, want: "[Release Rollback Audit v0.1 Schema](contracts/release-rollback-audit-v0.1.schema.json)"},
+		{name: "docs index production promotion audit schema link", doc: docsIndex, want: "[Production Promotion Audit v0.1 Schema](contracts/production-promotion-audit-v0.1.schema.json)"},
+		{name: "README production readiness audit schema link", doc: readme, want: "[Production Readiness Audit Schema](docs/contracts/production-readiness-audit-v0.1.schema.json)"},
+		{name: "docs index production readiness audit schema link", doc: docsIndex, want: "[Production Readiness Audit v0.1 Schema](contracts/production-readiness-audit-v0.1.schema.json)"},
 		{name: "README production readiness audit command", doc: readme, want: "./bin/forge production-readiness audit --json"},
 		{name: "README production readiness cleanup artifact", doc: readme, want: "goal-run-retained-evidence-cleanup.json"},
-		{name: "AO Command docs title", doc: aoCommandDocs, want: "# AO Command v0.1"},
-		{name: "AO Command docs read-only default", doc: aoCommandDocs, want: "read-only by default"},
-		{name: "AO Command docs next recommendation", doc: aoCommandDocs, want: "what should happen next"},
-		{name: "AO Command docs Covenant decisions", doc: aoCommandDocs, want: "Covenant allow, deny, and block decisions"},
-		{name: "AO Command docs production readiness", doc: aoCommandDocs, want: "production-readiness percentage"},
-		{name: "AO Command docs release preview", doc: aoCommandDocs, want: "release-preview"},
-		{name: "AO Command docs GoalRun", doc: aoCommandDocs, want: "GoalRun"},
-		{name: "AO Command docs ao2 control plane", doc: aoCommandDocs, want: "ao2-control-plane"},
-		{name: "AO Command docs no policy reimplementation", doc: aoCommandDocs, want: "must not reimplement policy"},
-		{name: "AO Command docs dry run rehearsal", doc: aoCommandDocs, want: "without creating or pushing a tag"},
 		{name: "goal run schema id", doc: goalRunSchema, want: `"ao.forge.goal-run.v0.1"`},
 		{name: "goal run strict root", doc: goalRunSchema, want: `"additionalProperties": false`},
 		{name: "goal run id", doc: goalRunSchema, want: `"goal_id"`},
@@ -1758,7 +1750,7 @@ func TestReleaseEvidenceBundleContractDocumentsSignedBundle(t *testing.T) {
 		doc  string
 		want string
 	}{
-		{name: "README schema link", doc: readText("README.md"), want: "[Release Evidence Bundle v0.1 Schema](docs/contracts/release-evidence-bundle-v0.1.schema.json)"},
+		{name: "docs index schema link", doc: readText("docs", "README.md"), want: "[Release Evidence Bundle v0.1 Schema](contracts/release-evidence-bundle-v0.1.schema.json)"},
 		{name: "preview runbook section", doc: readText("docs", "release", "PREVIEW-RELEASE.md"), want: "## Release Evidence Bundle"},
 		{name: "preview runbook example link", doc: readText("docs", "release", "PREVIEW-RELEASE.md"), want: "../../examples/release-preview/release-evidence-bundle.v0.1.example.json"},
 		{name: "first release checklist validation", doc: readText("docs", "release", "FIRST-PUBLIC-RELEASE.md"), want: "release-evidence-bundle-v0.1.schema.json"},
@@ -2101,7 +2093,7 @@ func TestReleaseAttestationPlanContractDocumentsSignedEvidence(t *testing.T) {
 		doc  string
 		want string
 	}{
-		{name: "README schema link", doc: readText("README.md"), want: "[Release Attestation Plan v0.1 Schema](docs/contracts/release-attestation-plan-v0.1.schema.json)"},
+		{name: "docs index schema link", doc: readText("docs", "README.md"), want: "[Release Attestation Plan v0.1 Schema](contracts/release-attestation-plan-v0.1.schema.json)"},
 		{name: "preview runbook section", doc: readText("docs", "release", "PREVIEW-RELEASE.md"), want: "## Release Attestation Plan"},
 		{name: "preview runbook example link", doc: readText("docs", "release", "PREVIEW-RELEASE.md"), want: "../../examples/release-preview/release-attestation-plan.v0.1.example.json"},
 		{name: "branch protection local validation", doc: readText("docs", "release", "BRANCH-PROTECTION.md"), want: "release-attestation-plan-v0.1.schema.json"},
@@ -2150,7 +2142,7 @@ func TestReleaseArtifactInventoryContractDocumentsExpectedPublicArtifacts(t *tes
 		doc  string
 		want string
 	}{
-		{name: "README schema link", doc: readText("README.md"), want: "[Release Artifact Inventory v0.1 Schema](docs/contracts/release-artifact-inventory-v0.1.schema.json)"},
+		{name: "docs index schema link", doc: readText("docs", "README.md"), want: "[Release Artifact Inventory v0.1 Schema](contracts/release-artifact-inventory-v0.1.schema.json)"},
 		{name: "preview runbook contract section", doc: readText("docs", "release", "PREVIEW-RELEASE.md"), want: "## Release Artifact Inventory"},
 		{name: "preview runbook example link", doc: readText("docs", "release", "PREVIEW-RELEASE.md"), want: "../../examples/release-preview/release-artifact-inventory.v0.1.example.json"},
 		{name: "branch protection local validation", doc: readText("docs", "release", "BRANCH-PROTECTION.md"), want: "release-artifact-inventory-v0.1.schema.json"},
@@ -2405,7 +2397,7 @@ func TestFirstPublicReleaseChecklistDocumentsSafeOperatorFlow(t *testing.T) {
 		return string(bytes)
 	}
 
-	readme := readText("README.md")
+	docsIndex := readText("docs", "README.md")
 	previewRunbook := readText("docs", "release", "PREVIEW-RELEASE.md")
 	branchRunbook := readText("docs", "release", "BRANCH-PROTECTION.md")
 	threatModel := readText("docs", "security", "RELEASE-THREAT-MODEL.md")
@@ -2416,7 +2408,7 @@ func TestFirstPublicReleaseChecklistDocumentsSafeOperatorFlow(t *testing.T) {
 		doc  string
 		want string
 	}{
-		{name: "README checklist link", doc: readme, want: "[First Public Release Checklist](docs/release/FIRST-PUBLIC-RELEASE.md)"},
+		{name: "docs index checklist link", doc: docsIndex, want: "[First Public Release Checklist](release/FIRST-PUBLIC-RELEASE.md)"},
 		{name: "preview runbook checklist link", doc: previewRunbook, want: "FIRST-PUBLIC-RELEASE.md"},
 		{name: "branch runbook checklist link", doc: branchRunbook, want: "FIRST-PUBLIC-RELEASE.md"},
 		{name: "threat model checklist link", doc: threatModel, want: "../release/FIRST-PUBLIC-RELEASE.md"},
@@ -2456,12 +2448,12 @@ func TestV010ReleaseNotesDraftIsPublicSafeAndEvidenceBacked(t *testing.T) {
 		return string(bytes)
 	}
 
-	readme := readText("README.md")
+	docsIndex := readText("docs", "README.md")
 	notesPath := filepath.Join(root, "docs", "release", "V0.1.0-RELEASE-NOTES.md")
 	notes := readText("docs", "release", "V0.1.0-RELEASE-NOTES.md")
 
-	if !strings.Contains(readme, "[v0.1.0 Release Notes Draft](docs/release/V0.1.0-RELEASE-NOTES.md)") {
-		t.Fatalf("README missing v0.1.0 release notes draft link")
+	if !strings.Contains(docsIndex, "[v0.1.0 Release Notes Draft](release/V0.1.0-RELEASE-NOTES.md)") {
+		t.Fatalf("docs index missing v0.1.0 release notes draft link")
 	}
 	if filepath.Base(notesPath) != "V0.1.0-RELEASE-NOTES.md" {
 		t.Fatalf("unexpected release notes path: %s", notesPath)
@@ -2523,12 +2515,12 @@ func TestV012ReleaseNotesDraftIsPublicSafeAndEvidenceBacked(t *testing.T) {
 		return string(bytes)
 	}
 
-	readme := readText("README.md")
+	docsIndex := readText("docs", "README.md")
 	notesPath := filepath.Join(root, "docs", "release", "V0.1.2-RELEASE-NOTES.md")
 	notes := readText("docs", "release", "V0.1.2-RELEASE-NOTES.md")
 
-	if !strings.Contains(readme, "[v0.1.2 Release Notes Draft](docs/release/V0.1.2-RELEASE-NOTES.md)") {
-		t.Fatalf("README missing v0.1.2 release notes draft link")
+	if !strings.Contains(docsIndex, "[v0.1.2 Release Notes Draft](release/V0.1.2-RELEASE-NOTES.md)") {
+		t.Fatalf("docs index missing v0.1.2 release notes draft link")
 	}
 	if filepath.Base(notesPath) != "V0.1.2-RELEASE-NOTES.md" {
 		t.Fatalf("unexpected release notes path: %s", notesPath)
@@ -2601,6 +2593,7 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 	}
 
 	readme := readText("README.md")
+	docsIndex := readText("docs", "README.md")
 	threatModel := readText("docs", "security", "RELEASE-THREAT-MODEL.md")
 	runbook := readText("docs", "release", "BRANCH-PROTECTION.md")
 	evidence := readText("docs", "release", "BRANCH-PROTECTION-EVIDENCE.md")
@@ -2614,7 +2607,7 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		want string
 	}{
 		{name: "README branch protection link", doc: readme, want: "[Branch Protection Runbook](docs/release/BRANCH-PROTECTION.md)"},
-		{name: "README branch protection evidence link", doc: readme, want: "[Branch Protection Evidence](docs/release/BRANCH-PROTECTION-EVIDENCE.md)"},
+		{name: "docs index branch protection evidence link", doc: docsIndex, want: "[Branch Protection Evidence](release/BRANCH-PROTECTION-EVIDENCE.md)"},
 		{name: "threat model branch protection link", doc: threatModel, want: "../release/BRANCH-PROTECTION.md"},
 		{name: "threat model branch protection evidence link", doc: threatModel, want: "../release/BRANCH-PROTECTION-EVIDENCE.md"},
 		{name: "runbook title", doc: runbook, want: "# AO Forge Branch Protection Runbook"},
@@ -3695,12 +3688,12 @@ func TestVerifiedFoundationBaselineIsLinkedAndMachineReadable(t *testing.T) {
 		return bytes
 	}
 
-	readme := string(readFile("README.md"))
-	if !strings.Contains(readme, "[Verified Foundation Baseline](docs/foundation/VERIFIED-BASELINE.md)") {
-		t.Fatalf("README missing verified foundation baseline link")
+	docsIndex := string(readFile("docs", "README.md"))
+	if !strings.Contains(docsIndex, "[Verified Foundation Baseline](foundation/VERIFIED-BASELINE.md)") {
+		t.Fatalf("docs index missing verified foundation baseline link")
 	}
-	if !strings.Contains(readme, "[Foundation Baseline JSON](docs/foundation/foundation-baseline.v0.1.json)") {
-		t.Fatalf("README missing foundation baseline JSON link")
+	if !strings.Contains(docsIndex, "[Foundation Baseline JSON](foundation/foundation-baseline.v0.1.json)") {
+		t.Fatalf("docs index missing foundation baseline JSON link")
 	}
 
 	var baseline struct {
@@ -10522,7 +10515,7 @@ func TestReleasePreviewFixtureArtifactsDriveInspectJSON(t *testing.T) {
 		doc  string
 		want string
 	}{
-		{name: "README release preview fixture link", doc: readText("README.md"), want: "[Release Preview Fixtures](examples/release-preview/)"},
+		{name: "docs index release preview fixture link", doc: readText("docs", "README.md"), want: "[Release Preview Fixtures](../examples/release-preview/)"},
 		{name: "runbook release preview fixture link", doc: readText("docs", "release", "PREVIEW-RELEASE.md"), want: "../../examples/release-preview/"},
 	} {
 		if !strings.Contains(check.doc, check.want) {
@@ -10633,7 +10626,7 @@ func TestReleasePreviewBlockedDirtyFixtureDrivesInspectJSON(t *testing.T) {
 	}{
 		{name: "runbook documents blocked fixture", doc: readText("docs", "release", "PREVIEW-RELEASE.md"), want: "dirty-workspace-blocked.audit.json"},
 		{name: "runbook documents blocked fixture purpose", doc: readText("docs", "release", "PREVIEW-RELEASE.md"), want: "fail-closed dirty-workspace preview"},
-		{name: "README release preview fixture link", doc: readText("README.md"), want: "[Release Preview Fixtures](examples/release-preview/)"},
+		{name: "docs index release preview fixture link", doc: readText("docs", "README.md"), want: "[Release Preview Fixtures](../examples/release-preview/)"},
 	} {
 		if !strings.Contains(check.doc, check.want) {
 			t.Fatalf("%s missing %q", check.name, check.want)

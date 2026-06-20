@@ -1,4 +1,4 @@
-# AO Forge v0.1 Design
+# AO Forge v0.1 Architecture
 
 ## Goal
 

@@ -686,7 +686,7 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 		} else {
 			decision.DecisionID = "allow-local-plan"
 			decision.Decision = "allow"
-			decision.Explanation = fmt.Sprintf("The plan is local-first, does not allow network access, and does not mutate releases. Covenant binary verified at %s.", flags.covenantPath)
+			decision.Explanation = "The plan is local-first, does not allow network access, and does not mutate releases. Covenant binary version check passed."
 		}
 	}
 
@@ -1447,6 +1447,13 @@ type runSpecDetails struct {
 	Target        runTarget     `json:"target"`
 	TrustBoundary trustBoundary `json:"trust_boundary"`
 	Tasks         []runTask     `json:"tasks"`
+	ExitCriteria  exitCriteria  `json:"exit_criteria"`
+}
+
+type exitCriteria struct {
+	Tests  []string `json:"tests"`
+	Gates  []string `json:"gates"`
+	Manual []string `json:"manual"`
 }
 
 type runSource struct {
@@ -2280,14 +2287,14 @@ func executePlanRun(
 
 	packet.NextActions = []nextAction{
 		{
-			ActionID:    "close-factory-packet",
+			ActionID: "close-factory-packet",
 			Description: func() string {
 				if liveMode {
 					return "Review the factory packet and live evidence."
 				}
 				return "Review the factory packet and dry-run evidence."
 			}(),
-			Required:    false,
+			Required: false,
 		},
 	}
 
@@ -2692,14 +2699,14 @@ func parseAo2DryRunOutput(output string) map[string]any {
 }
 
 type cpOperatorPacket struct {
-	SchemaVersion  string               `json:"schema_version"`
-	RunID          string               `json:"run_id"`
-	Status         string               `json:"status"`
-	OperatorID     string               `json:"operator_id"`
-	GeneratedAtUTC string               `json:"generated_at_utc"`
-	Summary        cpPacketSummary      `json:"summary"`
-	Evidence       []cpPacketEvidence   `json:"evidence"`
-	TrustBoundary  cpTrustBoundary      `json:"trust_boundary"`
+	SchemaVersion  string             `json:"schema_version"`
+	RunID          string             `json:"run_id"`
+	Status         string             `json:"status"`
+	OperatorID     string             `json:"operator_id"`
+	GeneratedAtUTC string             `json:"generated_at_utc"`
+	Summary        cpPacketSummary    `json:"summary"`
+	Evidence       []cpPacketEvidence `json:"evidence"`
+	TrustBoundary  cpTrustBoundary    `json:"trust_boundary"`
 }
 
 type cpPacketSummary struct {
@@ -2728,10 +2735,10 @@ type cpSignature struct {
 }
 
 type cpSignedUpload struct {
-	SchemaVersion     string          `json:"schema_version"`
+	SchemaVersion     string           `json:"schema_version"`
 	OperatorPacket    cpOperatorPacket `json:"operator_packet"`
-	OperatorPacketB64 string          `json:"operator_packet_b64"`
-	Signature         cpSignature     `json:"signature"`
+	OperatorPacketB64 string           `json:"operator_packet_b64"`
+	Signature         cpSignature      `json:"signature"`
 }
 
 func generateTransientRSAKey() (*rsa.PrivateKey, string, error) {
@@ -2812,7 +2819,7 @@ func performControlPlaneUploadAndReadback(
 			RecommendedTask: "verify signed operator packet readback",
 			EvidenceCount:   len(evidenceList),
 		},
-		Evidence:      make([]cpPacketEvidence, 0, len(evidenceList)),
+		Evidence: make([]cpPacketEvidence, 0, len(evidenceList)),
 		TrustBoundary: cpTrustBoundary{
 			ControlPlaneRole: "read_only_observer",
 			MutatesAo2:       false,
@@ -3174,22 +3181,22 @@ type peerRunState struct {
 }
 
 type workcellRunState struct {
-	stateMu    *sync.Mutex
-	ID         string
-	Kind       string
-	Workspace  string
-	Executor   string
-	Peers      int
-	MaxRepairs int
-	Task       string
-	DependsOn  []string
-	Status     string // "pending", "running", "passed", "failed", "skipped"
-	Summary    string
-	Stdout     string
-	Stderr     string
-	SpecSHA256 string
-	Rubric     *workcellRubric
-	PeerStates []*peerRunState
+	stateMu          *sync.Mutex
+	ID               string
+	Kind             string
+	Workspace        string
+	Executor         string
+	Peers            int
+	MaxRepairs       int
+	Task             string
+	DependsOn        []string
+	Status           string // "pending", "running", "passed", "failed", "skipped"
+	Summary          string
+	Stdout           string
+	Stderr           string
+	SpecSHA256       string
+	Rubric           *workcellRubric
+	PeerStates       []*peerRunState
 	RepairsAttempted int
 }
 
@@ -4013,7 +4020,8 @@ func runAo2Workcell(ctx context.Context, plan factoryPlan, wcState *workcellRunS
 				ControlPlaneRole:   "read_only_observer",
 				MutatesAoArtifacts: false,
 			},
-			Tasks: []runTask{specTask},
+			Tasks:        []runTask{specTask},
+			ExitCriteria: buildAo2ExitCriteria(wcState),
 		},
 	}
 
@@ -4039,7 +4047,19 @@ func runAo2Workcell(ctx context.Context, plan factoryPlan, wcState *workcellRunS
 
 	var cmd *exec.Cmd
 	if liveMode {
-		cmd = exec.CommandContext(ctx, ao2Path, "run", "--spec", tempSpec.Name())
+		tempPrompt, err := os.CreateTemp("", "ao2-provider-prompt-"+wcState.ID+"-*.sh")
+		if err != nil {
+			return fmt.Errorf("failed to create provider prompt for %s: %v", wcState.ID, err)
+		}
+		defer os.Remove(tempPrompt.Name())
+		if _, err := tempPrompt.WriteString(buildAo2ProviderPrompt(wcState)); err != nil {
+			tempPrompt.Close()
+			return fmt.Errorf("failed to write provider prompt for %s: %v", wcState.ID, err)
+		}
+		if err := tempPrompt.Close(); err != nil {
+			return fmt.Errorf("failed to close provider prompt for %s: %v", wcState.ID, err)
+		}
+		cmd = exec.CommandContext(ctx, ao2Path, "run", "--spec", tempSpec.Name(), "--provider", "scripted", "--provider-prompt-file", tempPrompt.Name())
 	} else {
 		cmd = exec.CommandContext(ctx, ao2Path, "run", "--dry-run", "--spec", tempSpec.Name())
 	}
@@ -4066,6 +4086,62 @@ func runAo2Workcell(ctx context.Context, plan factoryPlan, wcState *workcellRunS
 	}
 
 	return nil
+}
+
+func buildAo2ProviderPrompt(wcState *workcellRunState) string {
+	task := strings.TrimSpace(wcState.Task)
+	var b strings.Builder
+	b.WriteString("set -eu\n")
+	b.WriteString("printf 'Summary: AO Forge delegated workcell ")
+	b.WriteString(shellSingleQuoteContent(wcState.ID))
+	b.WriteString(" through AO2 scripted provider\\n'\n")
+	b.WriteString("printf 'Changed files: none\\n'\n")
+	if task != "" && (wcState.Kind == "verify" || looksLikeVerificationCommand(task)) {
+		b.WriteString(task)
+		b.WriteString("\n")
+		b.WriteString("printf 'Verification: ")
+		b.WriteString(shellSingleQuoteContent(task))
+		b.WriteString(" passed\\n'\n")
+	} else {
+		b.WriteString("printf 'Verification: no verifier command configured for this workcell\\n'\n")
+	}
+	b.WriteString("printf 'Concern: none\\n'\n")
+	b.WriteString("printf 'Blocker: none\\n'\n")
+	return b.String()
+}
+
+func shellSingleQuoteContent(value string) string {
+	return strings.ReplaceAll(value, "'", "'\"'\"'")
+}
+
+func buildAo2ExitCriteria(wcState *workcellRunState) exitCriteria {
+	criteria := exitCriteria{
+		Tests:  []string{},
+		Gates:  []string{},
+		Manual: []string{},
+	}
+	task := strings.TrimSpace(wcState.Task)
+	if wcState.Kind == "verify" && task != "" {
+		criteria.Tests = append(criteria.Tests, task)
+		return criteria
+	}
+	if task != "" && looksLikeVerificationCommand(task) {
+		criteria.Tests = append(criteria.Tests, task)
+		return criteria
+	}
+	criteria.Gates = append(criteria.Gates, "ao-forge workcell "+wcState.ID+" accepted")
+	return criteria
+}
+
+func looksLikeVerificationCommand(task string) bool {
+	lower := strings.ToLower(strings.TrimSpace(task))
+	return strings.HasPrefix(lower, "go test ") ||
+		strings.HasPrefix(lower, "go test") ||
+		strings.HasPrefix(lower, "cargo test") ||
+		strings.HasPrefix(lower, "npm test") ||
+		strings.HasPrefix(lower, "pytest") ||
+		strings.HasPrefix(lower, "python -m pytest") ||
+		strings.HasPrefix(lower, "uv run") && strings.Contains(lower, "pytest")
 }
 
 func checkRubric(wcState *workcellRunState) error {

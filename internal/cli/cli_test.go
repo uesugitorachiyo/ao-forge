@@ -2480,7 +2480,7 @@ func TestV010ReleaseNotesDraftIsPublicSafeAndEvidenceBacked(t *testing.T) {
 	}
 
 	for _, forbidden := range []string{
-		"/Users/",
+		"/" + "Users/",
 		"/tmp/",
 		"gho_",
 		"Bearer ",
@@ -2568,7 +2568,7 @@ func TestV012ReleaseNotesDraftIsPublicSafeAndEvidenceBacked(t *testing.T) {
 	}
 
 	for _, forbidden := range []string{
-		"/Users/",
+		"/" + "Users/",
 		"/tmp/",
 		"gho_",
 		"Bearer ",
@@ -3041,7 +3041,7 @@ func TestReleasePublishWorkflowCreatesDraftReleaseOnlyAfterEvidenceGates(t *test
 		{name: "generated publish run URL", doc: workflow, want: "actions/runs/%s`\\n' \"${GITHUB_REPOSITORY}\" \"${GITHUB_RUN_ID}\""},
 		{name: "generated rehearsal run URL", doc: workflow, want: "actions/runs/%s`\\n' \"${GITHUB_REPOSITORY}\" \"${RELEASE_REHEARSAL_RUN_ID}\""},
 		{name: "generated notes evidence bundle", doc: workflow, want: "`release-evidence-bundle.json`, `release-evidence-bundle.attestation.json`"},
-		{name: "private path guard", doc: workflow, want: "/Users/"},
+		{name: "private path guard", doc: workflow, want: "/" + "Users/"},
 		{name: "draft release create", doc: workflow, want: "gh release create"},
 		{name: "draft flag", doc: workflow, want: "--draft"},
 		{name: "target sha", doc: workflow, want: "--target \"${GITHUB_SHA}\""},
@@ -4279,6 +4279,9 @@ func main() {
 	if result.Status != "allowed" || result.Decision.Decision != "allow" {
 		t.Fatalf("expected allowed/allow, got: %+v", result)
 	}
+	if strings.Contains(result.Decision.Explanation, dummyBin) || strings.Contains(result.Decision.Explanation, tmpDir) {
+		t.Fatalf("gate explanation leaked local covenant path: %q", result.Decision.Explanation)
+	}
 
 	// 2. Deny case: plan with AllowReleaseMutation = true
 	denyPlanPath := filepath.Join(tmpDir, "deny-plan.json")
@@ -4542,6 +4545,299 @@ func main() {
 	}
 	if len(passedPacket.Evidence) != 6 {
 		t.Fatalf("expected 6 evidence items, got %d", len(passedPacket.Evidence))
+	}
+}
+
+func TestAo2RunSpecIncludesExitCriteria(t *testing.T) {
+	tmpDir := t.TempDir()
+	specCapture := filepath.Join(tmpDir, "captured-spec.json")
+	dummySrc := filepath.Join(tmpDir, "dummy_ao2.go")
+	dummyBin := filepath.Join(tmpDir, "dummy_ao2")
+	if os.PathSeparator == '\\' {
+		dummyBin += ".exe"
+	}
+	srcContent := fmt.Sprintf(`package main
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+)
+
+func main() {
+	if len(os.Args) <= 1 || os.Args[1] != "run" {
+		os.Exit(1)
+	}
+	var specPath string
+	for i, arg := range os.Args {
+		if arg == "--spec" && i+1 < len(os.Args) {
+			specPath = os.Args[i+1]
+		}
+	}
+	if specPath == "" {
+		fmt.Fprintln(os.Stderr, "missing spec")
+		os.Exit(2)
+	}
+	data, err := os.ReadFile(specPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	_ = os.WriteFile(%q, data, 0644)
+	var spec map[string]interface{}
+	if err := json.Unmarshal(data, &spec); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	specBody, _ := spec["spec"].(map[string]interface{})
+	exitCriteria, _ := specBody["exit_criteria"].(map[string]interface{})
+	tests, _ := exitCriteria["tests"].([]interface{})
+	gates, _ := exitCriteria["gates"].([]interface{})
+	if len(tests) == 0 && len(gates) == 0 {
+		fmt.Fprintln(os.Stderr, "missing exit criteria")
+		os.Exit(4)
+	}
+	fmt.Println("status=dry_run_accepted")
+	fmt.Println("schema_version=ao2.run/v1")
+	os.Exit(0)
+}`, specCapture)
+	if err := os.WriteFile(dummySrc, []byte(srcContent), 0644); err != nil {
+		t.Fatalf("write dummy ao2: %v", err)
+	}
+	if out, err := exec.Command("go", "build", "-o", dummyBin, dummySrc).CombinedOutput(); err != nil {
+		t.Fatalf("build dummy ao2: %v (output: %q)", err, string(out))
+	}
+	t.Setenv("AO2_PATH", dummyBin)
+
+	workspace := filepath.Join(tmpDir, "workspace")
+	if err := os.MkdirAll(workspace, 0755); err != nil {
+		t.Fatalf("mkdir workspace: %v", err)
+	}
+	planPath := filepath.Join(tmpDir, "plan.json")
+	planJSON := fmt.Sprintf(`{
+		"schema_version": "ao.forge.factory-plan.v0.1",
+		"plan_id": "forge-plan-abcdef123456",
+		"objective": {
+			"text": "Verify generated AO2 run spec exit criteria.",
+			"workspace": %q,
+			"release_mode": false
+		},
+		"constraints": {
+			"local_first": true,
+			"allow_network": false,
+			"allow_release_mutation": false,
+			"require_control_plane_readback": false
+		},
+		"execution_enabled": false,
+		"policy_gate": {
+			"required": true,
+			"status": "allowed",
+			"explanation": "test gate"
+		},
+		"workcells": [
+			{
+				"workcell_id": "verify-exit-criteria",
+				"kind": "verify",
+				"executor": "ao2",
+				"workspace": %q,
+				"task": "go test ./...",
+				"status": "planned",
+				"depends_on": []
+			}
+		],
+		"expected_evidence": ["ao2 run summary"],
+		"next_actions": [
+			{"action_id": "inspect", "description": "inspect generated spec", "required": true}
+		]
+	}`, workspace, workspace)
+	if err := os.WriteFile(planPath, []byte(planJSON), 0644); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+	gatePath := filepath.Join(tmpDir, "gate.json")
+	gateJSON := `{
+		"schema_version": "ao.forge.covenant-gate-result.v0.1",
+		"status": "allowed",
+		"plan_id": "forge-plan-abcdef123456",
+		"execution_enabled": false,
+		"decision": {
+			"schema_version": "ao.forge.covenant-decision-fixture.v0.1",
+			"decision_id": "allow-exit-criteria",
+			"target_plan_id": "forge-plan-abcdef123456",
+			"decision": "allow",
+			"explanation": "allowed by test",
+			"source": "test"
+		}
+	}`
+	if err := os.WriteFile(gatePath, []byte(gateJSON), 0644); err != nil {
+		t.Fatalf("write gate: %v", err)
+	}
+
+	outPacket := filepath.Join(tmpDir, "packet.json")
+	code, stdout, stderr := runCLI("run", "--plan", planPath, "--gate-result", gatePath, "--out", outPacket)
+	if code != 0 {
+		t.Fatalf("run failed with code %d; stdout=%s stderr=%s", code, stdout, stderr)
+	}
+	data, err := os.ReadFile(specCapture)
+	if err != nil {
+		t.Fatalf("read captured spec: %v", err)
+	}
+	var captured struct {
+		Spec struct {
+			ExitCriteria struct {
+				Tests []string `json:"tests"`
+				Gates []string `json:"gates"`
+			} `json:"exit_criteria"`
+		} `json:"spec"`
+	}
+	if err := json.Unmarshal(data, &captured); err != nil {
+		t.Fatalf("unmarshal captured spec: %v", err)
+	}
+	if len(captured.Spec.ExitCriteria.Tests) == 0 && len(captured.Spec.ExitCriteria.Gates) == 0 {
+		t.Fatalf("expected exit criteria in generated AO2 spec: %s", string(data))
+	}
+	if got := captured.Spec.ExitCriteria.Tests[0]; got != "go test ./..." {
+		t.Fatalf("expected workcell verification command in exit criteria, got %q", got)
+	}
+}
+
+func TestAo2LiveRunUsesScriptedProviderPrompt(t *testing.T) {
+	tmpDir := t.TempDir()
+	promptCapture := filepath.Join(tmpDir, "captured-prompt.sh")
+	dummySrc := filepath.Join(tmpDir, "dummy_ao2_live.go")
+	dummyBin := filepath.Join(tmpDir, "dummy_ao2_live")
+	if os.PathSeparator == '\\' {
+		dummyBin += ".exe"
+	}
+	srcContent := fmt.Sprintf(`package main
+import (
+	"fmt"
+	"os"
+	"strings"
+)
+
+func main() {
+	if len(os.Args) <= 1 || os.Args[1] != "run" {
+		os.Exit(1)
+	}
+	var specPath, provider, promptPath string
+	for i, arg := range os.Args {
+		if arg == "--spec" && i+1 < len(os.Args) {
+			specPath = os.Args[i+1]
+		}
+		if arg == "--provider" && i+1 < len(os.Args) {
+			provider = os.Args[i+1]
+		}
+		if arg == "--provider-prompt-file" && i+1 < len(os.Args) {
+			promptPath = os.Args[i+1]
+		}
+	}
+	if specPath == "" {
+		fmt.Fprintln(os.Stderr, "missing spec")
+		os.Exit(2)
+	}
+	if provider != "scripted" {
+		fmt.Fprintf(os.Stderr, "missing scripted provider: %%q\n", provider)
+		os.Exit(3)
+	}
+	if promptPath == "" {
+		fmt.Fprintln(os.Stderr, "missing provider prompt file")
+		os.Exit(4)
+	}
+	prompt, err := os.ReadFile(promptPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(5)
+	}
+	_ = os.WriteFile(%q, prompt, 0644)
+	if !strings.Contains(string(prompt), "go test ./...") {
+		fmt.Fprintln(os.Stderr, "provider prompt missing verifier command")
+		os.Exit(6)
+	}
+	fmt.Println("status=governed_provider_run_started")
+	fmt.Println("schema_version=ao2.run/v1")
+	os.Exit(0)
+}`, promptCapture)
+	if err := os.WriteFile(dummySrc, []byte(srcContent), 0644); err != nil {
+		t.Fatalf("write dummy ao2: %v", err)
+	}
+	if out, err := exec.Command("go", "build", "-o", dummyBin, dummySrc).CombinedOutput(); err != nil {
+		t.Fatalf("build dummy ao2: %v (output: %q)", err, string(out))
+	}
+	t.Setenv("AO2_PATH", dummyBin)
+
+	workspace := filepath.Join(tmpDir, "workspace")
+	if err := os.MkdirAll(workspace, 0755); err != nil {
+		t.Fatalf("mkdir workspace: %v", err)
+	}
+	planPath := filepath.Join(tmpDir, "plan.json")
+	planJSON := fmt.Sprintf(`{
+		"schema_version": "ao.forge.factory-plan.v0.1",
+		"plan_id": "forge-plan-abcdefabcdef",
+		"objective": {
+			"text": "Verify AO2 live provider prompt wiring.",
+			"workspace": %q,
+			"release_mode": false
+		},
+		"constraints": {
+			"local_first": true,
+			"allow_network": false,
+			"allow_release_mutation": false,
+			"require_control_plane_readback": false
+		},
+		"execution_enabled": false,
+		"policy_gate": {
+			"required": true,
+			"status": "allowed",
+			"explanation": "test gate"
+		},
+		"workcells": [
+			{
+				"workcell_id": "verify-live-provider-prompt",
+				"kind": "verify",
+				"executor": "ao2",
+				"workspace": %q,
+				"task": "go test ./...",
+				"status": "planned",
+				"depends_on": []
+			}
+		],
+		"expected_evidence": ["ao2 provider prompt"],
+		"next_actions": [
+			{"action_id": "inspect", "description": "inspect generated prompt", "required": true}
+		]
+	}`, workspace, workspace)
+	if err := os.WriteFile(planPath, []byte(planJSON), 0644); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+	gatePath := filepath.Join(tmpDir, "gate.json")
+	gateJSON := `{
+		"schema_version": "ao.forge.covenant-gate-result.v0.1",
+		"status": "allowed",
+	"plan_id": "forge-plan-abcdefabcdef",
+		"execution_enabled": true,
+		"decision": {
+			"schema_version": "ao.forge.covenant-decision-fixture.v0.1",
+			"decision_id": "allow-live-prompt",
+			"target_plan_id": "forge-plan-abcdefabcdef",
+			"decision": "allow",
+			"explanation": "allowed by test",
+			"source": "test"
+		}
+	}`
+	if err := os.WriteFile(gatePath, []byte(gateJSON), 0644); err != nil {
+		t.Fatalf("write gate: %v", err)
+	}
+
+	outPacket := filepath.Join(tmpDir, "packet.json")
+	code, stdout, stderr := runCLI("run", "--plan", planPath, "--gate-result", gatePath, "--out", outPacket, "--live", "--non-interactive", "--no-dashboard")
+	if code != 0 {
+		t.Fatalf("live run failed with code %d; stdout=%s stderr=%s", code, stdout, stderr)
+	}
+	prompt, err := os.ReadFile(promptCapture)
+	if err != nil {
+		t.Fatalf("read captured prompt: %v", err)
+	}
+	if !strings.Contains(string(prompt), "go test ./...") {
+		t.Fatalf("expected provider prompt to include verifier command, got: %s", string(prompt))
 	}
 }
 

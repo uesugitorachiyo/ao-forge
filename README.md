@@ -282,6 +282,13 @@ Verify that every artifact still matches a checksum manifest:
 ./bin/forge artifact verify-checksums --manifest ./dist/checksums.txt
 ```
 
+Validate the checked-in release candidate handoff before preview, publish, or
+promotion work:
+
+```sh
+./bin/forge release-candidate validate --candidate examples/release-preview/release-candidate.v0.1.example.json
+```
+
 Rehearse a release without creating tags, pushing refs, or publishing GitHub
 releases:
 

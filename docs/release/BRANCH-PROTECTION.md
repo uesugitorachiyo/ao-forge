@@ -44,10 +44,11 @@ Production readiness audit runs `forge production-readiness audit`, validates
 the JSON output against its published schema, runs
 `forge goal evidence cleanup --dry-run --json`, validates that cleanup dry-run
 against `docs/contracts/goal-run-retained-evidence-cleanup-v0.1.schema.json`,
-and uploads both machine-readable artifacts before merge. The release preview check
-comes from `.github/workflows/release-preview.yml` and verifies the non-mutating
-release rehearsal, human inspect output, JSON inspect output, and uploaded
-release evidence artifacts.
+validates the checked-in release-candidate handoff, and uploads both
+machine-readable artifacts before merge. The release preview check comes from
+`.github/workflows/release-preview.yml` and verifies the non-mutating release
+rehearsal, human inspect output, JSON inspect output, and uploaded release
+evidence artifacts.
 
 Release Preview also validates generated audit and inspect JSON against their published schemas before uploading artifacts.
 
@@ -92,6 +93,7 @@ go build -o /tmp/ao-forge-smoke ./cmd/forge
 /tmp/ao-forge-smoke contract validate --schema docs/contracts/release-attestation-plan-v0.1.schema.json --document examples/release-preview/release-attestation-plan.v0.1.example.json
 /tmp/ao-forge-smoke production-readiness audit --json >/tmp/ao-forge-production-readiness-audit.json
 /tmp/ao-forge-smoke contract validate --schema docs/contracts/production-readiness-audit-v0.1.schema.json --document /tmp/ao-forge-production-readiness-audit.json
+/tmp/ao-forge-smoke release-candidate validate --candidate examples/release-preview/release-candidate.v0.1.example.json
 /tmp/ao-forge-smoke artifact verify-checksums --manifest examples/release-preview/checksums.txt
 gitleaks detect --source . --redact --verbose
 gitleaks dir . --redact --verbose

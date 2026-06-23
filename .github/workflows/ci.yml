@@ -87,6 +87,9 @@ jobs:
       - name: Validate retained evidence cleanup schema
         run: go run ./cmd/forge contract validate --schema docs/contracts/goal-run-retained-evidence-cleanup-v0.1.schema.json --document "${RUNNER_TEMP}/ao-forge-production-readiness/goal-run-retained-evidence-cleanup.json"
 
+      - name: Validate release candidate handoff
+        run: go run ./cmd/forge release-candidate validate --candidate examples/release-preview/release-candidate.v0.1.example.json
+
       - name: Upload production readiness audit
         if: always()
         uses: actions/upload-artifact@v7

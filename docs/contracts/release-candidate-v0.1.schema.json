@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/uesugitorachiyo/ao-forge/docs/contracts/release-candidate-v0.1.schema.json",
+  "title": "AO Forge Release Candidate v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "candidate_id",
+    "status",
+    "repository",
+    "gates",
+    "promotion_handoff",
+    "next_actions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "ao.forge.release-candidate.v0.1"
+    },
+    "candidate_id": {
+      "type": "string",
+      "pattern": "^ao-forge-[a-z0-9][a-z0-9._-]*$"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["ready", "blocked"]
+    },
+    "repository": {
+      "$ref": "#/$defs/repository"
+    },
+    "gates": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/gate"
+      }
+    },
+    "promotion_handoff": {
+      "$ref": "#/$defs/promotion_handoff"
+    },
+    "next_actions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/next_action"
+      }
+    }
+  },
+  "$defs": {
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "role", "status", "evidence"],
+      "properties": {
+        "id": {
+          "const": "ao-forge"
+        },
+        "name": {
+          "const": "AO Forge"
+        },
+        "role": {
+          "const": "factory-brain"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["ready", "blocked"]
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gate_id", "status", "evidence"],
+      "properties": {
+        "gate_id": {
+          "type": "string",
+          "enum": [
+            "production_readiness",
+            "release_preview_dry_run",
+            "release_attestation",
+            "public_repo_policy",
+            "promotion_handoff"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["ready", "blocked"]
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "promotion_handoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "workflow", "requires"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["manual_required", "blocked"]
+        },
+        "workflow": {
+          "const": "Production Promotion"
+        },
+        "requires": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "next_action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action_id", "description", "required"],
+      "properties": {
+        "action_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "required": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

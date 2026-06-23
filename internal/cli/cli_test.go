@@ -72,6 +72,7 @@ func TestHelpExplainsFactoryTermsWithoutMarketingCopy(t *testing.T) {
 		"forge goal evidence cleanup --dry-run [--root <dir>] [--now <RFC3339>] [--json]",
 		"dry-run execution",
 		"forge artifact checksums",
+		"forge release-candidate validate --candidate <release-candidate.json>",
 		"forge release-preview inspect --audit <release-preview-audit.json> [--json]",
 		"forge production-readiness audit [--json]",
 		"Slice 2.8 status:",
@@ -1191,8 +1192,9 @@ func TestProductionReadinessAuditScoresRepositoryGates(t *testing.T) {
 	for _, want := range []string{
 		"production_readiness=passed",
 		"readiness_percent=100",
-		"gates_passed=12",
-		"gates_total=12",
+		"gates_passed=13",
+		"gates_total=13",
+		"gate=release.candidate_handoff category=release status=passed",
 		"gate=release.production_promotion category=release status=passed",
 		"gate=goalrun.evidence_retention category=goalrun status=passed",
 		"gate=security.release_threat_model category=security status=passed",
@@ -1231,14 +1233,57 @@ func TestProductionReadinessAuditScoresRepositoryGates(t *testing.T) {
 	if audit.SchemaVersion != "ao.forge.production-readiness-audit.v0.1" ||
 		audit.Status != "passed" ||
 		audit.ReadinessPercent != 100 ||
-		audit.PassedGates != 12 ||
-		audit.TotalGates != 12 ||
-		len(audit.Gates) != 12 ||
+		audit.PassedGates != 13 ||
+		audit.TotalGates != 13 ||
+		len(audit.Gates) != 13 ||
 		len(audit.NextActions) != 0 {
 		t.Fatalf("production-readiness audit JSON drifted: %+v", audit)
 	}
 	if stderr != "" {
 		t.Fatalf("production-readiness audit --json wrote stderr: %s", stderr)
+	}
+}
+
+func TestReleaseCandidateValidatesPromotionHandoff(t *testing.T) {
+	root := repoRoot(t)
+	candidatePath := filepath.Join(root, "examples", "release-preview", "release-candidate.v0.1.example.json")
+	schemaPath := filepath.Join(root, "docs", "contracts", "release-candidate-v0.1.schema.json")
+
+	code, stdout, stderr := runCLI("release-candidate", "validate", "--candidate", candidatePath)
+	if code != 0 {
+		t.Fatalf("release-candidate validate exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	for _, want := range []string{
+		"release_candidate=ao-forge-active-spine-2026-06-23",
+		"status=ready",
+		"repository=ao-forge",
+		"gates=5",
+		"promotion_handoff=manual_required",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("release-candidate validate stdout missing %q\n%s", want, stdout)
+		}
+	}
+	if stderr != "" {
+		t.Fatalf("release-candidate validate wrote stderr: %s", stderr)
+	}
+
+	var document any
+	data, err := os.ReadFile(candidatePath)
+	if err != nil {
+		t.Fatalf("read candidate fixture: %v", err)
+	}
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatalf("candidate fixture is not JSON: %v", err)
+	}
+	if err := validateJSONSchemaValue(schemaPath, document); err != nil {
+		t.Fatalf("candidate fixture failed schema validation: %v", err)
+	}
+	rendered := fmt.Sprintf("%v", document)
+	for _, excluded := range []string{"ao-operator", "ao-runtime", "ao-control-plane", "ao-conductor", "agy-swarms", "codex-cron"} {
+		if strings.Contains(rendered, excluded) {
+			t.Fatalf("release candidate fixture should exclude out-of-scope repo %s", excluded)
+		}
 	}
 }
 

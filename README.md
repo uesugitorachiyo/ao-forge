@@ -4,9 +4,11 @@ AO Forge is the factory brain for the AO stack and the central place to
 understand how the AO repositories work together.
 
 It does not replace AO2, ao2-control-plane, AO Covenant, AO Command, AO
-Operator, agy-swarms, or AO Conductor. It coordinates them into a higher-level
-agentic factory where work is planned, policy-gated, executed, evidenced,
-reviewed, and promoted only when the required gates pass.
+Operator, or AO Conductor. `agy-swarms` is now archived/reference-only for AO
+Foundry work; AO Forge keeps legacy compatibility paths only behind explicit
+operator opt-in. Forge coordinates the active stack into a higher-level agentic
+factory where work is planned, policy-gated, executed, evidenced, reviewed, and
+promoted only when the required gates pass.
 
 ## AO Stack Map
 
@@ -52,6 +54,11 @@ AO Forge is intentionally in the middle of this path. It keeps durable task
 state and readiness semantics close to the factory contracts, while leaving
 execution, trust, evidence storage, and operator UX in the repos that own those
 responsibilities.
+
+`agy-swarms` compatibility remains only for legacy/reference scenarios. Dynamic
+planning through `forge plan --dynamic` requires
+`AO_FORGE_ENABLE_ARCHIVED_AGY_SWARMS=1`; active plans should use AO2 execution
+paths.
 
 ## Repo Boundaries
 

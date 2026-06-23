@@ -27,13 +27,16 @@ Require these status checks before merge:
 - `Go ubuntu-latest`
 - `Go macos-latest`
 - `Go windows-latest`
+- `License policy`
 - `Workflow lint`
 - `GoalRun fixture smoke`
 - `Production readiness audit`
 - `Release preview dry-run audit`
 
-The Go checks, Workflow lint check, GoalRun fixture smoke check, and Production
-readiness audit check come from `.github/workflows/ci.yml`. Workflow lint runs
+The Go checks, License policy check, Workflow lint check, GoalRun fixture smoke
+check, and Production readiness audit check come from
+`.github/workflows/ci.yml`. License policy verifies the canonical Apache-2.0
+root license, NOTICE, and package metadata before merge. Workflow lint runs
 `actionlint` against
 `.github/workflows/*.yml` so GitHub Actions context and expression errors are
 caught before merge. GoalRun fixture smoke validates checked-in GoalRun

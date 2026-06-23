@@ -14,9 +14,9 @@ Machine-readable baseline:
 
 | Component | Commit | Release | Verification |
 | --- | --- | --- | --- |
-| AO2 | `2bb91587a290d03cf36ee6cfea012f8abec8efbc` | `v0.4.80` | CI `93/93`, Production Readiness Ops `1/1` |
-| ao2-control-plane | `449ceee4a288c7eb78aa18aa7e7a6547f4698126` | `v0.1.13` | CI `33/33`, Production Readiness Ops `1/1` |
-| AO Covenant | `41e585d83f69d8d864e6cc34b01b69dc455f3389` | `v0.1.0` | CI `4/4`, Release Readiness `3/3`, Production Readiness Ops `1/1` |
+| AO2 | `b416e932feb73b2794ada01d4facafebcefa311a` | `v0.4.80` | CI `93/93`, Production Readiness Ops `1/1` |
+| ao2-control-plane | `15a008a20f83e963b253601e8d9a729e93627f5a` | `v0.1.13` | CI `33/33`, Production Readiness Ops `1/1` |
+| AO Covenant | `443e8af0d390e8c8e3036432ce887b313546d724` | `v0.1.0` | CI `4/4`, Release Readiness `3/3`, Production Readiness Ops `1/1` |
 
 ## Integration Rules
 

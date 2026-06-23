@@ -25,13 +25,16 @@ Configure a ruleset or branch protection rule for `main` with these controls:
 Require these status checks before merge:
 
 - `Go ubuntu-latest`
-- `Go macos-latest`
+- `Go macos-26`
 - `Go windows-latest`
 - `License policy`
 - `Workflow lint`
 - `GoalRun fixture smoke`
 - `Production readiness audit`
 - `Release preview dry-run audit`
+
+The macOS Go check is pinned to an explicit image label so GitHub's moving
+`macos-latest` alias cannot silently change the required status context.
 
 The Go checks, License policy check, Workflow lint check, GoalRun fixture smoke
 check, and Production readiness audit check come from

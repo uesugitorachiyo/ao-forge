@@ -30,7 +30,7 @@ tmpdir = pathlib.Path(tmpdir)
 
 required_checks = [
     "Go ubuntu-latest",
-    "Go macos-latest",
+    "Go macos-26",
     "Go windows-latest",
     "License policy",
     "Workflow lint",

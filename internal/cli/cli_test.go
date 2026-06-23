@@ -2666,6 +2666,7 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		{name: "macos check", doc: runbook, want: "`Go macos-latest`"},
 		{name: "windows check", doc: runbook, want: "`Go windows-latest`"},
 		{name: "workflow lint check", doc: runbook, want: "`Workflow lint`"},
+		{name: "license policy check", doc: runbook, want: "`License policy`"},
 		{name: "goal fixture check", doc: runbook, want: "`GoalRun fixture smoke`"},
 		{name: "production readiness check", doc: runbook, want: "`Production readiness audit`"},
 		{name: "release preview check", doc: runbook, want: "`Release preview dry-run audit`"},
@@ -2686,6 +2687,7 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		{name: "evidence title", doc: evidence, want: "# AO Forge Branch Protection Evidence"},
 		{name: "evidence status", doc: evidence, want: "Status: `passed`"},
 		{name: "evidence required checks", doc: evidence, want: "`Release preview dry-run audit`"},
+		{name: "evidence license policy required check", doc: evidence, want: "`License policy`"},
 		{name: "evidence goal fixture required check", doc: evidence, want: "`GoalRun fixture smoke`"},
 		{name: "evidence production readiness required check", doc: evidence, want: "`Production readiness audit`"},
 		{name: "evidence force pushes", doc: evidence, want: "Force pushes are disabled"},
@@ -2693,6 +2695,7 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		{name: "verifier gh api protection", doc: verifier, want: "branches/${branch}/protection"},
 		{name: "verifier gh api rulesets", doc: verifier, want: "repos/${repository}/rulesets"},
 		{name: "verifier required release preview", doc: verifier, want: "Release preview dry-run audit"},
+		{name: "verifier required license policy", doc: verifier, want: "License policy"},
 		{name: "verifier required goal fixture smoke", doc: verifier, want: "GoalRun fixture smoke"},
 		{name: "verifier required production readiness", doc: verifier, want: "Production readiness audit"},
 		{name: "goal fixture verifier goal run glob", doc: goalFixtureVerifier, want: "*.goal-run.json"},
@@ -2763,6 +2766,101 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		if !strings.Contains(check.doc, check.want) {
 			t.Fatalf("%s missing %q", check.name, check.want)
 		}
+	}
+}
+
+func TestBranchProtectionVerifierRunsWithPortableUTCTimestamp(t *testing.T) {
+	root := repoRoot(t)
+	tempDir := t.TempDir()
+	fakeGH := filepath.Join(tempDir, "gh")
+	if err := os.WriteFile(fakeGH, []byte(`#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "$1" != "api" ]]; then
+  echo "unexpected gh command: $*" >&2
+  exit 2
+fi
+
+case "$2" in
+  repos/*/branches/*/protection)
+    cat <<'JSON'
+{
+  "required_status_checks": {
+    "strict": true,
+    "contexts": [
+      "Go ubuntu-latest",
+      "Go macos-latest",
+      "Go windows-latest",
+      "License policy",
+      "Workflow lint",
+      "GoalRun fixture smoke",
+      "Production readiness audit",
+      "Release preview dry-run audit"
+    ]
+  },
+  "required_pull_request_reviews": {
+    "dismiss_stale_reviews": true
+  },
+  "enforce_admins": {
+    "enabled": true
+  },
+  "required_linear_history": {
+    "enabled": true
+  },
+  "allow_force_pushes": {
+    "enabled": false
+  },
+  "allow_deletions": {
+    "enabled": false
+  }
+}
+JSON
+    ;;
+  repos/*/rulesets)
+    printf '[]\n'
+    ;;
+  *)
+    echo "unexpected gh api path: $2" >&2
+    exit 2
+    ;;
+esac
+`), 0755); err != nil {
+		t.Fatalf("write fake gh: %v", err)
+	}
+
+	outPath := filepath.Join(tempDir, "branch-protection-audit.json")
+	cmd := exec.Command("bash", filepath.Join(root, "scripts", "verify-branch-protection.sh"))
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(),
+		"PATH="+tempDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"AO_FORGE_GITHUB_REPOSITORY=uesugitorachiyo/ao-forge",
+		"AO_FORGE_BRANCH_PROTECTION_BRANCH=main",
+		"AO_FORGE_BRANCH_PROTECTION_AUDIT="+outPath,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("verify branch protection failed: %v\n%s", err, out)
+	}
+
+	var audit struct {
+		Status         string   `json:"status"`
+		CheckedAt      string   `json:"checked_at"`
+		RequiredChecks []string `json:"required_checks"`
+	}
+	bytes, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read audit: %v", err)
+	}
+	if err := json.Unmarshal(bytes, &audit); err != nil {
+		t.Fatalf("parse audit: %v\n%s", err, bytes)
+	}
+	if audit.Status != "passed" {
+		t.Fatalf("status = %q, want passed\n%s", audit.Status, bytes)
+	}
+	if !strings.HasSuffix(audit.CheckedAt, "Z") {
+		t.Fatalf("checked_at = %q, want UTC Z timestamp", audit.CheckedAt)
+	}
+	if !containsString(audit.RequiredChecks, "License policy") {
+		t.Fatalf("required checks missing License policy: %#v", audit.RequiredChecks)
 	}
 }
 

@@ -25,6 +25,7 @@ required_checks = [
     "Go ubuntu-latest",
     "Go macos-latest",
     "Go windows-latest",
+    "License policy",
     "Workflow lint",
     "GoalRun fixture smoke",
     "Production readiness audit",
@@ -56,7 +57,7 @@ if missing_checks:
 audit = {
     "schema_version": "ao.forge.branch-protection-audit.v0.1",
     "status": "passed" if not errors else "blocked",
-    "checked_at": datetime.datetime.now(datetime.UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+    "checked_at": datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
     "repository": repository,
     "branch": branch,
     "required_checks": required_checks,

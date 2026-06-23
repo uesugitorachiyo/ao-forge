@@ -1,10 +1,10 @@
 # AO Forge Verified Foundation Baseline
 
-Date: 2026-06-17
+Date: 2026-06-23
 
-AO Forge may start Phase 0 work against this baseline. The baseline records
-the exact component commits and release references that were verified before
-Forge integration work continued.
+AO Forge may run active-spine factory work against this baseline. The baseline
+records the exact component commits, release references, and current green
+evidence that were verified before Forge readiness work continued.
 
 Machine-readable baseline:
 
@@ -14,9 +14,9 @@ Machine-readable baseline:
 
 | Component | Commit | Release | Verification |
 | --- | --- | --- | --- |
-| AO2 | `fbdea7d4c8d0546e52103b7d3c0cdf01d2013670` | `v0.4.80` | CI `93/93`, Pulse runtime local test |
-| ao2-control-plane | `de4e865ef8a3fe00005d27b165aab319e99c6ba1` | `v0.1.13` | CI `31/31`, local workspace tests |
-| AO Covenant | `ef815b35d1166b1f26ded2b482f15d088281c568` | `v0.1.0` | CI, Release Readiness, local Go tests |
+| AO2 | `2bb91587a290d03cf36ee6cfea012f8abec8efbc` | `v0.4.80` | CI `93/93`, Production Readiness Ops `1/1` |
+| ao2-control-plane | `449ceee4a288c7eb78aa18aa7e7a6547f4698126` | `v0.1.13` | CI `33/33`, Production Readiness Ops `1/1` |
+| AO Covenant | `41e585d83f69d8d864e6cc34b01b69dc455f3389` | `v0.1.0` | CI `4/4`, Release Readiness `3/3`, Production Readiness Ops `1/1` |
 
 ## Integration Rules
 
@@ -46,8 +46,8 @@ The archived stub folder, if present, is intentionally not used:
 ../ao-covenant-stub-20260617
 ```
 
-## Next Forge Slice
+## Current Forge Slice
 
-The next slice should add a foundation doctor command or adapter preflight that
-reads `foundation-baseline.v0.1.json`, checks the sibling repositories, and
-reports whether the local workspace matches the verified baseline.
+The active slice keeps the foundation doctor command in the local release gate.
+It reads `foundation-baseline.v0.1.json`, checks the sibling repositories, and
+reports whether the local workspace matches the verified active-spine baseline.

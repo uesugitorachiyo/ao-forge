@@ -1,0 +1,89 @@
+{
+  "schema_version": "ao.forge.release-candidate.v0.1",
+  "candidate_id": "ao-forge-active-spine-2026-06-23",
+  "status": "ready",
+  "repository": {
+    "id": "ao-forge",
+    "name": "AO Forge",
+    "role": "factory-brain",
+    "status": "ready",
+    "evidence": [
+      "go test ./...",
+      "go vet ./...",
+      "go build ./cmd/forge",
+      "scripts/verify-goal-fixtures.sh",
+      "scripts/check-license-policy.sh",
+      "scripts/release-preview-dry-run.sh",
+      "go run ./cmd/forge production-readiness audit --json"
+    ]
+  },
+  "gates": [
+    {
+      "gate_id": "production_readiness",
+      "status": "ready",
+      "evidence": [
+        "docs/contracts/production-readiness-audit-v0.1.schema.json",
+        ".github/workflows/ci.yml"
+      ]
+    },
+    {
+      "gate_id": "release_preview_dry_run",
+      "status": "ready",
+      "evidence": [
+        "scripts/release-preview-dry-run.sh",
+        "docs/contracts/release-preview-audit-v0.1.schema.json",
+        "docs/contracts/release-preview-inspect-v0.1.schema.json"
+      ]
+    },
+    {
+      "gate_id": "release_attestation",
+      "status": "ready",
+      "evidence": [
+        ".github/workflows/release-attestation.yml",
+        "docs/contracts/release-attestation-plan-v0.1.schema.json",
+        "docs/contracts/release-evidence-bundle-v0.1.schema.json"
+      ]
+    },
+    {
+      "gate_id": "public_repo_policy",
+      "status": "ready",
+      "evidence": [
+        "LICENSE",
+        "NOTICE",
+        "docs/security/PUBLIC-REPO-POLICY.md",
+        "docs/security/RELEASE-THREAT-MODEL.md"
+      ]
+    },
+    {
+      "gate_id": "promotion_handoff",
+      "status": "ready",
+      "evidence": [
+        ".github/workflows/production-promotion.yml",
+        "docs/release/PRODUCTION-STABLE-PROMOTION.md",
+        "docs/contracts/production-promotion-audit-v0.1.schema.json"
+      ]
+    }
+  ],
+  "promotion_handoff": {
+    "status": "manual_required",
+    "workflow": "Production Promotion",
+    "requires": [
+      "Release Verify",
+      "Release Install Verify",
+      "Release Rollback",
+      "production-promotion-audit"
+    ]
+  },
+  "next_actions": [
+    {
+      "action_id": "run-release-preview",
+      "description": "Run the release preview dry-run before tag or release mutation.",
+      "required": true
+    },
+    {
+      "action_id": "run-production-promotion",
+      "description": "Run Production Promotion only after publish, verify, install verify, rollback audit, and soak evidence exist.",
+      "required": true
+    }
+  ]
+}

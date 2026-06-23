@@ -39,6 +39,8 @@ const (
 	packetSchemaVersion          = "ao.forge.factory-packet.v0.1"
 	decisionFixtureSchemaVersion = "ao.forge.covenant-decision-fixture.v0.1"
 	gateResultSchemaVersion      = "ao.forge.covenant-gate-result.v0.1"
+	releaseCandidateVersion      = "ao.forge.release-candidate.v0.1"
+	releaseCandidateSchemaPath   = "docs/contracts/release-candidate-v0.1.schema.json"
 	releasePreviewAuditVersion   = "ao.forge.release-preview-audit.v0.1"
 	releasePreviewInspectVersion = "ao.forge.release-preview-inspect.v0.1"
 	productionReadinessVersion   = "ao.forge.production-readiness-audit.v0.1"
@@ -139,6 +141,36 @@ type nextAction struct {
 	ActionID    string `json:"action_id"`
 	Description string `json:"description"`
 	Required    bool   `json:"required"`
+}
+
+type releaseCandidate struct {
+	SchemaVersion    string                  `json:"schema_version"`
+	CandidateID      string                  `json:"candidate_id"`
+	Status           string                  `json:"status"`
+	Repository       releaseCandidateRepo    `json:"repository"`
+	Gates            []releaseCandidateGate  `json:"gates"`
+	PromotionHandoff releasePromotionHandoff `json:"promotion_handoff"`
+	NextActions      []nextAction            `json:"next_actions"`
+}
+
+type releaseCandidateRepo struct {
+	ID       string   `json:"id"`
+	Name     string   `json:"name"`
+	Role     string   `json:"role"`
+	Status   string   `json:"status"`
+	Evidence []string `json:"evidence"`
+}
+
+type releaseCandidateGate struct {
+	GateID   string   `json:"gate_id"`
+	Status   string   `json:"status"`
+	Evidence []string `json:"evidence"`
+}
+
+type releasePromotionHandoff struct {
+	Status   string   `json:"status"`
+	Workflow string   `json:"workflow"`
+	Requires []string `json:"requires"`
 }
 
 type covenantDecisionFixture struct {
@@ -297,6 +329,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runDoctor(args[1:], stdout, stderr)
 	case "artifact":
 		return runArtifact(args[1:], stdout, stderr)
+	case "release-candidate":
+		return runReleaseCandidate(args[1:], stdout, stderr)
 	case "release-preview":
 		return runReleasePreview(args[1:], stdout, stderr)
 	case "production-readiness":
@@ -336,6 +370,7 @@ Usage:
   forge doctor --foundation <foundation-baseline.json> [--json]
   forge artifact checksums --artifact <path> [--artifact <path> ...] [--out <checksums.txt>]
   forge artifact verify-checksums --manifest <checksums.txt>
+  forge release-candidate validate --candidate <release-candidate.json>
   forge release-preview --workspace <git-workspace> [--tag <vX.Y.Z>] [--artifact <path> ...] [--out <release-preview-audit.json>]
   forge release-preview inspect --audit <release-preview-audit.json> [--json]
   forge production-readiness audit [--json]
@@ -6844,6 +6879,10 @@ type productionReadinessFlags struct {
 	json bool
 }
 
+type releaseCandidateFlags struct {
+	candidatePath string
+}
+
 type productionReadinessGate struct {
 	GateID   string   `json:"gate_id"`
 	Category string   `json:"category"`
@@ -6875,6 +6914,150 @@ type productionReadinessRequirement struct {
 	Path     string
 	Pattern  string
 	Optional bool
+}
+
+func runReleaseCandidate(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "forge release-candidate: missing subcommand")
+		return 2
+	}
+	switch args[0] {
+	case "validate":
+		return runReleaseCandidateValidate(args[1:], stdout, stderr)
+	case "--help", "-h":
+		fmt.Fprintln(stderr, "forge release-candidate: use `forge release-candidate validate --candidate <release-candidate.json>`")
+		return 0
+	default:
+		fmt.Fprintf(stderr, "forge release-candidate: unknown subcommand %q\n", args[0])
+		return 2
+	}
+}
+
+func parseReleaseCandidateValidateFlags(args []string) (releaseCandidateFlags, error) {
+	var flags releaseCandidateFlags
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--candidate":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return releaseCandidateFlags{}, fmt.Errorf("--candidate requires a value")
+			}
+			flags.candidatePath = args[i+1]
+			i++
+		case "--help", "-h":
+			return releaseCandidateFlags{}, fmt.Errorf("help is available with `forge --help`")
+		default:
+			if strings.HasPrefix(args[i], "--") {
+				return releaseCandidateFlags{}, fmt.Errorf("unknown flag %s", args[i])
+			}
+			return releaseCandidateFlags{}, fmt.Errorf("unexpected argument %s", args[i])
+		}
+	}
+	if flags.candidatePath == "" {
+		return releaseCandidateFlags{}, fmt.Errorf("missing required --candidate")
+	}
+	return flags, nil
+}
+
+func runReleaseCandidateValidate(args []string, stdout, stderr io.Writer) int {
+	flags, err := parseReleaseCandidateValidateFlags(args)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge release-candidate validate: %v\n", err)
+		return 2
+	}
+	candidate, err := loadReleaseCandidate(flags.candidatePath)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge release-candidate validate: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "release_candidate=%s\n", candidate.CandidateID)
+	fmt.Fprintf(stdout, "status=%s\n", candidate.Status)
+	fmt.Fprintf(stdout, "repository=%s\n", candidate.Repository.ID)
+	fmt.Fprintf(stdout, "gates=%d\n", len(candidate.Gates))
+	fmt.Fprintf(stdout, "promotion_handoff=%s\n", candidate.PromotionHandoff.Status)
+	return 0
+}
+
+func loadReleaseCandidate(path string) (releaseCandidate, error) {
+	var candidate releaseCandidate
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return candidate, fmt.Errorf("read candidate: %w", err)
+	}
+	if err := decodeJSONStrict(data, &candidate); err != nil {
+		return candidate, fmt.Errorf("decode candidate: %w", err)
+	}
+	var document any
+	if err := json.Unmarshal(data, &document); err != nil {
+		return candidate, fmt.Errorf("decode candidate document: %w", err)
+	}
+	if err := validateJSONSchemaValue(resolveDefaultContractPath(releaseCandidateSchemaPath), document); err != nil {
+		return candidate, fmt.Errorf("schema validation failed: %w", err)
+	}
+	return candidate, validateReleaseCandidate(candidate)
+}
+
+func validateReleaseCandidate(candidate releaseCandidate) error {
+	if candidate.SchemaVersion != releaseCandidateVersion {
+		return fmt.Errorf("invalid schema_version %q", candidate.SchemaVersion)
+	}
+	if candidate.CandidateID == "" {
+		return fmt.Errorf("candidate_id is required")
+	}
+	if candidate.Status != "ready" {
+		return fmt.Errorf("status must be ready")
+	}
+	if candidate.Repository.ID != "ao-forge" {
+		return fmt.Errorf("repository must be ao-forge")
+	}
+	if candidate.Repository.Status != "ready" {
+		return fmt.Errorf("repository status must be ready")
+	}
+	if candidate.Repository.Name == "" || candidate.Repository.Role == "" || len(candidate.Repository.Evidence) == 0 {
+		return fmt.Errorf("repository name, role, and evidence are required")
+	}
+	requiredGates := map[string]bool{
+		"production_readiness":    false,
+		"release_preview_dry_run": false,
+		"release_attestation":     false,
+		"public_repo_policy":      false,
+		"promotion_handoff":       false,
+	}
+	if len(candidate.Gates) != len(requiredGates) {
+		return fmt.Errorf("candidate requires exactly %d gates", len(requiredGates))
+	}
+	for _, gate := range candidate.Gates {
+		seen, ok := requiredGates[gate.GateID]
+		if !ok {
+			return fmt.Errorf("unexpected gate %q", gate.GateID)
+		}
+		if seen {
+			return fmt.Errorf("duplicate gate %q", gate.GateID)
+		}
+		if gate.Status != "ready" {
+			return fmt.Errorf("gate %q must be ready", gate.GateID)
+		}
+		if len(gate.Evidence) == 0 {
+			return fmt.Errorf("gate %q requires evidence", gate.GateID)
+		}
+		requiredGates[gate.GateID] = true
+	}
+	for gateID, seen := range requiredGates {
+		if !seen {
+			return fmt.Errorf("missing gate %q", gateID)
+		}
+	}
+	if candidate.PromotionHandoff.Status != "manual_required" {
+		return fmt.Errorf("promotion_handoff status must be manual_required")
+	}
+	if candidate.PromotionHandoff.Workflow != "Production Promotion" {
+		return fmt.Errorf("promotion_handoff workflow must be Production Promotion")
+	}
+	for _, required := range []string{"Release Verify", "Release Install Verify", "Release Rollback", "production-promotion-audit"} {
+		if !containsString(candidate.PromotionHandoff.Requires, required) {
+			return fmt.Errorf("promotion_handoff missing requirement %q", required)
+		}
+	}
+	return nil
 }
 
 func runProductionReadiness(args []string, stdout, stderr io.Writer) int {
@@ -7002,6 +7185,22 @@ func productionReadinessGateSpecs() []productionReadinessGateSpec {
 				{Path: ".github/workflows/ci.yml", Pattern: "goal-run-retained-evidence-cleanup-v0.1.schema.json"},
 				{Path: ".github/workflows/ci.yml", Pattern: "goal-run-retained-evidence-cleanup.json"},
 				{Path: ".github/workflows/ci.yml", Pattern: "production-readiness-audit"},
+			},
+		},
+		{
+			GateID:   "release.candidate_handoff",
+			Category: "release",
+			Summary:  "release candidate handoff is schema-backed and validated in CI before preview, publish, or promotion",
+			Evidence: []string{"docs/contracts/release-candidate-v0.1.schema.json", "examples/release-preview/release-candidate.v0.1.example.json", ".github/workflows/ci.yml", "README.md", "docs/README.md"},
+			Requires: []productionReadinessRequirement{
+				{Path: "docs/contracts/release-candidate-v0.1.schema.json", Pattern: releaseCandidateVersion},
+				{Path: "docs/contracts/release-candidate-v0.1.schema.json", Pattern: `"additionalProperties": false`},
+				{Path: "examples/release-preview/release-candidate.v0.1.example.json", Pattern: `"candidate_id": "ao-forge-active-spine-2026-06-23"`},
+				{Path: "examples/release-preview/release-candidate.v0.1.example.json", Pattern: `"id": "ao-forge"`},
+				{Path: "examples/release-preview/release-candidate.v0.1.example.json", Pattern: `"status": "manual_required"`},
+				{Path: ".github/workflows/ci.yml", Pattern: "release-candidate validate --candidate examples/release-preview/release-candidate.v0.1.example.json"},
+				{Path: "README.md", Pattern: "release-candidate validate --candidate examples/release-preview/release-candidate.v0.1.example.json"},
+				{Path: "docs/README.md", Pattern: "[Release Candidate v0.1 Schema](contracts/release-candidate-v0.1.schema.json)"},
 			},
 		},
 		{

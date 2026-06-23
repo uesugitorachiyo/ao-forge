@@ -27,6 +27,7 @@ func TestProductionReadinessOpsWorkflowRunsBranchProtectionVerifier(t *testing.T
 		"name: Branch protection drift",
 		"runs-on: ubuntu-latest",
 		"GH_TOKEN: ${{ github.token }}",
+		"AO_FORGE_BRANCH_PROTECTION_MODE: limited",
 		"scripts/verify-branch-protection.sh",
 	} {
 		if !strings.Contains(content, want) {

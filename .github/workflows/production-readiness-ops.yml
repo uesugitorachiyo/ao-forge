@@ -15,6 +15,7 @@ jobs:
 
     env:
       GH_TOKEN: ${{ github.token }}
+      AO_FORGE_BRANCH_PROTECTION_MODE: limited
 
     steps:
       - name: Checkout

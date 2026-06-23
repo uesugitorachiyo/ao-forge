@@ -77,8 +77,11 @@ The verifier is read-only. It uses `gh api` to inspect live GitHub protection
 for `main`, confirms the required check names and protection toggles, and emits
 `ao.forge.branch-protection-audit.v0.1` JSON. The
 `Production Readiness Ops` workflow runs the same verifier on a daily schedule
-and by manual dispatch using read-only repository permissions. Keep
-`BRANCH-PROTECTION-EVIDENCE.md` current when the live settings change.
+and by manual dispatch using read-only repository permissions. Because the
+default `GITHUB_TOKEN` cannot read every administrative branch-protection field,
+the workflow sets `AO_FORGE_BRANCH_PROTECTION_MODE=limited`; maintainer local
+runs default to `full`. Keep `BRANCH-PROTECTION-EVIDENCE.md` current when the
+live settings change.
 
 ## Local Fallback
 

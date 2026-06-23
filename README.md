@@ -393,6 +393,11 @@ Until that audit passes, releases should stay described as public-preview or
 candidate releases. After it passes, production-stable language must stay
 within the scope proven by the promotion evidence.
 
+The `Production Readiness Ops` workflow is a read-only scheduled and manual
+drift check for live repository controls. It runs
+`scripts/verify-branch-protection.sh` against `main` so branch-protection drift
+is visible outside release-specific workflows.
+
 ## Continuous Integration
 
 This repository is public. The GitHub Actions workflow runs automatically on every push to a branch and every pull request targeting `main`.

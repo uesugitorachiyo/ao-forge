@@ -151,9 +151,10 @@ foundation evidence, and examples, see [docs/README.md](docs/README.md).
 
 AO Forge owns durable goal and task state for repeated hardening loops through
 the `GoalRun` contract. AO2 Pulse or Codex can update a `GoalRun` after each
-iteration; codex-cron should only trigger the loop. Before the next iteration,
-the agent must read the latest `GoalRun` and prove the next action still matches
-the objective, allowed scope, acceptance criteria, and stop conditions.
+iteration; an external scheduler may only trigger the loop. Before the next
+iteration, the agent must read the latest `GoalRun` and prove the next action
+still matches the objective, allowed scope, acceptance criteria, and stop
+conditions.
 Persisted GoalRun evidence is retained under repository-relative durable paths,
 not `tmp/` or machine-local directories; see the GoalRun retention policy before
 preserving AO2 Pulse handoff state. The GoalRun fixture smoke rejects retained

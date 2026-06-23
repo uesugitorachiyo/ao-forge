@@ -1,8 +1,8 @@
 # AO2 Pulse GoalRun Loop
 
 AO2 Pulse may execute a repeated hardening loop only when AO Forge owns the
-durable `GoalRun` state and codex-cron only triggers the loop. AO2 Pulse must
-not treat a scheduler tick as permission to mutate a repository.
+durable `GoalRun` state and an external scheduler only triggers the loop. AO2
+Pulse must not treat a scheduler tick as permission to mutate a repository.
 
 ## Boundary
 
@@ -10,7 +10,7 @@ not treat a scheduler tick as permission to mutate a repository.
   readiness and update audit contracts.
 - AO2 Pulse may inspect a GoalRun, perform bounded work that matches the
   GoalRun, and propose the next GoalRun state through `forge goal update`.
-- codex-cron may invoke AO2 Pulse on a schedule, but must not store goal
+- An external scheduler may invoke AO2 Pulse on a schedule, but must not store goal
   semantics, stop conditions, continuation prompts, or phase state.
 - If AO2 Pulse cannot prove that the next action matches the GoalRun, it must
   emit backoff or stop instead of continuing.
@@ -30,8 +30,9 @@ Run these commands from the repository that owns the GoalRun contract.
 
    The entrypoint runs `forge goal readiness --json`, validates the emitted JSON
    against `docs/contracts/goal-run-readiness-audit-v0.1.schema.json`, writes it
-   to `--out`, and exits non-zero when readiness fails. AO2 Pulse and codex-cron
-   must treat a non-zero exit as backoff or stop, not as permission to mutate.
+   to `--out`, and exits non-zero when readiness fails. AO2 Pulse and any
+   external scheduler must treat a non-zero exit as backoff or stop, not as
+   permission to mutate.
 
 2. Use the readiness audit JSON as the loop input:
 

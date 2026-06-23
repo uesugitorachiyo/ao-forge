@@ -2,8 +2,8 @@
 
 AO Forge owns durable goal and task state for autonomous or repeated hardening
 loops. AO2 Pulse, Codex, or another executor may update a `GoalRun` after an
-iteration, but codex-cron should only trigger the loop. codex-cron must not own
-goal semantics, stop rules, or continuation prompts.
+iteration, but an external scheduler may only trigger the loop. An external
+scheduler must not own goal semantics, stop rules, or continuation prompts.
 
 ## Contract
 

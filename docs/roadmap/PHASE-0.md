@@ -54,7 +54,7 @@ Status: ready to start against the verified foundation baseline.
 Prerequisite:
 
 - `GoalRun` contract exists so AO2 Pulse or Codex loop state is owned by AO
-  Forge, while codex-cron remains only a scheduler.
+  Forge, while an external scheduler remains only a trigger.
 
 - Invoke AO2 through a CLI adapter.
 - Bind each workcell to an AO2 evidence directory.

@@ -95,7 +95,7 @@
         },
         "scheduler": {
           "type": "string",
-          "enum": ["codex-cron", "operator", "none"]
+          "enum": ["external-scheduler", "operator", "none"]
         }
       },
       "additionalProperties": false

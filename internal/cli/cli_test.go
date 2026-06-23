@@ -2626,6 +2626,66 @@ func TestV012ReleaseNotesDraftIsPublicSafeAndEvidenceBacked(t *testing.T) {
 	}
 }
 
+func TestV013ReleaseNotesAreProductionStableAndEvidenceBacked(t *testing.T) {
+	root := repoRoot(t)
+	readText := func(path ...string) string {
+		t.Helper()
+		bytes, err := os.ReadFile(filepath.Join(append([]string{root}, path...)...))
+		if err != nil {
+			t.Fatalf("read %s: %v", filepath.Join(path...), err)
+		}
+		return string(bytes)
+	}
+
+	docsIndex := readText("docs", "README.md")
+	notes := readText("docs", "release", "V0.1.3-RELEASE-NOTES.md")
+
+	if !strings.Contains(docsIndex, "[v0.1.3 Release Notes](release/V0.1.3-RELEASE-NOTES.md)") {
+		t.Fatalf("docs index missing v0.1.3 release notes link")
+	}
+	for _, want := range []string{
+		"# AO Forge v0.1.3 Release Notes",
+		"v0.1.3",
+		"production-stable for solo-operator adoption",
+		"Production Promotion passed for `v0.1.3`",
+		"Release Verify",
+		"Release Install Verify",
+		"Release Rollback",
+		"Production Promotion",
+		"Release Rehearsal run: `https://github.com/uesugitorachiyo/ao-forge/actions/runs/27848624269`",
+		"Release Publish run: `https://github.com/uesugitorachiyo/ao-forge/actions/runs/27848666499`",
+		"Release Verify run: `https://github.com/uesugitorachiyo/ao-forge/actions/runs/27848782240`",
+		"Release Install Verify run: `https://github.com/uesugitorachiyo/ao-forge/actions/runs/27848798594`",
+		"Release Rollback audit run: `https://github.com/uesugitorachiyo/ao-forge/actions/runs/27848811933`",
+		"Production Promotion run: `https://github.com/uesugitorachiyo/ao-forge/actions/runs/27848830682`",
+	} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("v0.1.3 release notes missing %q", want)
+		}
+	}
+	for _, staleStatus := range []string{
+		"Until then",
+		"Release status before promotion",
+		"Production Promotion must pass before these notes describe `v0.1.3` as",
+	} {
+		if strings.Contains(notes, staleStatus) {
+			t.Fatalf("v0.1.3 release notes contain stale status text %q", staleStatus)
+		}
+	}
+	for _, forbidden := range []string{
+		"/" + "Users/",
+		"/tmp/",
+		"gho_",
+		"Bearer ",
+		"Authorization:",
+		"excluded handoff",
+	} {
+		if strings.Contains(notes, forbidden) {
+			t.Fatalf("v0.1.3 release notes contain public-unsafe text %q", forbidden)
+		}
+	}
+}
+
 func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 	root := repoRoot(t)
 	readText := func(path ...string) string {
@@ -3247,8 +3307,8 @@ func TestReleaseVerifyWorkflowChecksPublishedReleaseEvidence(t *testing.T) {
 		{name: "scheduled trigger", doc: workflow, want: "schedule:"},
 		{name: "weekly cron", doc: workflow, want: "cron: \"17 9 * * 1\""},
 		{name: "tag input", doc: workflow, want: "tag:"},
-		{name: "promoted default tag", doc: workflow, want: "default: \"v0.1.2\""},
-		{name: "scheduled promoted tag", doc: workflow, want: "SCHEDULED_VERIFY_TAG: v0.1.2"},
+		{name: "promoted default tag", doc: workflow, want: "default: \"v0.1.3\""},
+		{name: "scheduled promoted tag", doc: workflow, want: "SCHEDULED_VERIFY_TAG: v0.1.3"},
 		{name: "scheduled resolver", doc: workflow, want: "${GITHUB_EVENT_NAME}\" == \"schedule\""},
 		{name: "bundle input", doc: workflow, want: "require_evidence_bundle:"},
 		{name: "bundle default", doc: workflow, want: "default: \"true\""},
@@ -3288,7 +3348,7 @@ func TestReleaseVerifyWorkflowChecksPublishedReleaseEvidence(t *testing.T) {
 		{name: "upload verify audit", doc: workflow, want: "release-verify-audit"},
 		{name: "summary", doc: workflow, want: "post_release_verification=passed"},
 		{name: "readme workflow", doc: readme, want: "`Release Verify`"},
-		{name: "readme scheduled drift", doc: readme, want: "weekly schedule for the promoted `v0.1.2` release"},
+		{name: "readme scheduled drift", doc: readme, want: "weekly schedule for the promoted `v0.1.3` release"},
 		{name: "first release workflow", doc: firstRelease, want: "`Release Verify` workflow"},
 		{name: "threat model workflow", doc: threatModel, want: "`Release Verify`"},
 		{name: "threat model scheduled drift", doc: threatModel, want: "weekly schedule for promoted releases"},

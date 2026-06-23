@@ -91,7 +91,7 @@ known-bad. Preserve all release, rollback, and promotion evidence.
 
 ## Scheduled Drift Verification
 
-`Release Verify` runs weekly for the promoted `v0.1.2` release with
+`Release Verify` runs weekly for the promoted `v0.1.3` release with
 `require_evidence_bundle=true` and `require_signed_tag=true`. The scheduled run
 is read-only and uploads the same contract-valid `release-verify-audit` artifact
 as manual verification.

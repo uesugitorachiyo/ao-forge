@@ -355,7 +355,7 @@ that attestation, and uploads both bundle files with the release assets.
 
 The `Release Verify` workflow is read-only post-release verification. It runs on
 published GitHub releases, can be dispatched manually for a tag, and runs on a
-weekly schedule for the promoted `v0.1.2` release. It checks release metadata,
+weekly schedule for the promoted `v0.1.3` release. It checks release metadata,
 expected assets, checksums, release preview evidence, archive attestations, the
 release evidence bundle, bundle attestation, and a host-compatible binary smoke
 test. Future releases require both the evidence bundle and a signed annotated

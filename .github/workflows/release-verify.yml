@@ -10,7 +10,7 @@ on:
       tag:
         description: "Published release tag to verify"
         required: true
-        default: "v0.1.2"
+        default: "v0.1.3"
       require_evidence_bundle:
         description: "Require release-evidence-bundle.json and its attestation"
         required: true
@@ -37,7 +37,7 @@ jobs:
       REQUESTED_VERIFY_TAG: ${{ github.event.inputs.tag }}
       REQUIRE_EVIDENCE_BUNDLE_INPUT: ${{ github.event.inputs.require_evidence_bundle }}
       REQUIRE_SIGNED_TAG_INPUT: ${{ github.event.inputs.require_signed_tag }}
-      SCHEDULED_VERIFY_TAG: v0.1.2
+      SCHEDULED_VERIFY_TAG: v0.1.3
 
     steps:
       - name: Checkout

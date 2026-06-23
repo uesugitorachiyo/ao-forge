@@ -73,6 +73,7 @@
           "workspace": { "type": "string", "minLength": 1 },
           "executor": {
             "type": "string",
+            "description": "Use ao2 for active plans. agy-swarms is accepted only for archived compatibility.",
             "enum": ["ao2", "agy-swarms"]
           },
           "peers": {
@@ -155,4 +156,3 @@
   },
   "additionalProperties": false
 }
-

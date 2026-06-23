@@ -9953,11 +9953,49 @@ func main() {
 	return dummyBin
 }
 
+func TestDynamicPlanRequiresArchivedAgySwarmsOptIn(t *testing.T) {
+	tmpDir := t.TempDir()
+	workspace := filepath.Join(tmpDir, "default-ws")
+	if err := os.MkdirAll(workspace, 0755); err != nil {
+		t.Fatalf("mkdir workspace: %v", err)
+	}
+
+	briefContent := fmt.Sprintf(`{
+		"schema_version": "ao.forge.factory-brief.v0.1",
+		"objective": {
+			"text": "Decompose this dynamically",
+			"workspace": %q,
+			"release_mode": false
+		},
+		"constraints": {
+			"local_first": true,
+			"allow_network": false,
+			"allow_release_mutation": false,
+			"require_control_plane_readback": false
+		},
+		"expected_evidence": ["factory packet"]
+	}`, workspace)
+
+	briefPath := filepath.Join(tmpDir, "brief.json")
+	if err := os.WriteFile(briefPath, []byte(briefContent), 0644); err != nil {
+		t.Fatalf("write brief: %v", err)
+	}
+
+	code, _, stderr := runCLI("plan", "--brief", briefPath, "--dynamic")
+	if code == 0 {
+		t.Fatalf("expected dynamic planning to require archived agy-swarms opt-in")
+	}
+	if !strings.Contains(stderr, "AO_FORGE_ENABLE_ARCHIVED_AGY_SWARMS=1") {
+		t.Fatalf("expected archived agy-swarms opt-in guidance, got %q", stderr)
+	}
+}
+
 func TestDynamicPlanGeneration(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	dummyAgy := compileTestDynamicAgySwarms(t, tmpDir)
 	t.Setenv("AGY_SWARMS_PATH", dummyAgy)
+	t.Setenv("AO_FORGE_ENABLE_ARCHIVED_AGY_SWARMS", "1")
 
 	defaultWS := filepath.Join(tmpDir, "default-ws")
 	if err := os.MkdirAll(defaultWS, 0755); err != nil {

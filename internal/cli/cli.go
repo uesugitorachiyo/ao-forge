@@ -357,7 +357,8 @@ Factory terms:
   factory packet  operator-ready JSON summary of plan, gates, evidence, and next actions
 
 Slice 2.8 status:
-  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm integration, interactive operator overrides, real-time TUI dashboard, parallel swarms peer review, closed-loop multi-agent repair & self-healing, dynamic LLM-first factory planning, release mutation, GitHub publishing, release preview audits, release preview enforcement, release preview audit inspection, production-readiness scoring, artifact checksums, artifact checksum verification, contract schema validation, GoalRun validation and inspection, GoalRun transition checks, guarded GoalRun updates, GoalRun update evidence attachments, GoalRun evidence verification, GoalRun evidence path linting, GoalRun retained evidence retention audits, and GoalRun readiness audits are enabled.
+  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm compatibility, interactive operator overrides, real-time TUI dashboard, parallel swarm peer review, closed-loop repair compatibility, archived agy-swarms dynamic planning behind explicit opt-in, release mutation, GitHub publishing, release preview audits, release preview enforcement, release preview audit inspection, production-readiness scoring, artifact checksums, artifact checksum verification, contract schema validation, GoalRun validation and inspection, GoalRun transition checks, guarded GoalRun updates, GoalRun update evidence attachments, GoalRun evidence verification, GoalRun evidence path linting, GoalRun retained evidence retention audits, and GoalRun readiness audits are enabled.
+  Dynamic planning uses archived agy-swarms compatibility and requires AO_FORGE_ENABLE_ARCHIVED_AGY_SWARMS=1.
 `)
 }
 
@@ -407,6 +408,10 @@ func runPlan(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "forge plan: %v\n", err)
 		return 2
 	}
+	if flags.dynamic && !archivedAgySwarmsEnabled() {
+		fmt.Fprintln(stderr, "forge plan: --dynamic uses archived agy-swarms compatibility; set AO_FORGE_ENABLE_ARCHIVED_AGY_SWARMS=1 to opt in")
+		return 1
+	}
 
 	brief, canonical, err := readBrief(flags.briefPath, flags.dynamic)
 	if err != nil {
@@ -446,6 +451,11 @@ func runPlan(args []string, stdout, stderr io.Writer) int {
 
 	_, _ = stdout.Write(encoded)
 	return 0
+}
+
+func archivedAgySwarmsEnabled() bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("AO_FORGE_ENABLE_ARCHIVED_AGY_SWARMS")))
+	return value == "1" || value == "true" || value == "yes"
 }
 
 func buildDynamicPlan(ctx context.Context, brief factoryBrief, canonicalBrief []byte) (factoryPlan, error) {

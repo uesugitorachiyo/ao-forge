@@ -12,8 +12,8 @@ Phase 0 creates the factory foundation before runtime code.
 Acceptance:
 
 - design explains how AO Forge differs from AO2, AO Covenant,
-  ao2-control-plane, AO Operator, AO Conductor, and archived `agy-swarms`
-  compatibility;
+  ao2-control-plane, AO Command, and reference-only AO Operator/AO Conductor/
+  `agy-swarms` compatibility;
 - first schema validates with a standard JSON parser;
 - sample factory file is valid JSON;
 - repo has no generated secrets, machine-local paths, or private artifacts.

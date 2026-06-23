@@ -3926,7 +3926,7 @@ func TestVerifiedFoundationBaselineIsLinkedAndMachineReadable(t *testing.T) {
 	if baseline.SchemaVersion != "ao.forge.foundation-baseline.v0.1" {
 		t.Fatalf("schema_version = %q", baseline.SchemaVersion)
 	}
-	if baseline.Status != "ready_for_ao_forge_phase_0" {
+	if baseline.Status != "ready_for_ao_forge_active_spine" {
 		t.Fatalf("status = %q", baseline.Status)
 	}
 	if len(baseline.Components) != 3 {
@@ -3940,17 +3940,17 @@ func TestVerifiedFoundationBaselineIsLinkedAndMachineReadable(t *testing.T) {
 	}{
 		"ao2": {
 			localPath: "../ao2",
-			commit:    "fbdea7d4c8d0546e52103b7d3c0cdf01d2013670",
+			commit:    "2bb91587a290d03cf36ee6cfea012f8abec8efbc",
 			release:   "v0.4.80",
 		},
 		"ao2-control-plane": {
 			localPath: "../ao2-control-plane",
-			commit:    "de4e865ef8a3fe00005d27b165aab319e99c6ba1",
+			commit:    "449ceee4a288c7eb78aa18aa7e7a6547f4698126",
 			release:   "v0.1.13",
 		},
 		"ao-covenant": {
 			localPath: "../ao-covenant",
-			commit:    "ef815b35d1166b1f26ded2b482f15d088281c568",
+			commit:    "41e585d83f69d8d864e6cc34b01b69dc455f3389",
 			release:   "v0.1.0",
 		},
 	}

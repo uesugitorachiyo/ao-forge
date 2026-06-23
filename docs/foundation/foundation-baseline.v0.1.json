@@ -1,7 +1,7 @@
 {
   "schema_version": "ao.forge.foundation-baseline.v0.1",
-  "verified_at": "2026-06-17",
-  "status": "ready_for_ao_forge_phase_0",
+  "verified_at": "2026-06-23",
+  "status": "ready_for_ao_forge_active_spine",
   "components": [
     {
       "name": "ao2",
@@ -9,20 +9,27 @@
       "repository": "https://github.com/uesugitorachiyo/ao2",
       "local_path": "../ao2",
       "branch": "main",
-      "commit": "fbdea7d4c8d0546e52103b7d3c0cdf01d2013670",
+      "commit": "2bb91587a290d03cf36ee6cfea012f8abec8efbc",
       "release": "v0.4.80",
       "latest_ci": {
         "workflow": "CI",
-        "run_url": "https://github.com/uesugitorachiyo/ao2/actions/runs/27693940216",
+        "run_url": "https://github.com/uesugitorachiyo/ao2/actions/runs/28019192996",
         "status": "success",
         "completed_jobs": 93,
         "total_jobs": 93
       },
+      "latest_production_readiness_ops": {
+        "workflow": "Production Readiness Ops",
+        "run_url": "https://github.com/uesugitorachiyo/ao2/actions/runs/28029871033",
+        "status": "success",
+        "completed_jobs": 1,
+        "total_jobs": 1
+      },
       "local_verification": [
-        "cargo test -p ao2-runtime --test pulse_event_loop"
+        "git status --short --branch"
       ],
       "notes": [
-        "Pulse runtime hardening is merged to main after release v0.4.80; pin the commit until the next AO2 tag is cut."
+        "AO2 main remains newer than release v0.4.80; pin the active-spine commit until the next AO2 tag is cut."
       ]
     },
     {
@@ -31,17 +38,24 @@
       "repository": "https://github.com/uesugitorachiyo/ao2-control-plane",
       "local_path": "../ao2-control-plane",
       "branch": "main",
-      "commit": "de4e865ef8a3fe00005d27b165aab319e99c6ba1",
+      "commit": "449ceee4a288c7eb78aa18aa7e7a6547f4698126",
       "release": "v0.1.13",
       "latest_ci": {
         "workflow": "CI",
-        "run_url": "https://github.com/uesugitorachiyo/ao2-control-plane/actions/runs/27670602893",
+        "run_url": "https://github.com/uesugitorachiyo/ao2-control-plane/actions/runs/28034439773",
         "status": "success",
-        "completed_jobs": 31,
-        "total_jobs": 31
+        "completed_jobs": 33,
+        "total_jobs": 33
+      },
+      "latest_production_readiness_ops": {
+        "workflow": "production-readiness-ops",
+        "run_url": "https://github.com/uesugitorachiyo/ao2-control-plane/actions/runs/28035142216",
+        "status": "success",
+        "completed_jobs": 1,
+        "total_jobs": 1
       },
       "local_verification": [
-        "cargo test --workspace"
+        "git status --short --branch"
       ],
       "notes": [
         "Control plane remains observer-only; AO Forge must not treat readback as approval."
@@ -53,26 +67,40 @@
       "repository": "https://github.com/uesugitorachiyo/ao-covenant",
       "local_path": "../ao-covenant",
       "branch": "main",
-      "commit": "ef815b35d1166b1f26ded2b482f15d088281c568",
+      "commit": "41e585d83f69d8d864e6cc34b01b69dc455f3389",
       "release": "v0.1.0",
       "latest_ci": {
+        "workflow": "CI",
+        "run_url": "https://github.com/uesugitorachiyo/ao-covenant/actions/runs/28020877698",
+        "status": "success",
+        "completed_jobs": 4,
+        "total_jobs": 4
+      },
+      "latest_release_readiness": {
         "workflow": "Release Readiness",
-        "run_url": "https://github.com/uesugitorachiyo/ao-covenant/actions/runs/27664542162",
+        "run_url": "https://github.com/uesugitorachiyo/ao-covenant/actions/runs/28032666961",
+        "status": "success",
+        "completed_jobs": 3,
+        "total_jobs": 3
+      },
+      "latest_production_readiness_ops": {
+        "workflow": "Production Readiness Ops",
+        "run_url": "https://github.com/uesugitorachiyo/ao-covenant/actions/runs/28032771767",
         "status": "success",
         "completed_jobs": 1,
         "total_jobs": 1
       },
       "local_verification": [
-        "go test ./...",
-        "scripts/release-readiness.sh"
+        "git status --short --branch"
       ],
       "notes": [
-        "Latest hardening is newer than release v0.1.0; pin the commit until a v0.1.1 release is cut."
+        "Latest hardening is newer than release v0.1.0; pin the active-spine commit until a v0.1.1 release is cut."
       ]
     }
   ],
   "forge_start_policy": {
     "may_start_phase_0": true,
+    "may_start_active_spine_operations": true,
     "may_start_execution_adapter": true,
     "must_pin_commits_until_next_release_tags": true,
     "must_keep_control_plane_observer_only": true,

@@ -2723,7 +2723,7 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		{name: "stale reviews", doc: runbook, want: "Dismiss stale pull request approvals"},
 		{name: "required status checks", doc: runbook, want: "Require status checks to pass before merging"},
 		{name: "ubuntu check", doc: runbook, want: "`Go ubuntu-latest`"},
-		{name: "macos check", doc: runbook, want: "`Go macos-latest`"},
+		{name: "macos check", doc: runbook, want: "`Go macos-26`"},
 		{name: "windows check", doc: runbook, want: "`Go windows-latest`"},
 		{name: "workflow lint check", doc: runbook, want: "`Workflow lint`"},
 		{name: "license policy check", doc: runbook, want: "`License policy`"},
@@ -2829,6 +2829,26 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 	}
 }
 
+func TestCIWorkflowPinsMacOSRunner(t *testing.T) {
+	root := repoRoot(t)
+	data, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "ci.yml"))
+	if err != nil {
+		t.Fatalf("read CI workflow: %v", err)
+	}
+	workflow := string(data)
+	for _, want := range []string{
+		"name: Go ${{ matrix.os }}",
+		"os: [ubuntu-latest, macos-26, windows-latest]",
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Fatalf("CI workflow missing pinned macOS runner detail %q", want)
+		}
+	}
+	if strings.Contains(workflow, "macos-latest") {
+		t.Fatalf("CI workflow still uses moving macOS runner label")
+	}
+}
+
 func TestBranchProtectionVerifierRunsWithPortableUTCTimestamp(t *testing.T) {
 	root := repoRoot(t)
 	tempDir := t.TempDir()
@@ -2849,7 +2869,7 @@ case "$2" in
     "strict": true,
     "contexts": [
       "Go ubuntu-latest",
-      "Go macos-latest",
+      "Go macos-26",
       "Go windows-latest",
       "License policy",
       "Workflow lint",
@@ -3940,17 +3960,17 @@ func TestVerifiedFoundationBaselineIsLinkedAndMachineReadable(t *testing.T) {
 	}{
 		"ao2": {
 			localPath: "../ao2",
-			commit:    "2bb91587a290d03cf36ee6cfea012f8abec8efbc",
+			commit:    "b416e932feb73b2794ada01d4facafebcefa311a",
 			release:   "v0.4.80",
 		},
 		"ao2-control-plane": {
 			localPath: "../ao2-control-plane",
-			commit:    "449ceee4a288c7eb78aa18aa7e7a6547f4698126",
+			commit:    "15a008a20f83e963b253601e8d9a729e93627f5a",
 			release:   "v0.1.13",
 		},
 		"ao-covenant": {
 			localPath: "../ao-covenant",
-			commit:    "41e585d83f69d8d864e6cc34b01b69dc455f3389",
+			commit:    "443e8af0d390e8c8e3036432ce887b313546d724",
 			release:   "v0.1.0",
 		},
 	}

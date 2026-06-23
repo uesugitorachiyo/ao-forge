@@ -7160,7 +7160,7 @@ func productionReadinessGateSpecs() []productionReadinessGateSpec {
 			Evidence: []string{"docs/release/BRANCH-PROTECTION.md"},
 			Requires: []productionReadinessRequirement{
 				{Path: "docs/release/BRANCH-PROTECTION.md", Pattern: "Go ubuntu-latest"},
-				{Path: "docs/release/BRANCH-PROTECTION.md", Pattern: "Go macos-latest"},
+				{Path: "docs/release/BRANCH-PROTECTION.md", Pattern: "Go macos-26"},
 				{Path: "docs/release/BRANCH-PROTECTION.md", Pattern: "Go windows-latest"},
 				{Path: "docs/release/BRANCH-PROTECTION.md", Pattern: "Workflow lint"},
 				{Path: "docs/release/BRANCH-PROTECTION.md", Pattern: "GoalRun fixture smoke"},

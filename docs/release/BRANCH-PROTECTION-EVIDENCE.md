@@ -15,7 +15,7 @@ state, checks repository rulesets for visibility, and emits
 
 ## Latest Evidence
 
-- Verified at: `2026-06-23T15:22:43Z`
+- Verified at: `2026-06-23T22:07:44Z`
 - Repository: `uesugitorachiyo/ao-forge`
 - Branch: `main`
 - Status: `passed`
@@ -26,7 +26,7 @@ Verified controls:
 - Required pull request review protection is enabled.
 - Stale pull request approvals are dismissed when new commits are pushed.
 - Required status checks are strict.
-- Required checks include `Go ubuntu-latest`, `Go macos-latest`,
+- Required checks include `Go ubuntu-latest`, `Go macos-26`,
   `Go windows-latest`, `License policy`, `Workflow lint`,
   `GoalRun fixture smoke`, `Production readiness audit`, and
   `Release preview dry-run audit`.

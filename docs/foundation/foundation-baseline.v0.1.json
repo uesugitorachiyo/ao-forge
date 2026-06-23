@@ -9,18 +9,18 @@
       "repository": "https://github.com/uesugitorachiyo/ao2",
       "local_path": "../ao2",
       "branch": "main",
-      "commit": "2bb91587a290d03cf36ee6cfea012f8abec8efbc",
+      "commit": "b416e932feb73b2794ada01d4facafebcefa311a",
       "release": "v0.4.80",
       "latest_ci": {
         "workflow": "CI",
-        "run_url": "https://github.com/uesugitorachiyo/ao2/actions/runs/28019192996",
+        "run_url": "https://github.com/uesugitorachiyo/ao2/actions/runs/28053626014",
         "status": "success",
         "completed_jobs": 93,
         "total_jobs": 93
       },
       "latest_production_readiness_ops": {
         "workflow": "Production Readiness Ops",
-        "run_url": "https://github.com/uesugitorachiyo/ao2/actions/runs/28029871033",
+        "run_url": "https://github.com/uesugitorachiyo/ao2/actions/runs/28054451606",
         "status": "success",
         "completed_jobs": 1,
         "total_jobs": 1
@@ -38,18 +38,18 @@
       "repository": "https://github.com/uesugitorachiyo/ao2-control-plane",
       "local_path": "../ao2-control-plane",
       "branch": "main",
-      "commit": "449ceee4a288c7eb78aa18aa7e7a6547f4698126",
+      "commit": "15a008a20f83e963b253601e8d9a729e93627f5a",
       "release": "v0.1.13",
       "latest_ci": {
         "workflow": "CI",
-        "run_url": "https://github.com/uesugitorachiyo/ao2-control-plane/actions/runs/28034439773",
+        "run_url": "https://github.com/uesugitorachiyo/ao2-control-plane/actions/runs/28050638200",
         "status": "success",
         "completed_jobs": 33,
         "total_jobs": 33
       },
       "latest_production_readiness_ops": {
         "workflow": "production-readiness-ops",
-        "run_url": "https://github.com/uesugitorachiyo/ao2-control-plane/actions/runs/28035142216",
+        "run_url": "https://github.com/uesugitorachiyo/ao2-control-plane/actions/runs/28051422824",
         "status": "success",
         "completed_jobs": 1,
         "total_jobs": 1
@@ -67,25 +67,25 @@
       "repository": "https://github.com/uesugitorachiyo/ao-covenant",
       "local_path": "../ao-covenant",
       "branch": "main",
-      "commit": "41e585d83f69d8d864e6cc34b01b69dc455f3389",
+      "commit": "443e8af0d390e8c8e3036432ce887b313546d724",
       "release": "v0.1.0",
       "latest_ci": {
         "workflow": "CI",
-        "run_url": "https://github.com/uesugitorachiyo/ao-covenant/actions/runs/28020877698",
+        "run_url": "https://github.com/uesugitorachiyo/ao-covenant/actions/runs/28048024016",
         "status": "success",
         "completed_jobs": 4,
         "total_jobs": 4
       },
       "latest_release_readiness": {
         "workflow": "Release Readiness",
-        "run_url": "https://github.com/uesugitorachiyo/ao-covenant/actions/runs/28032666961",
+        "run_url": "https://github.com/uesugitorachiyo/ao-covenant/actions/runs/28055013267",
         "status": "success",
         "completed_jobs": 3,
         "total_jobs": 3
       },
       "latest_production_readiness_ops": {
         "workflow": "Production Readiness Ops",
-        "run_url": "https://github.com/uesugitorachiyo/ao-covenant/actions/runs/28032771767",
+        "run_url": "https://github.com/uesugitorachiyo/ao-covenant/actions/runs/28055014809",
         "status": "success",
         "completed_jobs": 1,
         "total_jobs": 1

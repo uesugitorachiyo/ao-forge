@@ -3,6 +3,14 @@
 AO Forge is the factory brain for the AO stack and the central place to
 understand how the AO repositories work together.
 
+## AO Stack Architecture
+
+This repository is part of the AO agent orchestration stack. Start with the
+central architecture guide at
+[uesugitorachiyo/ao-architecture](https://github.com/uesugitorachiyo/ao-architecture);
+the AO Forge-specific architecture page is
+[ao-forge](https://github.com/uesugitorachiyo/ao-architecture/tree/main/ao-forge).
+
 It does not replace AO2, ao2-control-plane, AO Covenant, or AO Command.
 Deprecated AO Operator/AO Conductor paths and archived `agy-swarms` materials
 are reference-only for AO Foundry work; AO Forge keeps legacy compatibility

@@ -14,7 +14,8 @@ The existing AO family has strong components:
 - AO2 is now a governed execution and evidence engine.
 - ao2-control-plane is a read-only evidence observer.
 - AO Covenant is the policy, provenance, release, and trust layer.
-- AO Operator and AO Conductor proved useful orchestration ideas.
+- Deprecated AO Operator and AO Conductor proved useful orchestration ideas but
+  are now reference paths, not active execution owners.
 - `agy-swarms` is archived/reference-only for AO Foundry work; legacy Forge
   compatibility remains guarded behind explicit operator opt-in.
 

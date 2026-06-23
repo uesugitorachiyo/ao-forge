@@ -26,7 +26,7 @@
   "loop_owner": {
     "state_owner": "ao-forge",
     "executor": "ao2-pulse",
-    "scheduler": "codex-cron"
+    "scheduler": "external-scheduler"
   },
   "next_action_guard": {
     "must_read_latest_goal_run": true,
@@ -41,7 +41,7 @@
       {
         "label": "ao2-weekend-hardening.goal-run.json",
         "path": "examples/goals/ao2-weekend-hardening.goal-run.json",
-        "sha256": "4777f6ccb640707eab3e6ab731ac2dcf3b7a196e9aa307ccf0b45fd325429341"
+        "sha256": "4e93b5d19c3b26c019977d3a483caa24c678786cb568bf47ac3d707d797a1d3a"
       }
     ]
   }

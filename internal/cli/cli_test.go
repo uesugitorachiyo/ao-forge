@@ -146,7 +146,7 @@ func TestGoalRunCLIValidatesAndInspectsContract(t *testing.T) {
 		"acceptance_criteria=3",
 		"allowed_scope=3",
 		"stop_conditions=4",
-		"loop_owner=ao-forge/ao2-pulse/codex-cron",
+		"loop_owner=ao-forge/ao2-pulse/external-scheduler",
 		"next_action_guard_enabled=true",
 		"next_action_guard_on_mismatch=backoff_or_stop",
 		"last_iteration_status=not_started",
@@ -228,7 +228,7 @@ func TestGoalRunCLIVerifiesEvidenceHashes(t *testing.T) {
 		"goal_id=ao2-weekend-hardening",
 		"evidence_verified=1",
 		"evidence_path=examples/goals/ao2-weekend-hardening.goal-run.json status=passed",
-		"sha256=4777f6ccb640707eab3e6ab731ac2dcf3b7a196e9aa307ccf0b45fd325429341",
+		"sha256=4e93b5d19c3b26c019977d3a483caa24c678786cb568bf47ac3d707d797a1d3a",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("goal evidence verify stdout missing %q\n%s", want, stdout)
@@ -267,7 +267,7 @@ func TestGoalRunCLIVerifiesEvidenceHashes(t *testing.T) {
 		summary.EvidenceVerified != 1 ||
 		len(summary.Evidence) != 1 ||
 		summary.Evidence[0].Path != "examples/goals/ao2-weekend-hardening.goal-run.json" ||
-		summary.Evidence[0].ActualSHA256 != "4777f6ccb640707eab3e6ab731ac2dcf3b7a196e9aa307ccf0b45fd325429341" ||
+		summary.Evidence[0].ActualSHA256 != "4e93b5d19c3b26c019977d3a483caa24c678786cb568bf47ac3d707d797a1d3a" ||
 		summary.Evidence[0].Status != "passed" {
 		t.Fatalf("goal evidence verify JSON drifted: %+v", summary)
 	}
@@ -1421,7 +1421,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run continuation prompt", doc: goalRunSchema, want: `"continuation_prompt"`},
 		{name: "goal run state owner", doc: goalRunSchema, want: `"state_owner"`},
 		{name: "goal run owner ao forge", doc: goalRunSchema, want: `"ao-forge"`},
-		{name: "goal run scheduler codex cron", doc: goalRunSchema, want: `"codex-cron"`},
+		{name: "goal run scheduler external scheduler", doc: goalRunSchema, want: `"external-scheduler"`},
 		{name: "goal run next action guard", doc: goalRunSchema, want: `"next_action_guard"`},
 		{name: "goal run backoff", doc: goalRunSchema, want: `"backoff_or_stop"`},
 		{name: "goal run update audit schema id", doc: goalRunUpdateAuditSchema, want: `"ao.forge.goal-run-update-audit.v0.1"`},
@@ -1473,7 +1473,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run readiness audit retained evidence check", doc: goalRunReadinessAuditSchema, want: `"retained_evidence"`},
 		{name: "goal run docs title", doc: goalRunDocs, want: "# AO Forge GoalRun Contract"},
 		{name: "goal run docs ownership", doc: goalRunDocs, want: "AO Forge owns durable goal and task state"},
-		{name: "goal run docs cron boundary", doc: goalRunDocs, want: "codex-cron should only trigger the loop"},
+		{name: "goal run docs scheduler boundary", doc: goalRunDocs, want: "an external scheduler may only trigger the loop"},
 		{name: "goal run docs guard", doc: goalRunDocs, want: "If the next action does not match, the agent must emit backoff or stop"},
 		{name: "goal run docs transition title", doc: goalRunDocs, want: "## Phase Transitions"},
 		{name: "goal run docs implementation transition", doc: goalRunDocs, want: "| `implementation` | `verification`, `blocked`, `backoff`, `stopped` |"},
@@ -1541,7 +1541,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run docs update audit validate command", doc: goalRunDocs, want: "forge contract validate"},
 		{name: "goal run docs AO2 Pulse link", doc: goalRunDocs, want: "docs/design/AO2-PULSE-GOAL-RUN-LOOP.md"},
 		{name: "AO2 Pulse docs title", doc: ao2PulseGoalRunLoopDocs, want: "# AO2 Pulse GoalRun Loop"},
-		{name: "AO2 Pulse docs scheduler boundary", doc: ao2PulseGoalRunLoopDocs, want: "codex-cron may invoke AO2 Pulse on a schedule"},
+		{name: "AO2 Pulse docs scheduler boundary", doc: ao2PulseGoalRunLoopDocs, want: "An external scheduler may invoke AO2 Pulse on a schedule"},
 		{name: "AO2 Pulse docs readiness entrypoint command", doc: ao2PulseGoalRunLoopDocs, want: "scripts/ao2-pulse-goal-readiness.sh"},
 		{name: "AO2 Pulse docs readiness audit out", doc: ao2PulseGoalRunLoopDocs, want: "--out tmp/goal-run-readiness-audit.json"},
 		{name: "AO2 Pulse docs readiness schema", doc: ao2PulseGoalRunLoopDocs, want: "docs/contracts/goal-run-readiness-audit-v0.1.schema.json"},
@@ -1594,7 +1594,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run example repo", doc: goalRunExample, want: `"repo": "ao2"`},
 		{name: "goal run example state owner", doc: goalRunExample, want: `"state_owner": "ao-forge"`},
 		{name: "goal run example executor", doc: goalRunExample, want: `"executor": "ao2-pulse"`},
-		{name: "goal run example scheduler", doc: goalRunExample, want: `"scheduler": "codex-cron"`},
+		{name: "goal run example scheduler", doc: goalRunExample, want: `"scheduler": "external-scheduler"`},
 		{name: "goal run update audit example id", doc: goalRunUpdateAuditExample, want: `"audit_schema_version": "ao.forge.goal-run-update-audit.v0.1"`},
 		{name: "goal run update audit example transition", doc: goalRunUpdateAuditExample, want: `"phase_transition": "planning->implementation"`},
 		{name: "goal run update audit example evidence field", doc: goalRunUpdateAuditExample, want: `"last_iteration.evidence"`},
@@ -1632,7 +1632,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "retained readiness audit requested phase", doc: retainedReadinessAudit, want: `"requested_phase": "verification"`},
 		{name: "retained readiness audit retained evidence check", doc: retainedReadinessAudit, want: `"check_id": "retained_evidence"`},
 		{name: "retained readiness audit provenance", doc: retainedReadinessAudit, want: `"provenance"`},
-		{name: "retained readiness audit goal run sha", doc: retainedReadinessAudit, want: `"sha256": "558e9503b85a32ca36e5f46dbdc2169f1ba20f8526418eb54fbb0349b15334c2"`},
+		{name: "retained readiness audit goal run sha", doc: retainedReadinessAudit, want: `"sha256": "6ec755cc90cb4ad417df69cd23663e6c429e82de19b54fe07c9009fea6f88dcb"`},
 		{name: "retained readiness audit retention audit", doc: retainedReadinessAudit, want: `"retention_audits"`},
 		{name: "tampered readiness audit provenance", doc: tamperedReadinessAuditExample, want: `"provenance"`},
 		{name: "tampered readiness audit schema marker", doc: tamperedReadinessAuditExample, want: `"readiness_schema_version": "ao.forge.goal-run-readiness-audit.v0.1"`},

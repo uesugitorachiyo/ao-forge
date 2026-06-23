@@ -7275,7 +7275,7 @@ func productionReadinessGateSpecs() []productionReadinessGateSpec {
 				{Path: "docs/contracts/goal-run-v0.1.schema.json", Pattern: "ao.forge.goal-run.v0.1"},
 				{Path: "docs/contracts/goal-run-readiness-audit-v0.1.schema.json", Pattern: "ao.forge.goal-run-readiness-audit.v0.1"},
 				{Path: "scripts/ao2-pulse-goal-readiness.sh", Pattern: "goal readiness --goal-run"},
-				{Path: "docs/design/AO2-PULSE-GOAL-RUN-LOOP.md", Pattern: "codex-cron may invoke AO2 Pulse on a schedule"},
+				{Path: "docs/design/AO2-PULSE-GOAL-RUN-LOOP.md", Pattern: "An external scheduler may invoke AO2 Pulse on a schedule"},
 			},
 		},
 		{

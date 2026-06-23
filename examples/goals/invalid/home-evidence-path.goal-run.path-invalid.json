@@ -26,7 +26,7 @@
   "loop_owner": {
     "state_owner": "ao-forge",
     "executor": "ao2-pulse",
-    "scheduler": "codex-cron"
+    "scheduler": "external-scheduler"
   },
   "next_action_guard": {
     "must_read_latest_goal_run": true,

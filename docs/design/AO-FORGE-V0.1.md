@@ -195,8 +195,8 @@ AO2 owns:
 AO2 Pulse or Codex may update a `GoalRun` after each iteration, but must read
 the latest `GoalRun` before the next iteration and prove the next action still
 matches the objective, allowed scope, acceptance criteria, and stop conditions.
-codex-cron may trigger a loop, but it must not own goal semantics or stop
-rules.
+An external scheduler may trigger a loop, but it must not own goal semantics or
+stop rules.
 
 AO Covenant owns:
 

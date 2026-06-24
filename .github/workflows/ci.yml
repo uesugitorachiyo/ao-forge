@@ -77,6 +77,7 @@ jobs:
           set -euo pipefail
           out="${RUNNER_TEMP}/ao-forge-production-readiness"
           mkdir -p "$out"
+          scripts/check-public-repo-policy.sh | tee "$out/public-repo-policy-check.txt"
           go run ./cmd/forge production-readiness audit | tee "$out/production-readiness-audit.txt"
           go run ./cmd/forge production-readiness audit --json > "$out/production-readiness-audit.json"
           go run ./cmd/forge goal evidence cleanup --dry-run --json > "$out/goal-run-retained-evidence-cleanup.json"

@@ -325,9 +325,10 @@ For automation, emit the inspect summary as JSON:
 ```
 
 Compute the repository production-readiness score from checked-in contracts,
-workflows, runbooks, and retained evidence controls:
+workflows, runbooks, retained evidence controls, and public-repo policy gates:
 
 ```sh
+scripts/check-public-repo-policy.sh
 ./bin/forge production-readiness audit --json
 ```
 
@@ -339,6 +340,7 @@ audit workflow. It uploads `release-preview-audit.json`,
 `release-preview-inspect.txt`, `release-preview-inspect.json`, and
 `checksums.txt` as CI artifacts.
 The CI production-readiness artifact also includes
+`public-repo-policy-check.txt` and
 `goal-run-retained-evidence-cleanup.json`, a schema-valid cleanup dry-run for
 reviewing retained GoalRun evidence eligibility without deleting files.
 

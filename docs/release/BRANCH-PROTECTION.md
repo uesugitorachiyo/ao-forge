@@ -106,6 +106,7 @@ go build -o /tmp/ao-forge-smoke ./cmd/forge
 /tmp/ao-forge-smoke contract validate --schema docs/contracts/production-readiness-audit-v0.1.schema.json --document /tmp/ao-forge-production-readiness-audit.json
 /tmp/ao-forge-smoke release-candidate validate --candidate examples/release-preview/release-candidate.v0.1.example.json
 /tmp/ao-forge-smoke artifact verify-checksums --manifest examples/release-preview/checksums.txt
+scripts/check-public-repo-policy.sh
 gitleaks detect --source . --redact --verbose
 gitleaks dir . --redact --verbose
 AO_FORGE_RELEASE_PREVIEW_OUT=/tmp/ao-forge-release-preview scripts/release-preview-dry-run.sh

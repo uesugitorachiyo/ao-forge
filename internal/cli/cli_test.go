@@ -1192,12 +1192,13 @@ func TestProductionReadinessAuditScoresRepositoryGates(t *testing.T) {
 	for _, want := range []string{
 		"production_readiness=passed",
 		"readiness_percent=100",
-		"gates_passed=13",
-		"gates_total=13",
+		"gates_passed=14",
+		"gates_total=14",
 		"gate=release.candidate_handoff category=release status=passed",
 		"gate=release.production_promotion category=release status=passed",
 		"gate=goalrun.evidence_retention category=goalrun status=passed",
 		"gate=security.release_threat_model category=security status=passed",
+		"gate=security.public_repo_policy_scan category=security status=passed",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("production-readiness audit stdout missing %q\n%s", want, stdout)
@@ -1233,14 +1234,27 @@ func TestProductionReadinessAuditScoresRepositoryGates(t *testing.T) {
 	if audit.SchemaVersion != "ao.forge.production-readiness-audit.v0.1" ||
 		audit.Status != "passed" ||
 		audit.ReadinessPercent != 100 ||
-		audit.PassedGates != 13 ||
-		audit.TotalGates != 13 ||
-		len(audit.Gates) != 13 ||
+		audit.PassedGates != 14 ||
+		audit.TotalGates != 14 ||
+		len(audit.Gates) != 14 ||
 		len(audit.NextActions) != 0 {
 		t.Fatalf("production-readiness audit JSON drifted: %+v", audit)
 	}
 	if stderr != "" {
 		t.Fatalf("production-readiness audit --json wrote stderr: %s", stderr)
+	}
+}
+
+func TestPublicRepoPolicyCheckPassesForTrackedFiles(t *testing.T) {
+	root := repoRoot(t)
+	cmd := exec.Command("bash", filepath.Join(root, "scripts", "check-public-repo-policy.sh"))
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("public repo policy check failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "public repo policy check passed") {
+		t.Fatalf("public repo policy check output drifted: %s", out)
 	}
 }
 
@@ -2705,6 +2719,7 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 	verifier := readText("scripts", "verify-branch-protection.sh")
 	goalFixtureVerifier := readText("scripts", "verify-goal-fixtures.sh")
 	ciWorkflow := readText(".github", "workflows", "ci.yml")
+	publicRepoPolicyScanner := readText("scripts", "check-public-repo-policy.sh")
 
 	for _, check := range []struct {
 		name string
@@ -2742,6 +2757,7 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		{name: "local actionlint fallback", doc: runbook, want: "go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= -pyflakes= .github/workflows/*.yml"},
 		{name: "local production readiness fallback", doc: runbook, want: "production-readiness audit --json"},
 		{name: "local production readiness schema fallback", doc: runbook, want: "contract validate --schema docs/contracts/production-readiness-audit-v0.1.schema.json"},
+		{name: "local public repo policy scanner", doc: runbook, want: "scripts/check-public-repo-policy.sh"},
 		{name: "checksum verification", doc: runbook, want: "artifact verify-checksums --manifest"},
 		{name: "secret scan", doc: runbook, want: "gitleaks detect --source . --redact --verbose"},
 		{name: "evidence title", doc: evidence, want: "# AO Forge Branch Protection Evidence"},
@@ -2816,12 +2832,18 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		{name: "ci production readiness job", doc: ciWorkflow, want: "production-readiness:"},
 		{name: "ci production readiness name", doc: ciWorkflow, want: "name: Production readiness audit"},
 		{name: "ci production readiness command", doc: ciWorkflow, want: "go run ./cmd/forge production-readiness audit --json"},
+		{name: "ci production readiness public repo policy scanner", doc: ciWorkflow, want: "scripts/check-public-repo-policy.sh"},
+		{name: "ci production readiness public repo policy artifact", doc: ciWorkflow, want: "public-repo-policy-check.txt"},
 		{name: "ci production readiness schema validation", doc: ciWorkflow, want: "contract validate --schema docs/contracts/production-readiness-audit-v0.1.schema.json"},
 		{name: "ci production readiness cleanup command", doc: ciWorkflow, want: "go run ./cmd/forge goal evidence cleanup --dry-run --json"},
 		{name: "ci production readiness cleanup schema validation", doc: ciWorkflow, want: "contract validate --schema docs/contracts/goal-run-retained-evidence-cleanup-v0.1.schema.json"},
 		{name: "ci production readiness cleanup artifact", doc: ciWorkflow, want: "goal-run-retained-evidence-cleanup.json"},
 		{name: "ci production readiness artifact upload", doc: ciWorkflow, want: "actions/upload-artifact@v7"},
 		{name: "ci production readiness artifact name", doc: ciWorkflow, want: "production-readiness-audit"},
+		{name: "public repo policy scanner uses tracked files", doc: publicRepoPolicyScanner, want: "git ls-files"},
+		{name: "public repo policy scanner private key marker", doc: publicRepoPolicyScanner, want: "PRIVATE KEY"},
+		{name: "public repo policy scanner credential assignments", doc: publicRepoPolicyScanner, want: "credential-like assignment"},
+		{name: "public repo policy scanner local paths", doc: publicRepoPolicyScanner, want: "machine-local home path"},
 	} {
 		if !strings.Contains(check.doc, check.want) {
 			t.Fatalf("%s missing %q", check.name, check.want)

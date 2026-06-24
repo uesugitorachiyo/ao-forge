@@ -56,7 +56,10 @@ Package metadata must agree with the root license:
 - Python packages/plugins: `license = "Apache-2.0"`
 
 CI must run `scripts/check-license-policy.sh` to enforce the root files and
-metadata. Release workflows must run `scripts/check-license-policy.sh
+metadata. CI must also run `scripts/check-public-repo-policy.sh` against tracked
+files so private-key markers, credential-shaped assignments, high-confidence
+tokens, and machine-local home paths cannot enter the public repository
+unnoticed. Release workflows must run `scripts/check-license-policy.sh
 --scan-archives` after building archives and before checksums, attestations, or
 publication.
 
@@ -77,7 +80,8 @@ attestations, or publication.
 Before a public release or public-repo cleanup merge, verify:
 
 1. `scripts/check-license-policy.sh` passes.
-2. Public export or stabilization checks pass for repos that have them.
-3. Release archives include `LICENSE` and `NOTICE`.
-4. Evidence files use public-safe repo names, paths, and identifiers.
-5. Any non-public operational notes stay outside the public repo.
+2. `scripts/check-public-repo-policy.sh` passes.
+3. Public export or stabilization checks pass for repos that have them.
+4. Release archives include `LICENSE` and `NOTICE`.
+5. Evidence files use public-safe repo names, paths, and identifiers.
+6. Any non-public operational notes stay outside the public repo.

@@ -7318,6 +7318,22 @@ func productionReadinessGateSpecs() []productionReadinessGateSpec {
 				{Path: "docs/security/RELEASE-THREAT-MODEL.md", Pattern: "Production Promotion"},
 			},
 		},
+		{
+			GateID:   "security.public_repo_policy_scan",
+			Category: "security",
+			Summary:  "public repo policy scan checks tracked files for private paths and credential-shaped leaks",
+			Evidence: []string{"scripts/check-public-repo-policy.sh", ".github/workflows/ci.yml", "docs/security/PUBLIC-REPO-POLICY.md"},
+			Requires: []productionReadinessRequirement{
+				{Path: "scripts/check-public-repo-policy.sh", Pattern: "public repo policy check passed"},
+				{Path: "scripts/check-public-repo-policy.sh", Pattern: "git ls-files"},
+				{Path: "scripts/check-public-repo-policy.sh", Pattern: "PRIVATE KEY"},
+				{Path: "scripts/check-public-repo-policy.sh", Pattern: "credential-like assignment"},
+				{Path: "scripts/check-public-repo-policy.sh", Pattern: "machine-local home path"},
+				{Path: ".github/workflows/ci.yml", Pattern: "scripts/check-public-repo-policy.sh"},
+				{Path: ".github/workflows/ci.yml", Pattern: "public-repo-policy-check.txt"},
+				{Path: "docs/security/PUBLIC-REPO-POLICY.md", Pattern: "scripts/check-public-repo-policy.sh"},
+			},
+		},
 	}
 }
 

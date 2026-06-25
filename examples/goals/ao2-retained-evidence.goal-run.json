@@ -46,7 +46,7 @@
       {
         "label": "ao-command-rsi-health-retention-proof.json",
         "path": "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-command-rsi-health-retention-proof.json",
-        "sha256": "958a4bf002b247aaa855e7e45e44323396eb3ed21b135b222564d696c5723f2c"
+        "sha256": "2b8dd4f1d01069db8e679a56aba0eaa982dd8a02e446548af9325256f7d56702"
       },
       {
         "label": "ao-foundry-rsi-candidate-retention-proof.json",
@@ -66,7 +66,7 @@
       {
         "label": "bounded-rsi-improvement-chain-retention-proof.json",
         "path": "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/bounded-rsi-improvement-chain-retention-proof.json",
-        "sha256": "8e1cb2efef67595d6dff2716554fa9cc959d645e87c050dcef5a4981f73de632"
+        "sha256": "ab4456a379a3891aac46909bc3de68b1b67c53b6a0245c97a70a7a405fe8efbb"
       }
     ]
   }

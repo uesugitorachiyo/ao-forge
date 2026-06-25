@@ -299,7 +299,12 @@ type goalRetainedEvidenceArtifact struct {
 		RSIMode             string   `json:"rsi_mode,omitempty"`
 		RSICapability       string   `json:"rsi_capability,omitempty"`
 		OperatorMode        string   `json:"operator_mode,omitempty"`
-		MutatesRepositories *bool    `json:"mutates_repositories,omitempty"`
+		ClaimLevels         []struct {
+			Claim    string `json:"claim"`
+			Decision string `json:"decision"`
+			Status   string `json:"status"`
+		} `json:"claim_levels,omitempty"`
+		MutatesRepositories *bool `json:"mutates_repositories,omitempty"`
 		Families            []struct {
 			Family string `json:"family"`
 			Status string `json:"status"`

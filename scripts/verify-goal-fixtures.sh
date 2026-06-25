@@ -240,6 +240,17 @@ if gate.get("actual_improvement_percent", 0) < gate.get("required_improvement_pe
     raise SystemExit("bounded RSI retained proof improvement gate does not meet the required improvement")
 if any(item.get("mutates_repositories") is not False for item in outputs.values()):
     raise SystemExit("bounded RSI retained proof must keep all captured outputs non-mutating")
+
+claim_levels = {
+    item.get("claim"): item
+    for item in outputs["ao-command-rsi-health"].get("claim_levels", [])
+}
+bounded = claim_levels.get("bounded_governed_rsi")
+if not bounded or bounded.get("decision") != "allowed" or bounded.get("status") != "passed":
+    raise SystemExit("bounded RSI retained proof must allow the bounded_governed_rsi claim")
+full = claim_levels.get("full_autonomous_self_mutating_rsi")
+if not full or full.get("decision") != "denied" or full.get("status") != "blocked":
+    raise SystemExit("bounded RSI retained proof must deny the full_autonomous_self_mutating_rsi claim")
 PY
 
 for retained_evidence_artifact in "${retained_evidence_artifacts[@]}"; do

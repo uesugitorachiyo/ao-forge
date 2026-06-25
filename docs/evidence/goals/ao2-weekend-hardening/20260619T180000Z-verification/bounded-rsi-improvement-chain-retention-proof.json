@@ -84,6 +84,32 @@
           "passed": true
         }
       ]
+    },
+    {
+      "label": "ao-command-rsi-manifest",
+      "command": "ao-command rsi manifest --manifest ../ao-architecture/overview/rsi-claim-evidence-manifest.json",
+      "schema_version": "ao.command.rsi-manifest.v0.1",
+      "status": "passed",
+      "operator_mode": "read_only",
+      "claim_levels": [
+        {
+          "claim": "bounded_governed_rsi",
+          "decision": "allowed",
+          "status": "passed"
+        },
+        {
+          "claim": "full_autonomous_self_mutating_rsi",
+          "decision": "denied",
+          "status": "blocked"
+        }
+      ],
+      "evidence_markers": [
+        "rollback_rehearsal.status=passed",
+        "AO Command PR #31",
+        "AO2 PR #200",
+        "ao2-control-plane PR #72"
+      ],
+      "mutates_repositories": false
     }
   ],
   "retention_policy": {

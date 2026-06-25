@@ -310,6 +310,7 @@ type goalRetainedEvidenceArtifact struct {
 			Status string `json:"status"`
 			Passed bool   `json:"passed"`
 		} `json:"families,omitempty"`
+		EvidenceMarkers []string `json:"evidence_markers,omitempty"`
 	} `json:"captured_outputs,omitempty"`
 	RetentionPolicy struct {
 		Layout                                 string `json:"layout"`

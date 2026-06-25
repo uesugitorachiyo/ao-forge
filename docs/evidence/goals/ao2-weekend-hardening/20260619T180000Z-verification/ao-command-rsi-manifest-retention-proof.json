@@ -1,0 +1,47 @@
+{
+  "schema_version": "ao.forge.goal-run-retained-evidence.v0.1",
+  "goal_id": "ao2-weekend-hardening",
+  "iteration": "20260619T180000Z-verification",
+  "phase": "verification",
+  "summary": "Retained AO Command RSI manifest validation proving AO Architecture pins AO2 rollback rehearsal evidence, ao2-control-plane readback, and AO Command rollback-aware manifest enforcement while preserving read-only execution.",
+  "captured_outputs": [
+    {
+      "label": "ao-command-rsi-manifest",
+      "command": "ao-command rsi manifest --manifest ../ao-architecture/overview/rsi-claim-evidence-manifest.json",
+      "schema_version": "ao.command.rsi-manifest.v0.1",
+      "status": "passed",
+      "operator_mode": "read_only",
+      "claim_levels": [
+        {
+          "claim": "bounded_governed_rsi",
+          "decision": "allowed",
+          "status": "passed"
+        },
+        {
+          "claim": "full_autonomous_self_mutating_rsi",
+          "decision": "denied",
+          "status": "blocked"
+        }
+      ],
+      "evidence_markers": [
+        "rollback_rehearsal.status=passed",
+        "AO Command PR #31",
+        "AO2 PR #200",
+        "ao2-control-plane PR #72"
+      ],
+      "mutates_repositories": false
+    }
+  ],
+  "retention_policy": {
+    "layout": "docs/evidence/goals/<goal_id>/<YYYYMMDDTHHMMSSZ>-<phase>/",
+    "temporary_paths_allowed": false,
+    "minimum_retention_days_after_terminal_phase": 90
+  },
+  "retention_metadata": {
+    "retained_at": "2026-06-19T18:00:00Z",
+    "retention_class": "loop_evidence",
+    "retain_while_goal_active": true,
+    "deletion_requires_review": true,
+    "cleanup_change_must_name": ["goal_id", "iteration", "reason"]
+  }
+}

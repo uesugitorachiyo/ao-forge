@@ -36,7 +36,7 @@
   },
   "last_iteration": {
     "status": "passed",
-    "summary": "AO2 Pulse retained durable handoff evidence, AO Command RSI health output, AO Foundry RSI candidate proof, and AO Foundry RSI improvement gate proof under repository-relative paths.",
+    "summary": "AO2 Pulse retained durable handoff evidence, AO Command RSI health output, AO Foundry RSI candidate proof, AO Foundry RSI improvement gate proof, and AO Foundry RSI next improvement task proof under repository-relative paths.",
     "evidence": [
       {
         "label": "ao2-pulse-handoff-retention-proof.json",
@@ -57,6 +57,11 @@
         "label": "ao-foundry-rsi-improvement-gate-retention-proof.json",
         "path": "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-foundry-rsi-improvement-gate-retention-proof.json",
         "sha256": "11efd2f2b59307cb188ec014a533b6f80d080fa2bfc470f257dceca2f4748ea1"
+      },
+      {
+        "label": "ao-foundry-rsi-next-improvement-task-retention-proof.json",
+        "path": "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-foundry-rsi-next-improvement-task-retention-proof.json",
+        "sha256": "e6ccfd723f5af775df2d0dafa53eb824e59f3f15df8e60ee1995fdf1fa59059e"
       }
     ]
   }

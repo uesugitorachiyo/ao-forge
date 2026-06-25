@@ -1,0 +1,35 @@
+{
+  "schema_version": "ao.forge.goal-run-retained-evidence.v0.1",
+  "goal_id": "ao2-weekend-hardening",
+  "iteration": "20260619T180000Z-verification",
+  "phase": "verification",
+  "summary": "Retained AO Foundry RSI next improvement task proving the pulse loop derived the next bounded improvement from the candidate and passing improvement gate without repository mutation.",
+  "captured_outputs": [
+    {
+      "label": "ao-foundry-rsi-next-improvement-task",
+      "command": "foundry pulse run",
+      "schema_version": "ao.foundry.rsi-next-improvement-task.v0.1",
+      "status": "ready",
+      "required_improvement_percent": 5,
+      "actual_improvement_percent": 10,
+      "autonomous_claim": "derived_local_next_improvement",
+      "mutates_repositories": false
+    }
+  ],
+  "retention_policy": {
+    "layout": "docs/evidence/goals/<goal_id>/<YYYYMMDDTHHMMSSZ>-<phase>/",
+    "temporary_paths_allowed": false,
+    "minimum_retention_days_after_terminal_phase": 90
+  },
+  "retention_metadata": {
+    "retained_at": "2026-06-19T18:00:00Z",
+    "retention_class": "loop_evidence",
+    "retain_while_goal_active": true,
+    "deletion_requires_review": true,
+    "cleanup_change_must_name": [
+      "goal_id",
+      "iteration",
+      "reason"
+    ]
+  }
+}

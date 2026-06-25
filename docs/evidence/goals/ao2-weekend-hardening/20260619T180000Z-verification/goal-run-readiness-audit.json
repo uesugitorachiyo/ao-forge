@@ -24,17 +24,17 @@
     {
       "check_id": "evidence_lint",
       "status": "passed",
-      "summary": "linted 1 evidence path(s)"
+      "summary": "linted 2 evidence path(s)"
     },
     {
       "check_id": "evidence_verify",
       "status": "passed",
-      "summary": "verified 1 evidence artifact(s)"
+      "summary": "verified 2 evidence artifact(s)"
     },
     {
       "check_id": "retained_evidence",
       "status": "passed",
-      "summary": "audited 1 retained evidence artifact(s)"
+      "summary": "audited 2 retained evidence artifact(s)"
     }
   ],
   "evidence_lint": {
@@ -43,11 +43,16 @@
     "document_type": "goal_run",
     "goal_id": "ao2-weekend-hardening",
     "status": "passed",
-    "evidence_linted": 1,
+    "evidence_linted": 2,
     "evidence": [
       {
         "label": "ao2-pulse-handoff-retention-proof.json",
         "path": "docs/evidence/goals/ao2-weekend-hardening/20260619T143000Z-implementation/ao2-pulse-handoff-retention-proof.json",
+        "status": "passed"
+      },
+      {
+        "label": "ao-command-rsi-health-retention-proof.json",
+        "path": "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-command-rsi-health-retention-proof.json",
         "status": "passed"
       }
     ],
@@ -58,13 +63,20 @@
     "goal_run": "examples/goals/ao2-retained-evidence.goal-run.json",
     "goal_id": "ao2-weekend-hardening",
     "status": "passed",
-    "evidence_verified": 1,
+    "evidence_verified": 2,
     "evidence": [
       {
         "label": "ao2-pulse-handoff-retention-proof.json",
         "path": "docs/evidence/goals/ao2-weekend-hardening/20260619T143000Z-implementation/ao2-pulse-handoff-retention-proof.json",
         "expected_sha256": "dc28391a22a1ead221ee82f7d3c80d1f3766badf977722dddb147b4484e2f528",
         "actual_sha256": "dc28391a22a1ead221ee82f7d3c80d1f3766badf977722dddb147b4484e2f528",
+        "status": "passed"
+      },
+      {
+        "label": "ao-command-rsi-health-retention-proof.json",
+        "path": "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-command-rsi-health-retention-proof.json",
+        "expected_sha256": "7f6fa9a035ac96aea19da4f3dfa1909a08a774d55423cd458ae008bb9eb774ce",
+        "actual_sha256": "7f6fa9a035ac96aea19da4f3dfa1909a08a774d55423cd458ae008bb9eb774ce",
         "status": "passed"
       }
     ],
@@ -73,12 +85,16 @@
   "provenance": {
     "goal_run": {
       "path": "examples/goals/ao2-retained-evidence.goal-run.json",
-      "sha256": "6ec755cc90cb4ad417df69cd23663e6c429e82de19b54fe07c9009fea6f88dcb"
+      "sha256": "ca20244f18423595fe7b9c661759f7318436f286f4b40be18735a320615eea4c"
     },
     "evidence": [
       {
         "path": "docs/evidence/goals/ao2-weekend-hardening/20260619T143000Z-implementation/ao2-pulse-handoff-retention-proof.json",
         "sha256": "dc28391a22a1ead221ee82f7d3c80d1f3766badf977722dddb147b4484e2f528"
+      },
+      {
+        "path": "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-command-rsi-health-retention-proof.json",
+        "sha256": "7f6fa9a035ac96aea19da4f3dfa1909a08a774d55423cd458ae008bb9eb774ce"
       }
     ]
   },
@@ -91,6 +107,22 @@
       "phase": "implementation",
       "retention_class": "loop_evidence",
       "retained_at": "2026-06-19T14:30:00Z",
+      "now": "2026-06-19T18:00:00Z",
+      "status": "passed",
+      "retention_status": "active_retention",
+      "cleanup_review_status": "not_eligible_active_goal",
+      "age_days": 0,
+      "minimum_retention_days_after_terminal_phase": 90,
+      "errors": []
+    },
+    {
+      "retention_audit_schema_version": "ao.forge.goal-run-retained-evidence-audit.v0.1",
+      "artifact": "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-command-rsi-health-retention-proof.json",
+      "goal_id": "ao2-weekend-hardening",
+      "iteration": "20260619T180000Z-verification",
+      "phase": "verification",
+      "retention_class": "loop_evidence",
+      "retained_at": "2026-06-19T18:00:00Z",
       "now": "2026-06-19T18:00:00Z",
       "status": "passed",
       "retention_status": "active_retention",

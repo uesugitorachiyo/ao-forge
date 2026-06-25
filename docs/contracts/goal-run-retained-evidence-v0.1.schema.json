@@ -119,6 +119,261 @@
             }
           }
         },
+        "allOf": [
+          {
+            "if": {
+              "required": ["label"],
+              "properties": {
+                "label": {
+                  "const": "ao-command-rsi-health"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "command",
+                "status",
+                "rsi_mode",
+                "rsi_capability",
+                "operator_mode",
+                "mutates_repositories",
+                "families"
+              ],
+              "properties": {
+                "command": {
+                  "const": "ao-command rsi health"
+                },
+                "status": {
+                  "const": "passed"
+                },
+                "rsi_mode": {
+                  "const": "governed_fixture_local"
+                },
+                "rsi_capability": {
+                  "const": "demonstrated_local_fixture_loop"
+                },
+                "operator_mode": {
+                  "const": "read_only"
+                },
+                "mutates_repositories": {
+                  "const": false
+                },
+                "families": {
+                  "allOf": [
+                    {
+                      "contains": {
+                        "type": "object",
+                        "required": ["family", "passed"],
+                        "properties": {
+                          "family": {
+                            "const": "ao-arena"
+                          },
+                          "passed": {
+                            "const": true
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "contains": {
+                        "type": "object",
+                        "required": ["family", "passed"],
+                        "properties": {
+                          "family": {
+                            "const": "ao-crucible"
+                          },
+                          "passed": {
+                            "const": true
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "contains": {
+                        "type": "object",
+                        "required": ["family", "passed"],
+                        "properties": {
+                          "family": {
+                            "const": "ao-sentinel"
+                          },
+                          "passed": {
+                            "const": true
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "contains": {
+                        "type": "object",
+                        "required": ["family", "passed"],
+                        "properties": {
+                          "family": {
+                            "const": "ao-promoter"
+                          },
+                          "passed": {
+                            "const": true
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "contains": {
+                        "type": "object",
+                        "required": ["family", "passed"],
+                        "properties": {
+                          "family": {
+                            "const": "ao-foundry"
+                          },
+                          "passed": {
+                            "const": true
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "required": ["label"],
+              "properties": {
+                "label": {
+                  "const": "ao-foundry-rsi-candidate"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "command",
+                "schema_version",
+                "status",
+                "generated_by",
+                "baseline_score",
+                "candidate_score",
+                "mutates_repositories"
+              ],
+              "properties": {
+                "command": {
+                  "const": "foundry pulse run"
+                },
+                "schema_version": {
+                  "const": "ao.foundry.rsi-candidate.v0.1"
+                },
+                "status": {
+                  "const": "ready"
+                },
+                "generated_by": {
+                  "const": "foundry pulse run"
+                },
+                "baseline_score": {
+                  "type": "number"
+                },
+                "candidate_score": {
+                  "type": "number"
+                },
+                "mutates_repositories": {
+                  "const": false
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "required": ["label"],
+              "properties": {
+                "label": {
+                  "const": "ao-foundry-rsi-improvement-gate"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "command",
+                "schema_version",
+                "status",
+                "baseline_score",
+                "candidate_score",
+                "required_improvement_percent",
+                "actual_improvement_percent",
+                "autonomous_claim",
+                "mutates_repositories"
+              ],
+              "properties": {
+                "command": {
+                  "const": "foundry pulse run"
+                },
+                "schema_version": {
+                  "const": "ao.foundry.rsi-improvement-gate.v0.1"
+                },
+                "status": {
+                  "const": "passed"
+                },
+                "required_improvement_percent": {
+                  "type": "number",
+                  "minimum": 5
+                },
+                "actual_improvement_percent": {
+                  "type": "number",
+                  "minimum": 5
+                },
+                "autonomous_claim": {
+                  "const": "measured_local_improvement"
+                },
+                "mutates_repositories": {
+                  "const": false
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "required": ["label"],
+              "properties": {
+                "label": {
+                  "const": "ao-foundry-rsi-next-improvement-task"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "command",
+                "schema_version",
+                "status",
+                "required_improvement_percent",
+                "actual_improvement_percent",
+                "autonomous_claim",
+                "mutates_repositories"
+              ],
+              "properties": {
+                "command": {
+                  "const": "foundry pulse run"
+                },
+                "schema_version": {
+                  "const": "ao.foundry.rsi-next-improvement-task.v0.1"
+                },
+                "status": {
+                  "const": "ready"
+                },
+                "required_improvement_percent": {
+                  "type": "number",
+                  "minimum": 5
+                },
+                "actual_improvement_percent": {
+                  "type": "number",
+                  "minimum": 5
+                },
+                "autonomous_claim": {
+                  "const": "derived_local_next_improvement"
+                },
+                "mutates_repositories": {
+                  "const": false
+                }
+              }
+            }
+          }
+        ],
         "additionalProperties": false
       }
     },

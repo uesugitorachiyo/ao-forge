@@ -289,6 +289,7 @@ type goalRetainedEvidenceArtifact struct {
 		Label               string   `json:"label"`
 		Command             string   `json:"command"`
 		SchemaVersion       string   `json:"schema_version,omitempty"`
+		GeneratedBy         string   `json:"generated_by,omitempty"`
 		Status              string   `json:"status"`
 		BaselineScore       *float64 `json:"baseline_score,omitempty"`
 		CandidateScore      *float64 `json:"candidate_score,omitempty"`

@@ -24,17 +24,17 @@
     {
       "check_id": "evidence_lint",
       "status": "passed",
-      "summary": "linted 3 evidence path(s)"
+      "summary": "linted 4 evidence path(s)"
     },
     {
       "check_id": "evidence_verify",
       "status": "passed",
-      "summary": "verified 3 evidence artifact(s)"
+      "summary": "verified 4 evidence artifact(s)"
     },
     {
       "check_id": "retained_evidence",
       "status": "passed",
-      "summary": "audited 3 retained evidence artifact(s)"
+      "summary": "audited 4 retained evidence artifact(s)"
     }
   ],
   "evidence_lint": {
@@ -43,7 +43,7 @@
     "document_type": "goal_run",
     "goal_id": "ao2-weekend-hardening",
     "status": "passed",
-    "evidence_linted": 3,
+    "evidence_linted": 4,
     "evidence": [
       {
         "label": "ao2-pulse-handoff-retention-proof.json",
@@ -53,6 +53,11 @@
       {
         "label": "ao-command-rsi-health-retention-proof.json",
         "path": "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-command-rsi-health-retention-proof.json",
+        "status": "passed"
+      },
+      {
+        "label": "ao-foundry-rsi-candidate-retention-proof.json",
+        "path": "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-foundry-rsi-candidate-retention-proof.json",
         "status": "passed"
       },
       {
@@ -68,7 +73,7 @@
     "goal_run": "examples/goals/ao2-retained-evidence.goal-run.json",
     "goal_id": "ao2-weekend-hardening",
     "status": "passed",
-    "evidence_verified": 3,
+    "evidence_verified": 4,
     "evidence": [
       {
         "label": "ao2-pulse-handoff-retention-proof.json",
@@ -85,6 +90,13 @@
         "status": "passed"
       },
       {
+        "label": "ao-foundry-rsi-candidate-retention-proof.json",
+        "path": "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-foundry-rsi-candidate-retention-proof.json",
+        "expected_sha256": "32946c7bfa3dbb768a0b868cd60ed07a3092306a321e98e6283673b797f6d580",
+        "actual_sha256": "32946c7bfa3dbb768a0b868cd60ed07a3092306a321e98e6283673b797f6d580",
+        "status": "passed"
+      },
+      {
         "label": "ao-foundry-rsi-improvement-gate-retention-proof.json",
         "path": "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-foundry-rsi-improvement-gate-retention-proof.json",
         "expected_sha256": "11efd2f2b59307cb188ec014a533b6f80d080fa2bfc470f257dceca2f4748ea1",
@@ -97,7 +109,7 @@
   "provenance": {
     "goal_run": {
       "path": "examples/goals/ao2-retained-evidence.goal-run.json",
-      "sha256": "4e51262991be0fda96ecdd1ea94c3852697507beae8e747978c164fae81d7628"
+      "sha256": "45777bad6ac71689e32d9f8ac416def8f92cadaeb3c9dc082dadf3ed5f5ad1a5"
     },
     "evidence": [
       {
@@ -107,6 +119,10 @@
       {
         "path": "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-command-rsi-health-retention-proof.json",
         "sha256": "958a4bf002b247aaa855e7e45e44323396eb3ed21b135b222564d696c5723f2c"
+      },
+      {
+        "path": "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-foundry-rsi-candidate-retention-proof.json",
+        "sha256": "32946c7bfa3dbb768a0b868cd60ed07a3092306a321e98e6283673b797f6d580"
       },
       {
         "path": "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-foundry-rsi-improvement-gate-retention-proof.json",
@@ -134,6 +150,22 @@
     {
       "retention_audit_schema_version": "ao.forge.goal-run-retained-evidence-audit.v0.1",
       "artifact": "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-command-rsi-health-retention-proof.json",
+      "goal_id": "ao2-weekend-hardening",
+      "iteration": "20260619T180000Z-verification",
+      "phase": "verification",
+      "retention_class": "loop_evidence",
+      "retained_at": "2026-06-19T18:00:00Z",
+      "now": "2026-06-19T18:00:00Z",
+      "status": "passed",
+      "retention_status": "active_retention",
+      "cleanup_review_status": "not_eligible_active_goal",
+      "age_days": 0,
+      "minimum_retention_days_after_terminal_phase": 90,
+      "errors": []
+    },
+    {
+      "retention_audit_schema_version": "ao.forge.goal-run-retained-evidence-audit.v0.1",
+      "artifact": "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-foundry-rsi-candidate-retention-proof.json",
       "goal_id": "ao2-weekend-hardening",
       "iteration": "20260619T180000Z-verification",
       "phase": "verification",

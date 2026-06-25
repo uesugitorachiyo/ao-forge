@@ -40,6 +40,64 @@
       "type": "string",
       "minLength": 1
     },
+    "captured_outputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["label", "command", "status"],
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "command": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "string",
+            "minLength": 1
+          },
+          "rsi_mode": {
+            "type": "string",
+            "minLength": 1
+          },
+          "rsi_capability": {
+            "type": "string",
+            "minLength": 1
+          },
+          "operator_mode": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mutates_repositories": {
+            "type": "boolean"
+          },
+          "families": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["family", "status", "passed"],
+              "properties": {
+                "family": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "status": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "passed": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
     "retention_policy": {
       "type": "object",
       "required": [

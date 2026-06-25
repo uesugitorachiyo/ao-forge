@@ -285,6 +285,20 @@ type goalRetainedEvidenceArtifact struct {
 	Iteration       string `json:"iteration"`
 	Phase           string `json:"phase"`
 	Summary         string `json:"summary"`
+	CapturedOutputs []struct {
+		Label               string `json:"label"`
+		Command             string `json:"command"`
+		Status              string `json:"status"`
+		RSIMode             string `json:"rsi_mode,omitempty"`
+		RSICapability       string `json:"rsi_capability,omitempty"`
+		OperatorMode        string `json:"operator_mode,omitempty"`
+		MutatesRepositories *bool  `json:"mutates_repositories,omitempty"`
+		Families            []struct {
+			Family string `json:"family"`
+			Status string `json:"status"`
+			Passed bool   `json:"passed"`
+		} `json:"families,omitempty"`
+	} `json:"captured_outputs,omitempty"`
 	RetentionPolicy struct {
 		Layout                                 string `json:"layout"`
 		TemporaryPathsAllowed                  bool   `json:"temporary_paths_allowed"`

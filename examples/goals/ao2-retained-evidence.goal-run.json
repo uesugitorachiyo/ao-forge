@@ -36,12 +36,17 @@
   },
   "last_iteration": {
     "status": "passed",
-    "summary": "AO2 Pulse retained the handoff evidence under a durable repository-relative path.",
+    "summary": "AO2 Pulse retained durable handoff evidence and AO Command RSI health output under repository-relative paths.",
     "evidence": [
       {
         "label": "ao2-pulse-handoff-retention-proof.json",
         "path": "docs/evidence/goals/ao2-weekend-hardening/20260619T143000Z-implementation/ao2-pulse-handoff-retention-proof.json",
         "sha256": "dc28391a22a1ead221ee82f7d3c80d1f3766badf977722dddb147b4484e2f528"
+      },
+      {
+        "label": "ao-command-rsi-health-retention-proof.json",
+        "path": "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-command-rsi-health-retention-proof.json",
+        "sha256": "7f6fa9a035ac96aea19da4f3dfa1909a08a774d55423cd458ae008bb9eb774ce"
       }
     ]
   }

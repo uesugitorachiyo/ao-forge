@@ -1,0 +1,52 @@
+{
+  "schema_version": "ao.forge.goal-run-retained-evidence.v0.1",
+  "goal_id": "ao2-weekend-hardening",
+  "iteration": "20260619T180000Z-verification",
+  "phase": "verification",
+  "summary": "Retained AO Command RSI health output proving the active AO assurance families passed the governed fixture/local loop without repository mutation.",
+  "captured_outputs": [
+    {
+      "label": "ao-command-rsi-health",
+      "command": "ao-command rsi health",
+      "status": "passed",
+      "rsi_mode": "governed_fixture_local",
+      "rsi_capability": "demonstrated_local_fixture_loop",
+      "operator_mode": "read_only",
+      "mutates_repositories": false,
+      "families": [
+        {
+          "family": "ao-arena",
+          "status": "passed",
+          "passed": true
+        },
+        {
+          "family": "ao-crucible",
+          "status": "passed",
+          "passed": true
+        },
+        {
+          "family": "ao-sentinel",
+          "status": "clear",
+          "passed": true
+        },
+        {
+          "family": "ao-promoter",
+          "status": "passed",
+          "passed": true
+        }
+      ]
+    }
+  ],
+  "retention_policy": {
+    "layout": "docs/evidence/goals/<goal_id>/<YYYYMMDDTHHMMSSZ>-<phase>/",
+    "temporary_paths_allowed": false,
+    "minimum_retention_days_after_terminal_phase": 90
+  },
+  "retention_metadata": {
+    "retained_at": "2026-06-19T18:00:00Z",
+    "retention_class": "loop_evidence",
+    "retain_while_goal_active": true,
+    "deletion_requires_review": true,
+    "cleanup_change_must_name": ["goal_id", "iteration", "reason"]
+  }
+}

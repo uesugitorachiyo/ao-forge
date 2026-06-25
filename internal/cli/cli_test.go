@@ -325,8 +325,9 @@ func TestGoalRunCLILintsEvidencePaths(t *testing.T) {
 		"document=examples/goals/ao2-retained-evidence.goal-run.json",
 		"document_type=goal_run",
 		"goal_id=ao2-weekend-hardening",
-		"evidence_linted=1",
+		"evidence_linted=2",
 		"evidence_path=docs/evidence/goals/ao2-weekend-hardening/20260619T143000Z-implementation/ao2-pulse-handoff-retention-proof.json status=passed",
+		"evidence_path=docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-command-rsi-health-retention-proof.json status=passed",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("goal evidence lint stdout missing %q\n%s", want, stdout)
@@ -383,9 +384,10 @@ func TestGoalRunCLILintsEvidencePaths(t *testing.T) {
 	if summary.LintSchemaVersion != "ao.forge.goal-run-evidence-lint.v0.1" ||
 		summary.DocumentType != "goal_run" ||
 		summary.Status != "passed" ||
-		summary.EvidenceLinted != 1 ||
-		len(summary.Evidence) != 1 ||
-		summary.Evidence[0].Status != "passed" {
+		summary.EvidenceLinted != 2 ||
+		len(summary.Evidence) != 2 ||
+		summary.Evidence[0].Status != "passed" ||
+		summary.Evidence[1].Status != "passed" {
 		t.Fatalf("goal evidence lint --json summary drifted: %+v", summary)
 	}
 	if stderr != "" {
@@ -684,16 +686,17 @@ func TestGoalRunCLIDryRunsRetainedEvidenceCleanup(t *testing.T) {
 		"goal_evidence_cleanup=passed",
 		"mode=dry-run",
 		"root=docs/evidence/goals",
-		"artifacts_scanned=4",
+		"artifacts_scanned=5",
 		"eligible_artifacts=1",
-		"protected_artifacts=3",
+		"protected_artifacts=4",
 		"failed_artifacts=0",
 		"public_provenance_excluded=2",
-		"active_goal_excluded=1",
+		"active_goal_excluded=2",
 		"artifact=docs/evidence/goals/ao2-weekend-hardening/20260101T010000Z-complete/old-loop-retention-proof.json retention_status=cleanup_review_eligible cleanup_review_status=eligible_after_review retention_class=loop_evidence",
 		"artifact=docs/evidence/goals/ao2-weekend-hardening/20260101T000000Z-complete/release-provenance-retention-proof.json retention_status=mandatory_retention cleanup_review_status=not_eligible_public_provenance retention_class=release_provenance",
 		"artifact=docs/evidence/goals/ao2-weekend-hardening/20260101T020000Z-complete/promotion-provenance-retention-proof.json retention_status=mandatory_retention cleanup_review_status=not_eligible_public_provenance retention_class=promotion_provenance",
 		"artifact=docs/evidence/goals/ao2-weekend-hardening/20260619T143000Z-implementation/ao2-pulse-handoff-retention-proof.json retention_status=active_retention cleanup_review_status=not_eligible_active_goal retention_class=loop_evidence",
+		"artifact=docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-command-rsi-health-retention-proof.json retention_status=active_retention cleanup_review_status=not_eligible_active_goal retention_class=loop_evidence",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("goal evidence cleanup stdout missing %q\n%s", want, stdout)
@@ -721,13 +724,13 @@ func TestGoalRunCLIDryRunsRetainedEvidenceCleanup(t *testing.T) {
 	if summary.CleanupSchemaVersion != "ao.forge.goal-run-retained-evidence-cleanup.v0.1" ||
 		summary.Mode != "dry-run" ||
 		summary.Status != "passed" ||
-		summary.ArtifactsScanned != 4 ||
+		summary.ArtifactsScanned != 5 ||
 		summary.EligibleArtifacts != 1 ||
-		summary.ProtectedArtifacts != 3 ||
+		summary.ProtectedArtifacts != 4 ||
 		summary.FailedArtifacts != 0 ||
 		summary.PublicProvenanceExcluded != 2 ||
-		summary.ActiveGoalExcluded != 1 ||
-		len(summary.RetentionAudits) != 4 {
+		summary.ActiveGoalExcluded != 2 ||
+		len(summary.RetentionAudits) != 5 {
 		t.Fatalf("goal evidence cleanup JSON drifted: %+v", summary)
 	}
 	if stderr != "" {
@@ -758,9 +761,9 @@ func TestGoalRunCLIReportsReadiness(t *testing.T) {
 		"check=evidence_lint status=passed",
 		"check=evidence_verify status=passed",
 		"check=retained_evidence status=passed",
-		"evidence_linted=1",
-		"evidence_verified=1",
-		"retention_audits=1",
+		"evidence_linted=2",
+		"evidence_verified=2",
+		"retention_audits=2",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("goal readiness stdout missing %q\n%s", want, stdout)
@@ -811,9 +814,11 @@ func TestGoalRunCLIReportsReadiness(t *testing.T) {
 		summary.Status != "passed" ||
 		summary.GoalID != "ao2-weekend-hardening" ||
 		len(summary.Checks) != 6 ||
-		len(summary.RetentionAudits) != 1 ||
+		len(summary.RetentionAudits) != 2 ||
 		summary.RetentionAudits[0].Status != "passed" ||
-		summary.RetentionAudits[0].RetentionStatus != "active_retention" {
+		summary.RetentionAudits[0].RetentionStatus != "active_retention" ||
+		summary.RetentionAudits[1].Status != "passed" ||
+		summary.RetentionAudits[1].RetentionStatus != "active_retention" {
 		t.Fatalf("goal readiness JSON drifted: %+v", summary)
 	}
 	if stderr != "" {
@@ -827,9 +832,11 @@ func TestGoalRunCLIReportsReadiness(t *testing.T) {
 	retainedSHA256 := hex.EncodeToString(retainedSum[:])
 	if summary.Provenance.GoalRun.Path != "examples/goals/ao2-retained-evidence.goal-run.json" ||
 		summary.Provenance.GoalRun.SHA256 != retainedSHA256 ||
-		len(summary.Provenance.Evidence) != 1 ||
+		len(summary.Provenance.Evidence) != 2 ||
 		summary.Provenance.Evidence[0].Path != "docs/evidence/goals/ao2-weekend-hardening/20260619T143000Z-implementation/ao2-pulse-handoff-retention-proof.json" ||
-		summary.Provenance.Evidence[0].SHA256 != "dc28391a22a1ead221ee82f7d3c80d1f3766badf977722dddb147b4484e2f528" {
+		summary.Provenance.Evidence[0].SHA256 != "dc28391a22a1ead221ee82f7d3c80d1f3766badf977722dddb147b4484e2f528" ||
+		summary.Provenance.Evidence[1].Path != "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-command-rsi-health-retention-proof.json" ||
+		summary.Provenance.Evidence[1].SHA256 != "7f6fa9a035ac96aea19da4f3dfa1909a08a774d55423cd458ae008bb9eb774ce" {
 		t.Fatalf("goal readiness provenance drifted: %+v", summary.Provenance)
 	}
 
@@ -1331,6 +1338,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	ao2PulseHandoffAuditExample := readText("examples", "goals", "ao2-pulse-handoff.goal-run-update-audit.json")
 	retainedEvidenceGoalRunExample := readText("examples", "goals", "ao2-retained-evidence.goal-run.json")
 	retainedEvidenceArtifact := readText("docs", "evidence", "goals", "ao2-weekend-hardening", "20260619T143000Z-implementation", "ao2-pulse-handoff-retention-proof.json")
+	rsiHealthRetainedEvidenceArtifact := readText("docs", "evidence", "goals", "ao2-weekend-hardening", "20260619T180000Z-verification", "ao-command-rsi-health-retention-proof.json")
 	cleanupEligibleEvidenceArtifact := readText("docs", "evidence", "goals", "ao2-weekend-hardening", "20260101T010000Z-complete", "old-loop-retention-proof.json")
 	releaseProvenanceEvidenceArtifact := readText("docs", "evidence", "goals", "ao2-weekend-hardening", "20260101T000000Z-complete", "release-provenance-retention-proof.json")
 	promotionProvenanceEvidenceArtifact := readText("docs", "evidence", "goals", "ao2-weekend-hardening", "20260101T020000Z-complete", "promotion-provenance-retention-proof.json")
@@ -1468,6 +1476,8 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run retained evidence promotion provenance class", doc: goalRunRetainedEvidenceSchema, want: `"promotion_provenance"`},
 		{name: "goal run retained evidence active retention", doc: goalRunRetainedEvidenceSchema, want: `"retain_while_goal_active"`},
 		{name: "goal run retained evidence deletion review", doc: goalRunRetainedEvidenceSchema, want: `"deletion_requires_review"`},
+		{name: "goal run retained evidence captured outputs", doc: goalRunRetainedEvidenceSchema, want: `"captured_outputs"`},
+		{name: "goal run retained evidence RSI mode property", doc: goalRunRetainedEvidenceSchema, want: `"rsi_mode"`},
 		{name: "goal run retained evidence audit schema id", doc: goalRunRetainedEvidenceAuditSchema, want: `"ao.forge.goal-run-retained-evidence-audit.v0.1"`},
 		{name: "goal run retained evidence audit strict root", doc: goalRunRetainedEvidenceAuditSchema, want: `"additionalProperties": false`},
 		{name: "goal run retained evidence audit active status", doc: goalRunRetainedEvidenceAuditSchema, want: `"active_retention"`},
@@ -1621,6 +1631,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "AO2 Pulse handoff audit status", doc: ao2PulseHandoffAuditExample, want: `"status": "updated"`},
 		{name: "retained evidence goal run durable path", doc: retainedEvidenceGoalRunExample, want: `"path": "docs/evidence/goals/ao2-weekend-hardening/20260619T143000Z-implementation/ao2-pulse-handoff-retention-proof.json"`},
 		{name: "retained evidence goal run hash", doc: retainedEvidenceGoalRunExample, want: `"sha256": "dc28391a22a1ead221ee82f7d3c80d1f3766badf977722dddb147b4484e2f528"`},
+		{name: "retained evidence GoalRun references RSI health", doc: retainedEvidenceGoalRunExample, want: "ao-command-rsi-health-retention-proof.json"},
 		{name: "retained evidence artifact layout", doc: retainedEvidenceArtifact, want: `"layout": "docs/evidence/goals/<goal_id>/<YYYYMMDDTHHMMSSZ>-<phase>/"`},
 		{name: "retained evidence artifact no temp", doc: retainedEvidenceArtifact, want: `"temporary_paths_allowed": false`},
 		{name: "retained evidence artifact schema version", doc: retainedEvidenceArtifact, want: `"schema_version": "ao.forge.goal-run-retained-evidence.v0.1"`},
@@ -1629,6 +1640,10 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "retained evidence artifact retain active", doc: retainedEvidenceArtifact, want: `"retain_while_goal_active": true`},
 		{name: "retained evidence artifact deletion review", doc: retainedEvidenceArtifact, want: `"deletion_requires_review": true`},
 		{name: "retained evidence artifact cleanup fields", doc: retainedEvidenceArtifact, want: `"cleanup_change_must_name": ["goal_id", "iteration", "reason"]`},
+		{name: "RSI health retained evidence artifact schema version", doc: rsiHealthRetainedEvidenceArtifact, want: `"schema_version": "ao.forge.goal-run-retained-evidence.v0.1"`},
+		{name: "RSI health retained evidence artifact output", doc: rsiHealthRetainedEvidenceArtifact, want: `"command": "ao-command rsi health"`},
+		{name: "RSI health retained evidence artifact mode", doc: rsiHealthRetainedEvidenceArtifact, want: `"rsi_mode": "governed_fixture_local"`},
+		{name: "RSI health retained evidence artifact mutation boundary", doc: rsiHealthRetainedEvidenceArtifact, want: `"mutates_repositories": false`},
 		{name: "cleanup eligible evidence artifact schema", doc: cleanupEligibleEvidenceArtifact, want: `"schema_version": "ao.forge.goal-run-retained-evidence.v0.1"`},
 		{name: "cleanup eligible evidence artifact phase", doc: cleanupEligibleEvidenceArtifact, want: `"phase": "complete"`},
 		{name: "cleanup eligible evidence artifact retained at", doc: cleanupEligibleEvidenceArtifact, want: `"retained_at": "2026-01-01T01:00:00Z"`},
@@ -1646,7 +1661,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "retained readiness audit requested phase", doc: retainedReadinessAudit, want: `"requested_phase": "verification"`},
 		{name: "retained readiness audit retained evidence check", doc: retainedReadinessAudit, want: `"check_id": "retained_evidence"`},
 		{name: "retained readiness audit provenance", doc: retainedReadinessAudit, want: `"provenance"`},
-		{name: "retained readiness audit goal run sha", doc: retainedReadinessAudit, want: `"sha256": "6ec755cc90cb4ad417df69cd23663e6c429e82de19b54fe07c9009fea6f88dcb"`},
+		{name: "retained readiness audit goal run sha", doc: retainedReadinessAudit, want: `"sha256": "ca20244f18423595fe7b9c661759f7318436f286f4b40be18735a320615eea4c"`},
 		{name: "retained readiness audit retention audit", doc: retainedReadinessAudit, want: `"retention_audits"`},
 		{name: "tampered readiness audit provenance", doc: tamperedReadinessAuditExample, want: `"provenance"`},
 		{name: "tampered readiness audit schema marker", doc: tamperedReadinessAuditExample, want: `"readiness_schema_version": "ao.forge.goal-run-readiness-audit.v0.1"`},

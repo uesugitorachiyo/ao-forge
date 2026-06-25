@@ -1517,11 +1517,12 @@ func TestProductionReadinessAuditScoresRepositoryGates(t *testing.T) {
 	for _, want := range []string{
 		"production_readiness=passed",
 		"readiness_percent=100",
-		"gates_passed=14",
-		"gates_total=14",
+		"gates_passed=15",
+		"gates_total=15",
 		"gate=release.candidate_handoff category=release status=passed",
 		"gate=release.production_promotion category=release status=passed",
 		"gate=goalrun.evidence_retention category=goalrun status=passed",
+		"gate=goalrun.architecture_rsi_pin_readback category=goalrun status=passed",
 		"gate=security.release_threat_model category=security status=passed",
 		"gate=security.public_repo_policy_scan category=security status=passed",
 	} {
@@ -1559,15 +1560,27 @@ func TestProductionReadinessAuditScoresRepositoryGates(t *testing.T) {
 	if audit.SchemaVersion != "ao.forge.production-readiness-audit.v0.1" ||
 		audit.Status != "passed" ||
 		audit.ReadinessPercent != 100 ||
-		audit.PassedGates != 14 ||
-		audit.TotalGates != 14 ||
-		len(audit.Gates) != 14 ||
+		audit.PassedGates != 15 ||
+		audit.TotalGates != 15 ||
+		len(audit.Gates) != 15 ||
 		len(audit.NextActions) != 0 {
 		t.Fatalf("production-readiness audit JSON drifted: %+v", audit)
+	}
+	if !hasProductionReadinessGate(audit.Gates, "goalrun.architecture_rsi_pin_readback") {
+		t.Fatalf("production-readiness audit missing architecture RSI pin readback gate: %+v", audit.Gates)
 	}
 	if stderr != "" {
 		t.Fatalf("production-readiness audit --json wrote stderr: %s", stderr)
 	}
+}
+
+func hasProductionReadinessGate(gates []productionReadinessGate, id string) bool {
+	for _, gate := range gates {
+		if gate.GateID == id && gate.Status == "passed" {
+			return true
+		}
+	}
+	return false
 }
 
 func TestPublicRepoPolicyCheckPassesForTrackedFiles(t *testing.T) {
@@ -1649,6 +1662,8 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	goalRunRetainedEvidenceAuditSchema := readText("docs", "contracts", "goal-run-retained-evidence-audit-v0.1.schema.json")
 	goalRunRetainedEvidenceCleanupSchema := readText("docs", "contracts", "goal-run-retained-evidence-cleanup-v0.1.schema.json")
 	goalRunReadinessAuditSchema := readText("docs", "contracts", "goal-run-readiness-audit-v0.1.schema.json")
+	architectureRSIPinReadbackSchema := readText("docs", "contracts", "architecture-rsi-pin-readback-v0.1.schema.json")
+	architectureRSIPinReadback := readText("docs", "evidence", "architecture", "ao-architecture-rsi-pin-readback.json")
 	goalRunDocs := readText("docs", "design", "GOAL-RUNS.md")
 	goalRunExample := readText("examples", "goals", "ao2-weekend-hardening.goal-run.json")
 	goalRunUpdateAuditExample := readText("examples", "goals", "ao2-weekend-hardening.goal-run-update-audit.json")
@@ -1710,6 +1725,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "docs index goal run retained evidence audit schema link", doc: docsIndex, want: "[GoalRun Retained Evidence Audit v0.1 Schema](contracts/goal-run-retained-evidence-audit-v0.1.schema.json)"},
 		{name: "docs index goal run retained evidence cleanup schema link", doc: docsIndex, want: "[GoalRun Retained Evidence Cleanup v0.1 Schema](contracts/goal-run-retained-evidence-cleanup-v0.1.schema.json)"},
 		{name: "docs index goal run readiness audit schema link", doc: docsIndex, want: "[GoalRun Readiness Audit v0.1 Schema](contracts/goal-run-readiness-audit-v0.1.schema.json)"},
+		{name: "docs index architecture RSI pin readback link", doc: docsIndex, want: "[AO Architecture RSI Pin Readback](evidence/architecture/ao-architecture-rsi-pin-readback.json)"},
 		{name: "docs index goal run example link", doc: docsIndex, want: "[Example GoalRun](../examples/goals/ao2-weekend-hardening.goal-run.json)"},
 		{name: "docs index goal run update audit example link", doc: docsIndex, want: "[Example GoalRun Update Audit](../examples/goals/ao2-weekend-hardening.goal-run-update-audit.json)"},
 		{name: "docs index AO2 Pulse handoff goal run link", doc: docsIndex, want: "[AO2 Pulse Handoff GoalRun](../examples/goals/ao2-pulse-handoff.goal-run.json)"},
@@ -1731,6 +1747,8 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "README goal evidence lint schema validate command", doc: readme, want: "forge contract validate --schema docs/contracts/goal-run-evidence-lint-v0.1.schema.json --document tmp/goal-run-evidence-lint.json"},
 		{name: "README goal retained evidence schema validate command", doc: readme, want: "forge contract validate --schema docs/contracts/goal-run-retained-evidence-v0.1.schema.json --document docs/evidence/goals/ao2-weekend-hardening/20260619T143000Z-implementation/ao2-pulse-handoff-retention-proof.json"},
 		{name: "README command RSI manifest retained evidence schema validate command", doc: readme, want: "forge contract validate --schema docs/contracts/goal-run-retained-evidence-v0.1.schema.json --document docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-command-rsi-manifest-retention-proof.json"},
+		{name: "README architecture RSI pin readback validate command", doc: readme, want: "forge contract validate --schema docs/contracts/architecture-rsi-pin-readback-v0.1.schema.json --document docs/evidence/architecture/ao-architecture-rsi-pin-readback.json"},
+		{name: "README architecture RSI pin readiness gate", doc: readme, want: "goalrun.architecture_rsi_pin_readback"},
 		{name: "README goal retained evidence audit command", doc: readme, want: "forge goal evidence retention --artifact docs/evidence/goals/ao2-weekend-hardening/20260619T143000Z-implementation/ao2-pulse-handoff-retention-proof.json --json > tmp/goal-run-retained-evidence-audit.json"},
 		{name: "README goal retained evidence audit schema validate command", doc: readme, want: "forge contract validate --schema docs/contracts/goal-run-retained-evidence-audit-v0.1.schema.json --document tmp/goal-run-retained-evidence-audit.json"},
 		{name: "README goal retained evidence cleanup command", doc: readme, want: "forge goal evidence cleanup --dry-run --json > tmp/goal-run-retained-evidence-cleanup.json"},
@@ -1820,6 +1838,11 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run readiness audit provenance sha", doc: goalRunReadinessAuditSchema, want: `"sha256"`},
 		{name: "goal run readiness audit checks", doc: goalRunReadinessAuditSchema, want: `"goal_transition"`},
 		{name: "goal run readiness audit retained evidence check", doc: goalRunReadinessAuditSchema, want: `"retained_evidence"`},
+		{name: "architecture RSI pin readback schema id", doc: architectureRSIPinReadbackSchema, want: `"ao.forge.architecture-rsi-pin-readback.v0.1"`},
+		{name: "architecture RSI pin readback strict root", doc: architectureRSIPinReadbackSchema, want: `"additionalProperties": false`},
+		{name: "architecture RSI pin readback retained manifest proof", doc: architectureRSIPinReadback, want: "ao-command-rsi-manifest-retention-proof.json"},
+		{name: "architecture RSI pin readback bounded chain proof", doc: architectureRSIPinReadback, want: "bounded-rsi-improvement-chain-retention-proof.json"},
+		{name: "architecture RSI pin readback command validator", doc: architectureRSIPinReadback, want: `"command_validator_pr": 32`},
 		{name: "goal run docs title", doc: goalRunDocs, want: "# AO Forge GoalRun Contract"},
 		{name: "goal run docs ownership", doc: goalRunDocs, want: "AO Forge owns durable goal and task state"},
 		{name: "goal run docs scheduler boundary", doc: goalRunDocs, want: "an external scheduler may only trigger the loop"},
@@ -2142,6 +2165,8 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "production promotion audit schema", text: productionPromotionAuditSchema},
 		{name: "production readiness audit schema", text: productionReadinessAuditSchema},
 		{name: "goal run retained evidence cleanup schema", text: goalRunRetainedEvidenceCleanupSchema},
+		{name: "architecture RSI pin readback schema", text: architectureRSIPinReadbackSchema},
+		{name: "architecture RSI pin readback", text: architectureRSIPinReadback},
 		{name: "goal run evidence verify schema", text: goalRunEvidenceVerifySchema},
 	} {
 		var decoded any

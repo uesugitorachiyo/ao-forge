@@ -24,17 +24,17 @@
     {
       "check_id": "evidence_lint",
       "status": "passed",
-      "summary": "linted 5 evidence path(s)"
+      "summary": "linted 6 evidence path(s)"
     },
     {
       "check_id": "evidence_verify",
       "status": "passed",
-      "summary": "verified 5 evidence artifact(s)"
+      "summary": "verified 6 evidence artifact(s)"
     },
     {
       "check_id": "retained_evidence",
       "status": "passed",
-      "summary": "audited 5 retained evidence artifact(s)"
+      "summary": "audited 6 retained evidence artifact(s)"
     }
   ],
   "evidence_lint": {
@@ -43,7 +43,7 @@
     "document_type": "goal_run",
     "goal_id": "ao2-weekend-hardening",
     "status": "passed",
-    "evidence_linted": 5,
+    "evidence_linted": 6,
     "evidence": [
       {
         "label": "ao2-pulse-handoff-retention-proof.json",
@@ -69,6 +69,11 @@
         "label": "ao-foundry-rsi-next-improvement-task-retention-proof.json",
         "path": "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-foundry-rsi-next-improvement-task-retention-proof.json",
         "status": "passed"
+      },
+      {
+        "label": "bounded-rsi-improvement-chain-retention-proof.json",
+        "path": "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/bounded-rsi-improvement-chain-retention-proof.json",
+        "status": "passed"
       }
     ],
     "errors": []
@@ -78,7 +83,7 @@
     "goal_run": "examples/goals/ao2-retained-evidence.goal-run.json",
     "goal_id": "ao2-weekend-hardening",
     "status": "passed",
-    "evidence_verified": 5,
+    "evidence_verified": 6,
     "evidence": [
       {
         "label": "ao2-pulse-handoff-retention-proof.json",
@@ -114,6 +119,13 @@
         "expected_sha256": "e6ccfd723f5af775df2d0dafa53eb824e59f3f15df8e60ee1995fdf1fa59059e",
         "actual_sha256": "e6ccfd723f5af775df2d0dafa53eb824e59f3f15df8e60ee1995fdf1fa59059e",
         "status": "passed"
+      },
+      {
+        "label": "bounded-rsi-improvement-chain-retention-proof.json",
+        "path": "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/bounded-rsi-improvement-chain-retention-proof.json",
+        "expected_sha256": "8e1cb2efef67595d6dff2716554fa9cc959d645e87c050dcef5a4981f73de632",
+        "actual_sha256": "8e1cb2efef67595d6dff2716554fa9cc959d645e87c050dcef5a4981f73de632",
+        "status": "passed"
       }
     ],
     "errors": []
@@ -121,7 +133,7 @@
   "provenance": {
     "goal_run": {
       "path": "examples/goals/ao2-retained-evidence.goal-run.json",
-      "sha256": "84edc72b2d2f973e0bc254acdd22883e83d65c3945d9dcc732c4bd11b3296410"
+      "sha256": "b5beefb5e82439780c8d376f99bdccff25d26d8be1b405531ce7c965431f7cde"
     },
     "evidence": [
       {
@@ -143,6 +155,10 @@
       {
         "path": "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-foundry-rsi-next-improvement-task-retention-proof.json",
         "sha256": "e6ccfd723f5af775df2d0dafa53eb824e59f3f15df8e60ee1995fdf1fa59059e"
+      },
+      {
+        "path": "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/bounded-rsi-improvement-chain-retention-proof.json",
+        "sha256": "8e1cb2efef67595d6dff2716554fa9cc959d645e87c050dcef5a4981f73de632"
       }
     ]
   },
@@ -214,6 +230,22 @@
     {
       "retention_audit_schema_version": "ao.forge.goal-run-retained-evidence-audit.v0.1",
       "artifact": "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-foundry-rsi-next-improvement-task-retention-proof.json",
+      "goal_id": "ao2-weekend-hardening",
+      "iteration": "20260619T180000Z-verification",
+      "phase": "verification",
+      "retention_class": "loop_evidence",
+      "retained_at": "2026-06-19T18:00:00Z",
+      "now": "2026-06-19T18:00:00Z",
+      "status": "passed",
+      "retention_status": "active_retention",
+      "cleanup_review_status": "not_eligible_active_goal",
+      "age_days": 0,
+      "minimum_retention_days_after_terminal_phase": 90,
+      "errors": []
+    },
+    {
+      "retention_audit_schema_version": "ao.forge.goal-run-retained-evidence-audit.v0.1",
+      "artifact": "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/bounded-rsi-improvement-chain-retention-proof.json",
       "goal_id": "ao2-weekend-hardening",
       "iteration": "20260619T180000Z-verification",
       "phase": "verification",

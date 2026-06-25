@@ -1,0 +1,93 @@
+{
+  "schema_version": "ao.forge.goal-run-retained-evidence.v0.1",
+  "goal_id": "ao2-weekend-hardening",
+  "iteration": "20260619T180000Z-verification",
+  "phase": "verification",
+  "summary": "Retained bounded, governed RSI evidence chain proving a 10 percent local fixture improvement against the 5 percent threshold while preserving that this is not a claim of full autonomous self-mutating RSI.",
+  "captured_outputs": [
+    {
+      "label": "ao-foundry-rsi-candidate",
+      "command": "foundry pulse run",
+      "schema_version": "ao.foundry.rsi-candidate.v0.1",
+      "status": "ready",
+      "generated_by": "foundry pulse run",
+      "baseline_score": 90,
+      "candidate_score": 100,
+      "mutates_repositories": false
+    },
+    {
+      "label": "ao-foundry-rsi-improvement-gate",
+      "command": "foundry pulse run",
+      "schema_version": "ao.foundry.rsi-improvement-gate.v0.1",
+      "status": "passed",
+      "baseline_score": 90,
+      "candidate_score": 100,
+      "required_improvement_percent": 5,
+      "actual_improvement_percent": 10,
+      "autonomous_claim": "measured_local_improvement",
+      "mutates_repositories": false
+    },
+    {
+      "label": "ao-foundry-rsi-next-improvement-task",
+      "command": "foundry pulse run",
+      "schema_version": "ao.foundry.rsi-next-improvement-task.v0.1",
+      "status": "ready",
+      "required_improvement_percent": 5,
+      "actual_improvement_percent": 10,
+      "autonomous_claim": "derived_local_next_improvement",
+      "mutates_repositories": false
+    },
+    {
+      "label": "ao-command-rsi-health",
+      "command": "ao-command rsi health",
+      "status": "passed",
+      "rsi_mode": "governed_fixture_local",
+      "rsi_capability": "demonstrated_local_fixture_loop",
+      "operator_mode": "read_only",
+      "mutates_repositories": false,
+      "families": [
+        {
+          "family": "ao-arena",
+          "status": "passed",
+          "passed": true
+        },
+        {
+          "family": "ao-crucible",
+          "status": "passed",
+          "passed": true
+        },
+        {
+          "family": "ao-sentinel",
+          "status": "clear",
+          "passed": true
+        },
+        {
+          "family": "ao-promoter",
+          "status": "passed",
+          "passed": true
+        },
+        {
+          "family": "ao-foundry",
+          "status": "passed",
+          "passed": true
+        }
+      ]
+    }
+  ],
+  "retention_policy": {
+    "layout": "docs/evidence/goals/<goal_id>/<YYYYMMDDTHHMMSSZ>-<phase>/",
+    "temporary_paths_allowed": false,
+    "minimum_retention_days_after_terminal_phase": 90
+  },
+  "retention_metadata": {
+    "retained_at": "2026-06-19T18:00:00Z",
+    "retention_class": "loop_evidence",
+    "retain_while_goal_active": true,
+    "deletion_requires_review": true,
+    "cleanup_change_must_name": [
+      "goal_id",
+      "iteration",
+      "reason"
+    ]
+  }
+}

@@ -286,13 +286,19 @@ type goalRetainedEvidenceArtifact struct {
 	Phase           string `json:"phase"`
 	Summary         string `json:"summary"`
 	CapturedOutputs []struct {
-		Label               string `json:"label"`
-		Command             string `json:"command"`
-		Status              string `json:"status"`
-		RSIMode             string `json:"rsi_mode,omitempty"`
-		RSICapability       string `json:"rsi_capability,omitempty"`
-		OperatorMode        string `json:"operator_mode,omitempty"`
-		MutatesRepositories *bool  `json:"mutates_repositories,omitempty"`
+		Label               string   `json:"label"`
+		Command             string   `json:"command"`
+		SchemaVersion       string   `json:"schema_version,omitempty"`
+		Status              string   `json:"status"`
+		BaselineScore       *float64 `json:"baseline_score,omitempty"`
+		CandidateScore      *float64 `json:"candidate_score,omitempty"`
+		RequiredImprovement *float64 `json:"required_improvement_percent,omitempty"`
+		ActualImprovement   *float64 `json:"actual_improvement_percent,omitempty"`
+		AutonomousClaim     string   `json:"autonomous_claim,omitempty"`
+		RSIMode             string   `json:"rsi_mode,omitempty"`
+		RSICapability       string   `json:"rsi_capability,omitempty"`
+		OperatorMode        string   `json:"operator_mode,omitempty"`
+		MutatesRepositories *bool    `json:"mutates_repositories,omitempty"`
 		Families            []struct {
 			Family string `json:"family"`
 			Status string `json:"status"`

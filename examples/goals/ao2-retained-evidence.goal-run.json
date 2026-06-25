@@ -49,6 +49,11 @@
         "sha256": "2b8dd4f1d01069db8e679a56aba0eaa982dd8a02e446548af9325256f7d56702"
       },
       {
+        "label": "ao-command-rsi-manifest-retention-proof.json",
+        "path": "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-command-rsi-manifest-retention-proof.json",
+        "sha256": "e633c3925a25a40e903754de0ee441a809eba858d2c6341a95817640cf26f409"
+      },
+      {
         "label": "ao-foundry-rsi-candidate-retention-proof.json",
         "path": "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-foundry-rsi-candidate-retention-proof.json",
         "sha256": "32946c7bfa3dbb768a0b868cd60ed07a3092306a321e98e6283673b797f6d580"
@@ -66,7 +71,7 @@
       {
         "label": "bounded-rsi-improvement-chain-retention-proof.json",
         "path": "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/bounded-rsi-improvement-chain-retention-proof.json",
-        "sha256": "ab4456a379a3891aac46909bc3de68b1b67c53b6a0245c97a70a7a405fe8efbb"
+        "sha256": "82cb13938f4ce05cc43e58b2e508de2a1f6e5004c6233f72045d215ea49c53d3"
       }
     ]
   }

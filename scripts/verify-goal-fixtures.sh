@@ -231,6 +231,7 @@ for label in [
     "ao-foundry-rsi-improvement-gate",
     "ao-foundry-rsi-next-improvement-task",
     "ao-command-rsi-health",
+    "ao-command-rsi-manifest",
 ]:
     if label not in outputs:
         raise SystemExit(f"bounded RSI retained proof missing captured output {label}")
@@ -251,6 +252,16 @@ if not bounded or bounded.get("decision") != "allowed" or bounded.get("status") 
 full = claim_levels.get("full_autonomous_self_mutating_rsi")
 if not full or full.get("decision") != "denied" or full.get("status") != "blocked":
     raise SystemExit("bounded RSI retained proof must deny the full_autonomous_self_mutating_rsi claim")
+
+manifest_markers = set(outputs["ao-command-rsi-manifest"].get("evidence_markers", []))
+for marker in [
+    "rollback_rehearsal.status=passed",
+    "AO Command PR #31",
+    "AO2 PR #200",
+    "ao2-control-plane PR #72",
+]:
+    if marker not in manifest_markers:
+        raise SystemExit(f"bounded RSI retained proof missing AO Command manifest evidence marker {marker}")
 PY
 
 for retained_evidence_artifact in "${retained_evidence_artifacts[@]}"; do
@@ -285,15 +296,15 @@ import sys
 
 summary = json.loads(pathlib.Path(sys.argv[1]).read_text())
 expected = {
-    "status": "passed",
-    "mode": "dry-run",
-    "artifacts_scanned": 9,
-    "eligible_artifacts": 1,
-    "protected_artifacts": 8,
-    "failed_artifacts": 0,
-    "public_provenance_excluded": 2,
-    "active_goal_excluded": 6,
-}
+	    "status": "passed",
+	    "mode": "dry-run",
+	    "artifacts_scanned": 10,
+	    "eligible_artifacts": 1,
+	    "protected_artifacts": 9,
+	    "failed_artifacts": 0,
+	    "public_provenance_excluded": 2,
+	    "active_goal_excluded": 7,
+	}
 for key, value in expected.items():
     if summary.get(key) != value:
         raise SystemExit(f"retained evidence cleanup {key} drifted: expected {value!r}, got {summary.get(key)!r}")

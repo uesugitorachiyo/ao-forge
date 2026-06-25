@@ -12,6 +12,18 @@
       "rsi_mode": "governed_fixture_local",
       "rsi_capability": "demonstrated_local_fixture_loop",
       "operator_mode": "read_only",
+      "claim_levels": [
+        {
+          "claim": "bounded_governed_rsi",
+          "decision": "allowed",
+          "status": "passed"
+        },
+        {
+          "claim": "full_autonomous_self_mutating_rsi",
+          "decision": "denied",
+          "status": "blocked"
+        }
+      ],
       "mutates_repositories": false,
       "families": [
         {

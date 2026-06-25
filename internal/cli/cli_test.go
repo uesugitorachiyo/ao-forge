@@ -577,7 +577,12 @@ func TestRetainedRSIEvidenceIncludesFoundryImprovementGate(t *testing.T) {
 
 	var commandProof struct {
 		CapturedOutputs []struct {
-			Label    string `json:"label"`
+			Label       string `json:"label"`
+			ClaimLevels []struct {
+				Claim    string `json:"claim"`
+				Decision string `json:"decision"`
+				Status   string `json:"status"`
+			} `json:"claim_levels"`
 			Families []struct {
 				Family string `json:"family"`
 				Status string `json:"status"`
@@ -586,8 +591,24 @@ func TestRetainedRSIEvidenceIncludesFoundryImprovementGate(t *testing.T) {
 		} `json:"captured_outputs"`
 	}
 	readJSONFixture(t, commandProofPath, &commandProof)
-	if !capturedOutputFamilyPassed(commandProof.CapturedOutputs, "ao-command-rsi-health", "ao-foundry") {
+	commandRSIFoundryPassed := false
+	for _, output := range commandProof.CapturedOutputs {
+		if output.Label != "ao-command-rsi-health" {
+			continue
+		}
+		for _, family := range output.Families {
+			if family.Family == "ao-foundry" && family.Passed {
+				commandRSIFoundryPassed = true
+			}
+		}
+	}
+	if !commandRSIFoundryPassed {
 		t.Fatalf("AO Command RSI retained proof missing passed ao-foundry family: %+v", commandProof.CapturedOutputs)
+	}
+	if len(commandProof.CapturedOutputs) != 1 ||
+		!capturedOutputHasClaimLevel(commandProof.CapturedOutputs[0].ClaimLevels, "bounded_governed_rsi", "allowed", "passed") ||
+		!capturedOutputHasClaimLevel(commandProof.CapturedOutputs[0].ClaimLevels, "full_autonomous_self_mutating_rsi", "denied", "blocked") {
+		t.Fatalf("AO Command RSI retained proof missing claim levels: %+v", commandProof.CapturedOutputs)
 	}
 
 	var foundryProof struct {
@@ -669,7 +690,12 @@ func TestRetainedRSIEvidenceIncludesFoundryImprovementGate(t *testing.T) {
 	var boundedChainProof struct {
 		Summary         string `json:"summary"`
 		CapturedOutputs []struct {
-			Label               string  `json:"label"`
+			Label       string `json:"label"`
+			ClaimLevels []struct {
+				Claim    string `json:"claim"`
+				Decision string `json:"decision"`
+				Status   string `json:"status"`
+			} `json:"claim_levels"`
 			RequiredImprovement float64 `json:"required_improvement_percent"`
 			ActualImprovement   float64 `json:"actual_improvement_percent"`
 			MutatesRepositories bool    `json:"mutates_repositories"`
@@ -688,12 +714,30 @@ func TestRetainedRSIEvidenceIncludesFoundryImprovementGate(t *testing.T) {
 		if output.Label == "ao-foundry-rsi-improvement-gate" && output.ActualImprovement < output.RequiredImprovement {
 			t.Fatalf("bounded RSI proof improvement gate does not meet threshold: %+v", output)
 		}
+		if output.Label == "ao-command-rsi-health" &&
+			(!capturedOutputHasClaimLevel(output.ClaimLevels, "bounded_governed_rsi", "allowed", "passed") ||
+				!capturedOutputHasClaimLevel(output.ClaimLevels, "full_autonomous_self_mutating_rsi", "denied", "blocked")) {
+			t.Fatalf("bounded RSI proof AO Command output missing claim levels: %+v", output)
+		}
 	}
 	for _, label := range []string{"ao-foundry-rsi-candidate", "ao-foundry-rsi-improvement-gate", "ao-foundry-rsi-next-improvement-task", "ao-command-rsi-health"} {
 		if !labels[label] {
 			t.Fatalf("bounded RSI proof missing captured output %q: %+v", label, boundedChainProof.CapturedOutputs)
 		}
 	}
+}
+
+func capturedOutputHasClaimLevel(claimLevels []struct {
+	Claim    string `json:"claim"`
+	Decision string `json:"decision"`
+	Status   string `json:"status"`
+}, claim, decision, status string) bool {
+	for _, level := range claimLevels {
+		if level.Claim == claim && level.Decision == decision && level.Status == status {
+			return true
+		}
+	}
+	return false
 }
 
 func TestGoalRunCLIAuditsRetainedEvidenceRetention(t *testing.T) {
@@ -1048,7 +1092,7 @@ func TestGoalRunCLIReportsReadiness(t *testing.T) {
 		summary.Provenance.Evidence[0].Path != "docs/evidence/goals/ao2-weekend-hardening/20260619T143000Z-implementation/ao2-pulse-handoff-retention-proof.json" ||
 		summary.Provenance.Evidence[0].SHA256 != "dc28391a22a1ead221ee82f7d3c80d1f3766badf977722dddb147b4484e2f528" ||
 		summary.Provenance.Evidence[1].Path != "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-command-rsi-health-retention-proof.json" ||
-		summary.Provenance.Evidence[1].SHA256 != "958a4bf002b247aaa855e7e45e44323396eb3ed21b135b222564d696c5723f2c" ||
+		summary.Provenance.Evidence[1].SHA256 != "2b8dd4f1d01069db8e679a56aba0eaa982dd8a02e446548af9325256f7d56702" ||
 		summary.Provenance.Evidence[2].Path != "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-foundry-rsi-candidate-retention-proof.json" ||
 		summary.Provenance.Evidence[2].SHA256 != "32946c7bfa3dbb768a0b868cd60ed07a3092306a321e98e6283673b797f6d580" ||
 		summary.Provenance.Evidence[3].Path != "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-foundry-rsi-improvement-gate-retention-proof.json" ||
@@ -1056,7 +1100,7 @@ func TestGoalRunCLIReportsReadiness(t *testing.T) {
 		summary.Provenance.Evidence[4].Path != "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-foundry-rsi-next-improvement-task-retention-proof.json" ||
 		summary.Provenance.Evidence[4].SHA256 != "e6ccfd723f5af775df2d0dafa53eb824e59f3f15df8e60ee1995fdf1fa59059e" ||
 		summary.Provenance.Evidence[5].Path != "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/bounded-rsi-improvement-chain-retention-proof.json" ||
-		summary.Provenance.Evidence[5].SHA256 != "8e1cb2efef67595d6dff2716554fa9cc959d645e87c050dcef5a4981f73de632" {
+		summary.Provenance.Evidence[5].SHA256 != "ab4456a379a3891aac46909bc3de68b1b67c53b6a0245c97a70a7a405fe8efbb" {
 		t.Fatalf("goal readiness provenance drifted: %+v", summary.Provenance)
 	}
 
@@ -1699,6 +1743,9 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run retained evidence deletion review", doc: goalRunRetainedEvidenceSchema, want: `"deletion_requires_review"`},
 		{name: "goal run retained evidence captured outputs", doc: goalRunRetainedEvidenceSchema, want: `"captured_outputs"`},
 		{name: "goal run retained evidence RSI mode property", doc: goalRunRetainedEvidenceSchema, want: `"rsi_mode"`},
+		{name: "goal run retained evidence claim levels property", doc: goalRunRetainedEvidenceSchema, want: `"claim_levels"`},
+		{name: "goal run retained evidence bounded RSI claim", doc: goalRunRetainedEvidenceSchema, want: `"bounded_governed_rsi"`},
+		{name: "goal run retained evidence full RSI claim", doc: goalRunRetainedEvidenceSchema, want: `"full_autonomous_self_mutating_rsi"`},
 		{name: "goal run retained evidence audit schema id", doc: goalRunRetainedEvidenceAuditSchema, want: `"ao.forge.goal-run-retained-evidence-audit.v0.1"`},
 		{name: "goal run retained evidence audit strict root", doc: goalRunRetainedEvidenceAuditSchema, want: `"additionalProperties": false`},
 		{name: "goal run retained evidence audit active status", doc: goalRunRetainedEvidenceAuditSchema, want: `"active_retention"`},
@@ -1866,6 +1913,9 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "RSI health retained evidence artifact output", doc: rsiHealthRetainedEvidenceArtifact, want: `"command": "ao-command rsi health"`},
 		{name: "RSI health retained evidence artifact mode", doc: rsiHealthRetainedEvidenceArtifact, want: `"rsi_mode": "governed_fixture_local"`},
 		{name: "RSI health retained evidence artifact mutation boundary", doc: rsiHealthRetainedEvidenceArtifact, want: `"mutates_repositories": false`},
+		{name: "RSI health retained evidence artifact claim levels", doc: rsiHealthRetainedEvidenceArtifact, want: `"claim_levels"`},
+		{name: "RSI health retained evidence artifact bounded claim", doc: rsiHealthRetainedEvidenceArtifact, want: `"claim": "bounded_governed_rsi"`},
+		{name: "RSI health retained evidence artifact full claim", doc: rsiHealthRetainedEvidenceArtifact, want: `"claim": "full_autonomous_self_mutating_rsi"`},
 		{name: "RSI candidate retained evidence artifact schema version", doc: rsiCandidateRetainedEvidenceArtifact, want: `"schema_version": "ao.forge.goal-run-retained-evidence.v0.1"`},
 		{name: "RSI candidate retained evidence artifact output", doc: rsiCandidateRetainedEvidenceArtifact, want: `"command": "foundry pulse run"`},
 		{name: "RSI candidate retained evidence artifact Foundry schema", doc: rsiCandidateRetainedEvidenceArtifact, want: `"schema_version": "ao.foundry.rsi-candidate.v0.1"`},
@@ -1888,7 +1938,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "retained readiness audit requested phase", doc: retainedReadinessAudit, want: `"requested_phase": "verification"`},
 		{name: "retained readiness audit retained evidence check", doc: retainedReadinessAudit, want: `"check_id": "retained_evidence"`},
 		{name: "retained readiness audit provenance", doc: retainedReadinessAudit, want: `"provenance"`},
-		{name: "retained readiness audit goal run sha", doc: retainedReadinessAudit, want: `"sha256": "b5beefb5e82439780c8d376f99bdccff25d26d8be1b405531ce7c965431f7cde"`},
+		{name: "retained readiness audit goal run sha", doc: retainedReadinessAudit, want: `"sha256": "b07c32ef7ba4252efbeed7425196b02052894510aa05b7166afa5ce584e1bc4a"`},
 		{name: "retained readiness audit Foundry RSI candidate proof", doc: retainedReadinessAudit, want: "ao-foundry-rsi-candidate-retention-proof.json"},
 		{name: "retained readiness audit Foundry RSI proof", doc: retainedReadinessAudit, want: "ao-foundry-rsi-improvement-gate-retention-proof.json"},
 		{name: "retained readiness audit Foundry RSI next task proof", doc: retainedReadinessAudit, want: "ao-foundry-rsi-next-improvement-task-retention-proof.json"},

@@ -94,6 +94,68 @@
             "type": "string",
             "minLength": 1
           },
+          "claim_levels": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+              "type": "object",
+              "required": ["claim", "decision", "status"],
+              "properties": {
+                "claim": {
+                  "type": "string",
+                  "enum": [
+                    "bounded_governed_rsi",
+                    "full_autonomous_self_mutating_rsi"
+                  ]
+                },
+                "decision": {
+                  "type": "string",
+                  "enum": ["allowed", "denied"]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": ["passed", "blocked"]
+                }
+              },
+              "additionalProperties": false
+            },
+            "allOf": [
+              {
+                "contains": {
+                  "type": "object",
+                  "required": ["claim", "decision", "status"],
+                  "properties": {
+                    "claim": {
+                      "const": "bounded_governed_rsi"
+                    },
+                    "decision": {
+                      "const": "allowed"
+                    },
+                    "status": {
+                      "const": "passed"
+                    }
+                  }
+                }
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "required": ["claim", "decision", "status"],
+                  "properties": {
+                    "claim": {
+                      "const": "full_autonomous_self_mutating_rsi"
+                    },
+                    "decision": {
+                      "const": "denied"
+                    },
+                    "status": {
+                      "const": "blocked"
+                    }
+                  }
+                }
+              }
+            ]
+          },
           "mutates_repositories": {
             "type": "boolean"
           },
@@ -136,6 +198,7 @@
                 "rsi_mode",
                 "rsi_capability",
                 "operator_mode",
+                "claim_levels",
                 "mutates_repositories",
                 "families"
               ],

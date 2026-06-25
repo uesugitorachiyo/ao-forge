@@ -58,6 +58,26 @@
             "type": "string",
             "minLength": 1
           },
+          "schema_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "baseline_score": {
+            "type": "number"
+          },
+          "candidate_score": {
+            "type": "number"
+          },
+          "required_improvement_percent": {
+            "type": "number"
+          },
+          "actual_improvement_percent": {
+            "type": "number"
+          },
+          "autonomous_claim": {
+            "type": "string",
+            "minLength": 1
+          },
           "rsi_mode": {
             "type": "string",
             "minLength": 1

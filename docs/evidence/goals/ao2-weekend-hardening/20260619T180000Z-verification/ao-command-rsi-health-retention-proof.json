@@ -33,6 +33,11 @@
           "family": "ao-promoter",
           "status": "passed",
           "passed": true
+        },
+        {
+          "family": "ao-foundry",
+          "status": "passed",
+          "passed": true
         }
       ]
     }

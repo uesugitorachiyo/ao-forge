@@ -7335,6 +7335,23 @@ func productionReadinessGateSpecs() []productionReadinessGateSpec {
 			},
 		},
 		{
+			GateID:   "goalrun.architecture_rsi_pin_readback",
+			Category: "goalrun",
+			Summary:  "AO Architecture pins Forge retained RSI proofs and AO Command enforces those pins",
+			Evidence: []string{"docs/contracts/architecture-rsi-pin-readback-v0.1.schema.json", "docs/evidence/architecture/ao-architecture-rsi-pin-readback.json", "README.md", "docs/README.md"},
+			Requires: []productionReadinessRequirement{
+				{Path: "docs/contracts/architecture-rsi-pin-readback-v0.1.schema.json", Pattern: "ao.forge.architecture-rsi-pin-readback.v0.1"},
+				{Path: "docs/contracts/architecture-rsi-pin-readback-v0.1.schema.json", Pattern: `"additionalProperties": false`},
+				{Path: "docs/evidence/architecture/ao-architecture-rsi-pin-readback.json", Pattern: `"status": "passed"`},
+				{Path: "docs/evidence/architecture/ao-architecture-rsi-pin-readback.json", Pattern: "ao-command-rsi-manifest-retention-proof.json"},
+				{Path: "docs/evidence/architecture/ao-architecture-rsi-pin-readback.json", Pattern: "bounded-rsi-improvement-chain-retention-proof.json"},
+				{Path: "docs/evidence/architecture/ao-architecture-rsi-pin-readback.json", Pattern: `"architecture_prs": [13, 14, 15]`},
+				{Path: "docs/evidence/architecture/ao-architecture-rsi-pin-readback.json", Pattern: `"command_validator_pr": 32`},
+				{Path: "README.md", Pattern: "ao-architecture-rsi-pin-readback.json"},
+				{Path: "docs/README.md", Pattern: "[AO Architecture RSI Pin Readback](evidence/architecture/ao-architecture-rsi-pin-readback.json)"},
+			},
+		},
+		{
 			GateID:   "security.release_threat_model",
 			Category: "security",
 			Summary:  "release threat model covers artifact tampering, attestations, and promotion evidence",

@@ -189,6 +189,7 @@ scripts/ao2-pulse-goal-readiness.sh --goal-run examples/goals/ao2-retained-evide
 ./bin/forge contract validate --schema docs/contracts/goal-run-retained-evidence-v0.1.schema.json --document docs/evidence/goals/ao2-weekend-hardening/20260619T143000Z-implementation/ao2-pulse-handoff-retention-proof.json
 ./bin/forge contract validate --schema docs/contracts/goal-run-retained-evidence-v0.1.schema.json --document docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-command-rsi-manifest-retention-proof.json
 ./bin/forge contract validate --schema docs/contracts/goal-run-retained-evidence-v0.1.schema.json --document docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/bounded-rsi-improvement-chain-retention-proof.json
+./bin/forge contract validate --schema docs/contracts/architecture-rsi-pin-readback-v0.1.schema.json --document docs/evidence/architecture/ao-architecture-rsi-pin-readback.json
 ./bin/forge goal evidence retention --artifact docs/evidence/goals/ao2-weekend-hardening/20260619T143000Z-implementation/ao2-pulse-handoff-retention-proof.json --json > tmp/goal-run-retained-evidence-audit.json
 ./bin/forge contract validate --schema docs/contracts/goal-run-retained-evidence-audit-v0.1.schema.json --document tmp/goal-run-retained-evidence-audit.json
 ./bin/forge goal evidence cleanup --dry-run --json > tmp/goal-run-retained-evidence-cleanup.json
@@ -333,6 +334,12 @@ workflows, runbooks, retained evidence controls, and public-repo policy gates:
 scripts/check-public-repo-policy.sh
 ./bin/forge production-readiness audit --json
 ```
+
+The production-readiness audit includes
+`goalrun.architecture_rsi_pin_readback`, which requires
+`ao-architecture-rsi-pin-readback.json` to show that AO Architecture pins Forge's
+retained RSI proofs and that AO Command PR #32 fails closed when those pins are
+missing.
 
 Mutating commands fail closed unless the required gate result, clean workspace,
 explicit operator confirmation, and release preview evidence are present.

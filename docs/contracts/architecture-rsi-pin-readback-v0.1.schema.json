@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/uesugitorachiyo/ao-forge/docs/contracts/architecture-rsi-pin-readback-v0.1.schema.json",
+  "title": "AO Forge Architecture RSI Pin Readback v0.1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "status",
+    "architecture_manifest",
+    "architecture_commit",
+    "verified_at_utc",
+    "retained_forge_evidence",
+    "architecture_prs",
+    "command_validator_pr",
+    "claim_boundary"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "ao.forge.architecture-rsi-pin-readback.v0.1"
+    },
+    "status": {
+      "const": "passed"
+    },
+    "architecture_manifest": {
+      "const": "../ao-architecture/overview/rsi-claim-evidence-manifest.json"
+    },
+    "architecture_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "verified_at_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "retained_forge_evidence": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["path", "pinned_by_architecture", "architecture_pr"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "pinned_by_architecture": {
+            "const": true
+          },
+          "architecture_pr": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "architecture_prs": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    "command_validator_pr": {
+      "const": 32
+    },
+    "claim_boundary": {
+      "type": "object",
+      "required": ["bounded_governed_rsi", "full_autonomous_self_mutating_rsi"],
+      "properties": {
+        "bounded_governed_rsi": {
+          "const": "supported_when_chain_passes"
+        },
+        "full_autonomous_self_mutating_rsi": {
+          "const": "denied"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

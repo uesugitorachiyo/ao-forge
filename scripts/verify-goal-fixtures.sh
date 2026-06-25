@@ -239,12 +239,12 @@ summary = json.loads(pathlib.Path(sys.argv[1]).read_text())
 expected = {
     "status": "passed",
     "mode": "dry-run",
-    "artifacts_scanned": 7,
+    "artifacts_scanned": 8,
     "eligible_artifacts": 1,
-    "protected_artifacts": 6,
+    "protected_artifacts": 7,
     "failed_artifacts": 0,
     "public_provenance_excluded": 2,
-    "active_goal_excluded": 4,
+    "active_goal_excluded": 5,
 }
 for key, value in expected.items():
     if summary.get(key) != value:

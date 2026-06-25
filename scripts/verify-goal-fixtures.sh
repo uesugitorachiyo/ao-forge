@@ -70,6 +70,8 @@ while IFS= read -r invalid_readiness_provenance_audit; do
   invalid_readiness_provenance_audits+=("$invalid_readiness_provenance_audit")
 done < <(find examples -type f -name '*.goal-run-readiness-audit.provenance-invalid.json' | sort)
 
+bounded_rsi_retention_proof="docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/bounded-rsi-improvement-chain-retention-proof.json"
+
 verify_readiness_audit_provenance() {
   local readiness_audit="$1"
   python3 - "$readiness_audit" <<'PY'
@@ -205,6 +207,41 @@ if [[ "${#invalid_readiness_provenance_audits[@]}" -eq 0 ]]; then
   exit 1
 fi
 
+if [[ ! -f "$bounded_rsi_retention_proof" ]]; then
+  echo "missing bounded RSI improvement chain retained proof: $bounded_rsi_retention_proof" >&2
+  exit 1
+fi
+
+python3 - "$bounded_rsi_retention_proof" <<'PY'
+import json
+import pathlib
+import sys
+
+proof_path = pathlib.Path(sys.argv[1])
+proof = json.loads(proof_path.read_text())
+summary = proof.get("summary", "")
+if "bounded, governed RSI evidence chain" not in summary:
+    raise SystemExit("bounded RSI retained proof summary must name the bounded, governed RSI evidence chain")
+if "not a claim of full autonomous self-mutating RSI" not in summary:
+    raise SystemExit("bounded RSI retained proof summary must exclude full autonomous self-mutating RSI")
+
+outputs = {item.get("label"): item for item in proof.get("captured_outputs", [])}
+for label in [
+    "ao-foundry-rsi-candidate",
+    "ao-foundry-rsi-improvement-gate",
+    "ao-foundry-rsi-next-improvement-task",
+    "ao-command-rsi-health",
+]:
+    if label not in outputs:
+        raise SystemExit(f"bounded RSI retained proof missing captured output {label}")
+
+gate = outputs["ao-foundry-rsi-improvement-gate"]
+if gate.get("actual_improvement_percent", 0) < gate.get("required_improvement_percent", 5):
+    raise SystemExit("bounded RSI retained proof improvement gate does not meet the required improvement")
+if any(item.get("mutates_repositories") is not False for item in outputs.values()):
+    raise SystemExit("bounded RSI retained proof must keep all captured outputs non-mutating")
+PY
+
 for retained_evidence_artifact in "${retained_evidence_artifacts[@]}"; do
   "$forge_bin" contract validate \
     --schema docs/contracts/goal-run-retained-evidence-v0.1.schema.json \
@@ -239,12 +276,12 @@ summary = json.loads(pathlib.Path(sys.argv[1]).read_text())
 expected = {
     "status": "passed",
     "mode": "dry-run",
-    "artifacts_scanned": 8,
+    "artifacts_scanned": 9,
     "eligible_artifacts": 1,
-    "protected_artifacts": 7,
+    "protected_artifacts": 8,
     "failed_artifacts": 0,
     "public_provenance_excluded": 2,
-    "active_goal_excluded": 5,
+    "active_goal_excluded": 6,
 }
 for key, value in expected.items():
     if summary.get(key) != value:

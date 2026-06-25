@@ -369,12 +369,13 @@ func TestGoalRunCLILintsEvidencePaths(t *testing.T) {
 		"document=examples/goals/ao2-retained-evidence.goal-run.json",
 		"document_type=goal_run",
 		"goal_id=ao2-weekend-hardening",
-		"evidence_linted=5",
+		"evidence_linted=6",
 		"evidence_path=docs/evidence/goals/ao2-weekend-hardening/20260619T143000Z-implementation/ao2-pulse-handoff-retention-proof.json status=passed",
 		"evidence_path=docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-command-rsi-health-retention-proof.json status=passed",
 		"evidence_path=docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-foundry-rsi-candidate-retention-proof.json status=passed",
 		"evidence_path=docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-foundry-rsi-improvement-gate-retention-proof.json status=passed",
 		"evidence_path=docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-foundry-rsi-next-improvement-task-retention-proof.json status=passed",
+		"evidence_path=docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/bounded-rsi-improvement-chain-retention-proof.json status=passed",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("goal evidence lint stdout missing %q\n%s", want, stdout)
@@ -431,13 +432,14 @@ func TestGoalRunCLILintsEvidencePaths(t *testing.T) {
 	if summary.LintSchemaVersion != "ao.forge.goal-run-evidence-lint.v0.1" ||
 		summary.DocumentType != "goal_run" ||
 		summary.Status != "passed" ||
-		summary.EvidenceLinted != 5 ||
-		len(summary.Evidence) != 5 ||
+		summary.EvidenceLinted != 6 ||
+		len(summary.Evidence) != 6 ||
 		summary.Evidence[0].Status != "passed" ||
 		summary.Evidence[1].Status != "passed" ||
 		summary.Evidence[2].Status != "passed" ||
 		summary.Evidence[3].Status != "passed" ||
-		summary.Evidence[4].Status != "passed" {
+		summary.Evidence[4].Status != "passed" ||
+		summary.Evidence[5].Status != "passed" {
 		t.Fatalf("goal evidence lint --json summary drifted: %+v", summary)
 	}
 	if stderr != "" {
@@ -552,6 +554,7 @@ func TestRetainedRSIEvidenceIncludesFoundryImprovementGate(t *testing.T) {
 	commandProofPath := filepath.Join(root, "docs", "evidence", "goals", "ao2-weekend-hardening", "20260619T180000Z-verification", "ao-command-rsi-health-retention-proof.json")
 	foundryProofPath := filepath.Join(root, "docs", "evidence", "goals", "ao2-weekend-hardening", "20260619T180000Z-verification", "ao-foundry-rsi-improvement-gate-retention-proof.json")
 	foundryNextTaskProofPath := filepath.Join(root, "docs", "evidence", "goals", "ao2-weekend-hardening", "20260619T180000Z-verification", "ao-foundry-rsi-next-improvement-task-retention-proof.json")
+	boundedChainProofPath := filepath.Join(root, "docs", "evidence", "goals", "ao2-weekend-hardening", "20260619T180000Z-verification", "bounded-rsi-improvement-chain-retention-proof.json")
 
 	var goal struct {
 		LastIteration struct {
@@ -567,6 +570,9 @@ func TestRetainedRSIEvidenceIncludesFoundryImprovementGate(t *testing.T) {
 	}
 	if !goalEvidencePathPresent(goal.LastIteration.Evidence, "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-foundry-rsi-next-improvement-task-retention-proof.json") {
 		t.Fatalf("GoalRun does not retain AO Foundry RSI next improvement task evidence: %+v", goal.LastIteration.Evidence)
+	}
+	if !goalEvidencePathPresent(goal.LastIteration.Evidence, "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/bounded-rsi-improvement-chain-retention-proof.json") {
+		t.Fatalf("GoalRun does not retain bounded RSI improvement chain evidence: %+v", goal.LastIteration.Evidence)
 	}
 
 	var commandProof struct {
@@ -658,6 +664,35 @@ func TestRetainedRSIEvidenceIncludesFoundryImprovementGate(t *testing.T) {
 		nextTaskOutput.AutonomousClaim != "derived_local_next_improvement" ||
 		nextTaskOutput.MutatesRepositories {
 		t.Fatalf("unexpected Foundry RSI next task retained proof output: %+v", nextTaskOutput)
+	}
+
+	var boundedChainProof struct {
+		Summary         string `json:"summary"`
+		CapturedOutputs []struct {
+			Label               string  `json:"label"`
+			RequiredImprovement float64 `json:"required_improvement_percent"`
+			ActualImprovement   float64 `json:"actual_improvement_percent"`
+			MutatesRepositories bool    `json:"mutates_repositories"`
+		} `json:"captured_outputs"`
+	}
+	readJSONFixture(t, boundedChainProofPath, &boundedChainProof)
+	if !strings.Contains(boundedChainProof.Summary, "bounded, governed RSI evidence chain") || !strings.Contains(boundedChainProof.Summary, "not a claim of full autonomous self-mutating RSI") {
+		t.Fatalf("bounded RSI proof summary does not preserve claim boundary: %q", boundedChainProof.Summary)
+	}
+	labels := map[string]bool{}
+	for _, output := range boundedChainProof.CapturedOutputs {
+		labels[output.Label] = true
+		if output.MutatesRepositories {
+			t.Fatalf("bounded RSI proof captured mutating output: %+v", output)
+		}
+		if output.Label == "ao-foundry-rsi-improvement-gate" && output.ActualImprovement < output.RequiredImprovement {
+			t.Fatalf("bounded RSI proof improvement gate does not meet threshold: %+v", output)
+		}
+	}
+	for _, label := range []string{"ao-foundry-rsi-candidate", "ao-foundry-rsi-improvement-gate", "ao-foundry-rsi-next-improvement-task", "ao-command-rsi-health"} {
+		if !labels[label] {
+			t.Fatalf("bounded RSI proof missing captured output %q: %+v", label, boundedChainProof.CapturedOutputs)
+		}
 	}
 }
 
@@ -851,12 +886,12 @@ func TestGoalRunCLIDryRunsRetainedEvidenceCleanup(t *testing.T) {
 		"goal_evidence_cleanup=passed",
 		"mode=dry-run",
 		"root=docs/evidence/goals",
-		"artifacts_scanned=8",
+		"artifacts_scanned=9",
 		"eligible_artifacts=1",
-		"protected_artifacts=7",
+		"protected_artifacts=8",
 		"failed_artifacts=0",
 		"public_provenance_excluded=2",
-		"active_goal_excluded=5",
+		"active_goal_excluded=6",
 		"artifact=docs/evidence/goals/ao2-weekend-hardening/20260101T010000Z-complete/old-loop-retention-proof.json retention_status=cleanup_review_eligible cleanup_review_status=eligible_after_review retention_class=loop_evidence",
 		"artifact=docs/evidence/goals/ao2-weekend-hardening/20260101T000000Z-complete/release-provenance-retention-proof.json retention_status=mandatory_retention cleanup_review_status=not_eligible_public_provenance retention_class=release_provenance",
 		"artifact=docs/evidence/goals/ao2-weekend-hardening/20260101T020000Z-complete/promotion-provenance-retention-proof.json retention_status=mandatory_retention cleanup_review_status=not_eligible_public_provenance retention_class=promotion_provenance",
@@ -865,6 +900,7 @@ func TestGoalRunCLIDryRunsRetainedEvidenceCleanup(t *testing.T) {
 		"artifact=docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-foundry-rsi-candidate-retention-proof.json retention_status=active_retention cleanup_review_status=not_eligible_active_goal retention_class=loop_evidence",
 		"artifact=docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-foundry-rsi-improvement-gate-retention-proof.json retention_status=active_retention cleanup_review_status=not_eligible_active_goal retention_class=loop_evidence",
 		"artifact=docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-foundry-rsi-next-improvement-task-retention-proof.json retention_status=active_retention cleanup_review_status=not_eligible_active_goal retention_class=loop_evidence",
+		"artifact=docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/bounded-rsi-improvement-chain-retention-proof.json retention_status=active_retention cleanup_review_status=not_eligible_active_goal retention_class=loop_evidence",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("goal evidence cleanup stdout missing %q\n%s", want, stdout)
@@ -892,13 +928,13 @@ func TestGoalRunCLIDryRunsRetainedEvidenceCleanup(t *testing.T) {
 	if summary.CleanupSchemaVersion != "ao.forge.goal-run-retained-evidence-cleanup.v0.1" ||
 		summary.Mode != "dry-run" ||
 		summary.Status != "passed" ||
-		summary.ArtifactsScanned != 8 ||
+		summary.ArtifactsScanned != 9 ||
 		summary.EligibleArtifacts != 1 ||
-		summary.ProtectedArtifacts != 7 ||
+		summary.ProtectedArtifacts != 8 ||
 		summary.FailedArtifacts != 0 ||
 		summary.PublicProvenanceExcluded != 2 ||
-		summary.ActiveGoalExcluded != 5 ||
-		len(summary.RetentionAudits) != 8 {
+		summary.ActiveGoalExcluded != 6 ||
+		len(summary.RetentionAudits) != 9 {
 		t.Fatalf("goal evidence cleanup JSON drifted: %+v", summary)
 	}
 	if stderr != "" {
@@ -929,9 +965,9 @@ func TestGoalRunCLIReportsReadiness(t *testing.T) {
 		"check=evidence_lint status=passed",
 		"check=evidence_verify status=passed",
 		"check=retained_evidence status=passed",
-		"evidence_linted=5",
-		"evidence_verified=5",
-		"retention_audits=5",
+		"evidence_linted=6",
+		"evidence_verified=6",
+		"retention_audits=6",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("goal readiness stdout missing %q\n%s", want, stdout)
@@ -982,7 +1018,7 @@ func TestGoalRunCLIReportsReadiness(t *testing.T) {
 		summary.Status != "passed" ||
 		summary.GoalID != "ao2-weekend-hardening" ||
 		len(summary.Checks) != 6 ||
-		len(summary.RetentionAudits) != 5 ||
+		len(summary.RetentionAudits) != 6 ||
 		summary.RetentionAudits[0].Status != "passed" ||
 		summary.RetentionAudits[0].RetentionStatus != "active_retention" ||
 		summary.RetentionAudits[1].Status != "passed" ||
@@ -992,7 +1028,9 @@ func TestGoalRunCLIReportsReadiness(t *testing.T) {
 		summary.RetentionAudits[3].Status != "passed" ||
 		summary.RetentionAudits[3].RetentionStatus != "active_retention" ||
 		summary.RetentionAudits[4].Status != "passed" ||
-		summary.RetentionAudits[4].RetentionStatus != "active_retention" {
+		summary.RetentionAudits[4].RetentionStatus != "active_retention" ||
+		summary.RetentionAudits[5].Status != "passed" ||
+		summary.RetentionAudits[5].RetentionStatus != "active_retention" {
 		t.Fatalf("goal readiness JSON drifted: %+v", summary)
 	}
 	if stderr != "" {
@@ -1006,7 +1044,7 @@ func TestGoalRunCLIReportsReadiness(t *testing.T) {
 	retainedSHA256 := hex.EncodeToString(retainedSum[:])
 	if summary.Provenance.GoalRun.Path != "examples/goals/ao2-retained-evidence.goal-run.json" ||
 		summary.Provenance.GoalRun.SHA256 != retainedSHA256 ||
-		len(summary.Provenance.Evidence) != 5 ||
+		len(summary.Provenance.Evidence) != 6 ||
 		summary.Provenance.Evidence[0].Path != "docs/evidence/goals/ao2-weekend-hardening/20260619T143000Z-implementation/ao2-pulse-handoff-retention-proof.json" ||
 		summary.Provenance.Evidence[0].SHA256 != "dc28391a22a1ead221ee82f7d3c80d1f3766badf977722dddb147b4484e2f528" ||
 		summary.Provenance.Evidence[1].Path != "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-command-rsi-health-retention-proof.json" ||
@@ -1016,7 +1054,9 @@ func TestGoalRunCLIReportsReadiness(t *testing.T) {
 		summary.Provenance.Evidence[3].Path != "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-foundry-rsi-improvement-gate-retention-proof.json" ||
 		summary.Provenance.Evidence[3].SHA256 != "11efd2f2b59307cb188ec014a533b6f80d080fa2bfc470f257dceca2f4748ea1" ||
 		summary.Provenance.Evidence[4].Path != "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-foundry-rsi-next-improvement-task-retention-proof.json" ||
-		summary.Provenance.Evidence[4].SHA256 != "e6ccfd723f5af775df2d0dafa53eb824e59f3f15df8e60ee1995fdf1fa59059e" {
+		summary.Provenance.Evidence[4].SHA256 != "e6ccfd723f5af775df2d0dafa53eb824e59f3f15df8e60ee1995fdf1fa59059e" ||
+		summary.Provenance.Evidence[5].Path != "docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/bounded-rsi-improvement-chain-retention-proof.json" ||
+		summary.Provenance.Evidence[5].SHA256 != "8e1cb2efef67595d6dff2716554fa9cc959d645e87c050dcef5a4981f73de632" {
 		t.Fatalf("goal readiness provenance drifted: %+v", summary.Provenance)
 	}
 
@@ -1848,10 +1888,11 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "retained readiness audit requested phase", doc: retainedReadinessAudit, want: `"requested_phase": "verification"`},
 		{name: "retained readiness audit retained evidence check", doc: retainedReadinessAudit, want: `"check_id": "retained_evidence"`},
 		{name: "retained readiness audit provenance", doc: retainedReadinessAudit, want: `"provenance"`},
-		{name: "retained readiness audit goal run sha", doc: retainedReadinessAudit, want: `"sha256": "84edc72b2d2f973e0bc254acdd22883e83d65c3945d9dcc732c4bd11b3296410"`},
+		{name: "retained readiness audit goal run sha", doc: retainedReadinessAudit, want: `"sha256": "b5beefb5e82439780c8d376f99bdccff25d26d8be1b405531ce7c965431f7cde"`},
 		{name: "retained readiness audit Foundry RSI candidate proof", doc: retainedReadinessAudit, want: "ao-foundry-rsi-candidate-retention-proof.json"},
 		{name: "retained readiness audit Foundry RSI proof", doc: retainedReadinessAudit, want: "ao-foundry-rsi-improvement-gate-retention-proof.json"},
 		{name: "retained readiness audit Foundry RSI next task proof", doc: retainedReadinessAudit, want: "ao-foundry-rsi-next-improvement-task-retention-proof.json"},
+		{name: "retained readiness audit bounded RSI chain proof", doc: retainedReadinessAudit, want: "bounded-rsi-improvement-chain-retention-proof.json"},
 		{name: "retained readiness audit retention audit", doc: retainedReadinessAudit, want: `"retention_audits"`},
 		{name: "tampered readiness audit provenance", doc: tamperedReadinessAuditExample, want: `"provenance"`},
 		{name: "tampered readiness audit schema marker", doc: tamperedReadinessAuditExample, want: `"readiness_schema_version": "ao.forge.goal-run-readiness-audit.v0.1"`},

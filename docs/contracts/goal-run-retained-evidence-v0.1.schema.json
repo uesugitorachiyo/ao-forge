@@ -311,6 +311,73 @@
               "required": ["label"],
               "properties": {
                 "label": {
+                  "const": "ao-stack-rsi-chain-binding-readback"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "command",
+                "schema_version",
+                "status",
+                "operator_mode",
+                "claim_levels",
+                "evidence_markers",
+                "mutates_repositories"
+              ],
+              "properties": {
+                "command": {
+                  "const": "ao2-control-plane scripts/verify_ao_stack_rsi_chain_binding_readback.py"
+                },
+                "schema_version": {
+                  "const": "ao2.cp-ao-stack-rsi-chain-binding-readback.v1"
+                },
+                "status": {
+                  "const": "passed"
+                },
+                "operator_mode": {
+                  "const": "read_only"
+                },
+                "mutates_repositories": {
+                  "const": false
+                },
+                "evidence_markers": {
+                  "allOf": [
+                    {
+                      "contains": {
+                        "const": "chain=blueprint->foundry->forge->covenant->ao2->control-plane"
+                      }
+                    },
+                    {
+                      "contains": {
+                        "const": "control_plane_ao_stack_rsi_chain_binding_readback=passed"
+                      }
+                    },
+                    {
+                      "contains": {
+                        "const": "bounded_governed_rsi=supported"
+                      }
+                    },
+                    {
+                      "contains": {
+                        "const": "full_autonomous_self_mutating_rsi=denied"
+                      }
+                    },
+                    {
+                      "contains": {
+                        "const": "control_plane_approves_rsi_claims=false"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "required": ["label"],
+              "properties": {
+                "label": {
                   "const": "ao-command-rsi-manifest"
                 }
               }

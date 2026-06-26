@@ -81,6 +81,7 @@ while IFS= read -r invalid_readiness_provenance_audit; do
 done < <(find examples -type f -name '*.goal-run-readiness-audit.provenance-invalid.json' | sort)
 
 bounded_rsi_retention_proof="docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/bounded-rsi-improvement-chain-retention-proof.json"
+ao_stack_rsi_chain_binding_retention_proof="docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-stack-rsi-chain-binding-readback-retention-proof.json"
 
 verify_readiness_audit_provenance() {
   local readiness_audit="$1"
@@ -241,6 +242,11 @@ if [[ ! -f "$bounded_rsi_retention_proof" ]]; then
   exit 1
 fi
 
+if [[ ! -f "$ao_stack_rsi_chain_binding_retention_proof" ]]; then
+  echo "missing AO stack RSI chain-binding retained proof: $ao_stack_rsi_chain_binding_retention_proof" >&2
+  exit 1
+fi
+
 python3 - "$bounded_rsi_retention_proof" <<'PY'
 import json
 import pathlib
@@ -293,6 +299,54 @@ for marker in [
         raise SystemExit(f"bounded RSI retained proof missing AO Command manifest evidence marker {marker}")
 PY
 
+python3 - "$ao_stack_rsi_chain_binding_retention_proof" <<'PY'
+import json
+import pathlib
+import sys
+
+proof_path = pathlib.Path(sys.argv[1])
+proof = json.loads(proof_path.read_text())
+summary = proof.get("summary", "")
+if "AO stack RSI chain-binding readback" not in summary:
+    raise SystemExit("AO stack RSI chain-binding retained proof summary must name the readback")
+if "not a claim of full autonomous self-mutating RSI" not in summary:
+    raise SystemExit("AO stack RSI chain-binding retained proof summary must exclude full autonomous self-mutating RSI")
+
+outputs = {item.get("label"): item for item in proof.get("captured_outputs", [])}
+readback = outputs.get("ao-stack-rsi-chain-binding-readback")
+if readback is None:
+    raise SystemExit("AO stack RSI chain-binding retained proof missing captured readback output")
+if readback.get("schema_version") != "ao2.cp-ao-stack-rsi-chain-binding-readback.v1":
+    raise SystemExit("AO stack RSI chain-binding retained proof schema_version drifted")
+if readback.get("operator_mode") != "read_only":
+    raise SystemExit("AO stack RSI chain-binding readback must remain read_only")
+if readback.get("mutates_repositories") is not False:
+    raise SystemExit("AO stack RSI chain-binding readback must not mutate repositories")
+
+claim_levels = {
+    item.get("claim"): item
+    for item in readback.get("claim_levels", [])
+}
+bounded = claim_levels.get("bounded_governed_rsi")
+if not bounded or bounded.get("decision") != "allowed" or bounded.get("status") != "passed":
+    raise SystemExit("AO stack RSI chain-binding readback must allow bounded_governed_rsi")
+full = claim_levels.get("full_autonomous_self_mutating_rsi")
+if not full or full.get("decision") != "denied" or full.get("status") != "blocked":
+    raise SystemExit("AO stack RSI chain-binding readback must deny full_autonomous_self_mutating_rsi")
+
+markers = set(readback.get("evidence_markers", []))
+for marker in [
+    "chain=blueprint->foundry->forge->covenant->ao2->control-plane",
+    "control_plane_ao_stack_rsi_chain_binding_readback=passed",
+    "bounded_governed_rsi=supported",
+    "full_autonomous_self_mutating_rsi=denied",
+    "control_plane_approves_rsi_claims=false",
+    "ao2-control-plane PR #77",
+]:
+    if marker not in markers:
+        raise SystemExit(f"AO stack RSI chain-binding retained proof missing evidence marker {marker}")
+PY
+
 for retained_evidence_artifact in "${retained_evidence_artifacts[@]}"; do
   "$forge_bin" contract validate \
     --schema docs/contracts/goal-run-retained-evidence-v0.1.schema.json \
@@ -327,12 +381,12 @@ summary = json.loads(pathlib.Path(sys.argv[1]).read_text())
 expected = {
 	    "status": "passed",
 	    "mode": "dry-run",
-	    "artifacts_scanned": 10,
+	    "artifacts_scanned": 11,
 	    "eligible_artifacts": 1,
-	    "protected_artifacts": 9,
+	    "protected_artifacts": 10,
 	    "failed_artifacts": 0,
 	    "public_provenance_excluded": 2,
-	    "active_goal_excluded": 7,
+	    "active_goal_excluded": 8,
 	}
 for key, value in expected.items():
     if summary.get(key) != value:

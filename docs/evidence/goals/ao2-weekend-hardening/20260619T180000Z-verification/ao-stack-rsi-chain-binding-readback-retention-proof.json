@@ -1,0 +1,53 @@
+{
+  "schema_version": "ao.forge.goal-run-retained-evidence.v0.1",
+  "goal_id": "ao2-weekend-hardening",
+  "iteration": "20260619T180000Z-verification",
+  "phase": "verification",
+  "summary": "Retained AO stack RSI chain-binding readback proving Blueprint authorization, Foundry candidate selection, Forge GoalRun state, Covenant claim denial, AO2 evidence, and control-plane observer readback are linked while preserving that this is not a claim of full autonomous self-mutating RSI.",
+  "captured_outputs": [
+    {
+      "label": "ao-stack-rsi-chain-binding-readback",
+      "command": "ao2-control-plane scripts/verify_ao_stack_rsi_chain_binding_readback.py",
+      "schema_version": "ao2.cp-ao-stack-rsi-chain-binding-readback.v1",
+      "status": "passed",
+      "operator_mode": "read_only",
+      "claim_levels": [
+        {
+          "claim": "bounded_governed_rsi",
+          "decision": "allowed",
+          "status": "passed"
+        },
+        {
+          "claim": "full_autonomous_self_mutating_rsi",
+          "decision": "denied",
+          "status": "blocked"
+        }
+      ],
+      "evidence_markers": [
+        "chain=blueprint->foundry->forge->covenant->ao2->control-plane",
+        "control_plane_ao_stack_rsi_chain_binding_readback=passed",
+        "bounded_governed_rsi=supported",
+        "full_autonomous_self_mutating_rsi=denied",
+        "control_plane_approves_rsi_claims=false",
+        "ao2-control-plane PR #77"
+      ],
+      "mutates_repositories": false
+    }
+  ],
+  "retention_policy": {
+    "layout": "docs/evidence/goals/<goal_id>/<YYYYMMDDTHHMMSSZ>-<phase>/",
+    "temporary_paths_allowed": false,
+    "minimum_retention_days_after_terminal_phase": 90
+  },
+  "retention_metadata": {
+    "retained_at": "2026-06-19T18:00:00Z",
+    "retention_class": "loop_evidence",
+    "retain_while_goal_active": true,
+    "deletion_requires_review": true,
+    "cleanup_change_must_name": [
+      "goal_id",
+      "iteration",
+      "reason"
+    ]
+  }
+}

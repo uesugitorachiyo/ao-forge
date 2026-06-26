@@ -64,6 +64,7 @@ evidence, and examples.
 - [Retained GoalRun Evidence Fixture](../examples/goals/ao2-retained-evidence.goal-run.json)
 - [AO Command RSI Manifest Retention Proof](evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-command-rsi-manifest-retention-proof.json)
 - [Bounded RSI Improvement Chain Retention Proof](evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/bounded-rsi-improvement-chain-retention-proof.json)
+- [AO Stack RSI Chain-Binding Readback Retention Proof](evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-stack-rsi-chain-binding-readback-retention-proof.json)
 - [AO Architecture RSI Pin Readback](evidence/architecture/ao-architecture-rsi-pin-readback.json)
 - [Release Candidate Handoff Fixture](../examples/release-preview/release-candidate.v0.1.example.json)
 - [Release Preview Fixtures](../examples/release-preview/)

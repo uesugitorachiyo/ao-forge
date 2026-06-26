@@ -181,6 +181,8 @@ scripts/ao2-pulse-goal-readiness.sh --goal-run examples/goals/ao2-retained-evide
 ./bin/forge contract validate --schema docs/contracts/goal-run-readiness-audit-v0.1.schema.json --document docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/goal-run-readiness-audit.json
 ./bin/forge goal context validate --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --handoff examples/goals/ao2-weekend-hardening.context-handoff.json --now 2026-06-26T12:00:00Z
 ./bin/forge contract validate --schema docs/contracts/goal-run-context-handoff-v0.1.schema.json --document examples/goals/ao2-weekend-hardening.context-handoff.json
+./bin/forge goal verification validate --verification examples/goals/ao2-weekend-hardening.goal-run-verification.json
+./bin/forge contract validate --schema docs/contracts/goal-run-verification-v0.1.schema.json --document examples/goals/ao2-weekend-hardening.goal-run-verification.json
 ./bin/forge goal update --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --out tmp/ao2-weekend-hardening.goal-run.json --phase implementation --next-task "Implement the smallest verified AO2 hardening task." --evidence examples/goals/ao2-weekend-hardening.goal-run.json
 ./bin/forge contract validate --schema docs/contracts/goal-run-update-audit-v0.1.schema.json --document examples/goals/ao2-weekend-hardening.goal-run-update-audit.json
 ./bin/forge goal evidence verify --goal-run examples/goals/ao2-pulse-handoff.goal-run.json

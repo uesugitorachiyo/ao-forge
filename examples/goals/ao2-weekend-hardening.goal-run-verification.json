@@ -1,0 +1,71 @@
+{
+  "schema_version": "ao.forge.goal-run-verification.v0.1",
+  "goal_id": "ao2-weekend-hardening",
+  "goal_run": "examples/goals/ao2-weekend-hardening.goal-run.json",
+  "verified_at": "2026-06-26T12:00:00Z",
+  "phases": [
+    {
+      "phase": "build",
+      "status": "passed",
+      "command": "go build ./...",
+      "evidence": ["tmp/goal-run-verification/build.txt"],
+      "required": true
+    },
+    {
+      "phase": "type_or_vet",
+      "status": "passed",
+      "command": "go vet ./...",
+      "evidence": ["tmp/goal-run-verification/vet.txt"],
+      "required": true
+    },
+    {
+      "phase": "lint",
+      "status": "passed",
+      "command": "git diff --check",
+      "evidence": ["tmp/goal-run-verification/diff-check.txt"],
+      "required": true
+    },
+    {
+      "phase": "tests",
+      "status": "passed",
+      "command": "go test ./...",
+      "evidence": ["tmp/goal-run-verification/tests.txt"],
+      "required": true
+    },
+    {
+      "phase": "contract_schema",
+      "status": "passed",
+      "command": "forge contract validate --schema docs/contracts/goal-run-verification-v0.1.schema.json --document examples/goals/ao2-weekend-hardening.goal-run-verification.json",
+      "evidence": ["tmp/goal-run-verification/schema.txt"],
+      "required": true
+    },
+    {
+      "phase": "security_scan",
+      "status": "passed",
+      "command": "rg -n \"BEGIN .*PRIVATE KEY|Authorization: Bearer|sk-[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}\" README.md docs examples internal cmd",
+      "evidence": ["tmp/goal-run-verification/security-scan.txt"],
+      "required": true
+    },
+    {
+      "phase": "public_readiness",
+      "status": "passed",
+      "command": "forge production-readiness audit --json",
+      "evidence": ["tmp/goal-run-verification/production-readiness.json"],
+      "required": true
+    }
+  ],
+  "security_review": {
+    "status": "passed",
+    "scopes_checked": [
+      "secrets",
+      "input_validation",
+      "authorization",
+      "dependencies",
+      "logging",
+      "public_artifacts"
+    ],
+    "findings": [],
+    "recommended_actions": []
+  },
+  "mutates_live_state": false
+}

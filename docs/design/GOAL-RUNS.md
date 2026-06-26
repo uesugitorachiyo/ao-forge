@@ -27,6 +27,8 @@ The GoalRun schema is `docs/contracts/goal-run-v0.1.schema.json`. The update
 audit schema is `docs/contracts/goal-run-update-audit-v0.1.schema.json`. The
 context handoff schema is
 `docs/contracts/goal-run-context-handoff-v0.1.schema.json`. The
+verification evidence schema is
+`docs/contracts/goal-run-verification-v0.1.schema.json`. The
 evidence verification schema is
 `docs/contracts/goal-run-evidence-verify-v0.1.schema.json`. The evidence path
 lint schema is `docs/contracts/goal-run-evidence-lint-v0.1.schema.json`. The
@@ -36,6 +38,7 @@ readiness audit schema is
 `docs/contracts/goal-run-readiness-audit-v0.1.schema.json`. The examples are
 `examples/goals/ao2-weekend-hardening.goal-run.json`,
 `examples/goals/ao2-weekend-hardening.context-handoff.json`, and
+`examples/goals/ao2-weekend-hardening.goal-run-verification.json`, and
 `examples/goals/ao2-weekend-hardening.goal-run-update-audit.json`.
 AO2 Pulse integration rules live in
 `docs/design/AO2-PULSE-GOAL-RUN-LOOP.md`.
@@ -105,6 +108,25 @@ next steps, open questions, and context budget. It fails closed when it targets
 the wrong GoalRun, exceeds its context budget, disables the resume guard, points
 at stale context older than 24 hours, or skips the requirement to rerun GoalRun
 readiness before implementation resumes.
+
+After implementation or before a long-running loop claims readiness, validate a
+GoalRun verification packet:
+
+```sh
+forge goal verification validate \
+  --verification examples/goals/ao2-weekend-hardening.goal-run-verification.json
+forge contract validate \
+  --schema docs/contracts/goal-run-verification-v0.1.schema.json \
+  --document examples/goals/ao2-weekend-hardening.goal-run-verification.json
+```
+
+The verification packet is the AO Forge adaptation of Claude Code-style
+verification-loop, TDD/eval, code-quality, and security-review habits. It is not
+prompt text. It is a non-mutating contract that records build, type or vet,
+lint, tests, contract schema, security scan, and public-readiness phases plus
+the security scopes reviewed. The command fails closed when a required phase is
+missing, skipped, failed, lacks evidence, or when the packet claims live-state
+mutation.
 
 ## Guarded Updates
 

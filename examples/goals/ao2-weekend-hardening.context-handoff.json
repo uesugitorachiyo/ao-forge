@@ -1,0 +1,30 @@
+{
+  "schema_version": "ao.forge.goal-run-context-handoff.v0.1",
+  "goal_id": "ao2-weekend-hardening",
+  "goal_run": "examples/goals/ao2-weekend-hardening.goal-run.json",
+  "captured_at": "2026-06-26T08:00:00Z",
+  "context_budget": {
+    "estimated_tokens_used": 90000,
+    "max_tokens": 200000,
+    "checkpoint_reason": "phase_boundary"
+  },
+  "current_task": "Select the next bounded AO2 hardening task.",
+  "completed": [
+    "Read the latest GoalRun and verified the current phase."
+  ],
+  "decisions": [
+    "Continue only if the next task matches objective, allowed_scope, and acceptance_criteria."
+  ],
+  "files_touched": [
+    "examples/goals/ao2-weekend-hardening.goal-run.json"
+  ],
+  "next_steps": [
+    "Run forge goal readiness before implementation resumes."
+  ],
+  "open_questions": [],
+  "resume_guard": {
+    "must_read_latest_goal_run": true,
+    "must_run_goal_readiness": true,
+    "on_stale_context": "backoff_or_stop"
+  }
+}

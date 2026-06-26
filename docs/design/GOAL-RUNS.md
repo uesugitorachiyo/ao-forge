@@ -25,14 +25,17 @@ work:
 
 The GoalRun schema is `docs/contracts/goal-run-v0.1.schema.json`. The update
 audit schema is `docs/contracts/goal-run-update-audit-v0.1.schema.json`. The
+context handoff schema is
+`docs/contracts/goal-run-context-handoff-v0.1.schema.json`. The
 evidence verification schema is
 `docs/contracts/goal-run-evidence-verify-v0.1.schema.json`. The evidence path
 lint schema is `docs/contracts/goal-run-evidence-lint-v0.1.schema.json`. The
 retained evidence artifact schema is
 `docs/contracts/goal-run-retained-evidence-v0.1.schema.json`. The
 readiness audit schema is
-`docs/contracts/goal-run-readiness-audit-v0.1.schema.json`. The
-examples are `examples/goals/ao2-weekend-hardening.goal-run.json` and
+`docs/contracts/goal-run-readiness-audit-v0.1.schema.json`. The examples are
+`examples/goals/ao2-weekend-hardening.goal-run.json`,
+`examples/goals/ao2-weekend-hardening.context-handoff.json`, and
 `examples/goals/ao2-weekend-hardening.goal-run-update-audit.json`.
 AO2 Pulse integration rules live in
 `docs/design/AO2-PULSE-GOAL-RUN-LOOP.md`.
@@ -83,6 +86,25 @@ the GoalRun, inspects the next-action guard, checks the optional phase
 transition, lints evidence paths, verifies evidence hashes, and audits retained
 evidence artifacts. Its JSON output is validated by
 `docs/contracts/goal-run-readiness-audit-v0.1.schema.json`.
+
+When a loop resumes after a long run, phase boundary, manual handoff, or context
+pressure, validate a context handoff before continuing:
+
+```sh
+forge goal context validate \
+  --goal-run examples/goals/ao2-weekend-hardening.goal-run.json \
+  --handoff examples/goals/ao2-weekend-hardening.context-handoff.json \
+  --now 2026-06-26T12:00:00Z
+forge contract validate \
+  --schema docs/contracts/goal-run-context-handoff-v0.1.schema.json \
+  --document examples/goals/ao2-weekend-hardening.context-handoff.json
+```
+
+The handoff records the current task, completed work, decisions, files touched,
+next steps, open questions, and context budget. It fails closed when it targets
+the wrong GoalRun, exceeds its context budget, disables the resume guard, points
+at stale context older than 24 hours, or skips the requirement to rerun GoalRun
+readiness before implementation resumes.
 
 ## Guarded Updates
 

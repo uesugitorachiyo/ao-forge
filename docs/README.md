@@ -14,6 +14,7 @@ evidence, and examples.
 ## Contracts
 
 - [GoalRun v0.1 Schema](contracts/goal-run-v0.1.schema.json)
+- [GoalRun Context Handoff v0.1 Schema](contracts/goal-run-context-handoff-v0.1.schema.json)
 - [GoalRun Update Audit v0.1 Schema](contracts/goal-run-update-audit-v0.1.schema.json)
 - [GoalRun Evidence Verify v0.1 Schema](contracts/goal-run-evidence-verify-v0.1.schema.json)
 - [GoalRun Evidence Lint v0.1 Schema](contracts/goal-run-evidence-lint-v0.1.schema.json)
@@ -54,6 +55,7 @@ evidence, and examples.
 ## Examples
 
 - [Example GoalRun](../examples/goals/ao2-weekend-hardening.goal-run.json)
+- [Example GoalRun Context Handoff](../examples/goals/ao2-weekend-hardening.context-handoff.json)
 - [Example GoalRun Update Audit](../examples/goals/ao2-weekend-hardening.goal-run-update-audit.json)
 - [AO2 Pulse Handoff GoalRun](../examples/goals/ao2-pulse-handoff.goal-run.json)
 - [AO2 Pulse Handoff Update Audit](../examples/goals/ao2-pulse-handoff.goal-run-update-audit.json)

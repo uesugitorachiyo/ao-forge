@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/uesugitorachiyo/ao-forge/docs/contracts/goal-run-context-handoff-v0.1.schema.json",
+  "title": "AO Forge GoalRun Context Handoff v0.1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "goal_id",
+    "goal_run",
+    "captured_at",
+    "context_budget",
+    "current_task",
+    "completed",
+    "decisions",
+    "files_touched",
+    "next_steps",
+    "open_questions",
+    "resume_guard"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "ao.forge.goal-run-context-handoff.v0.1"
+    },
+    "goal_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"
+    },
+    "goal_run": {
+      "type": "string",
+      "minLength": 1
+    },
+    "captured_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "context_budget": {
+      "type": "object",
+      "required": ["estimated_tokens_used", "max_tokens", "checkpoint_reason"],
+      "properties": {
+        "estimated_tokens_used": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "checkpoint_reason": {
+          "type": "string",
+          "enum": ["phase_boundary", "context_pressure", "manual_handoff", "overnight_loop", "fresh_session"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "current_task": {
+      "type": "string",
+      "minLength": 1
+    },
+    "completed": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "files_touched": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "next_steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "open_questions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "resume_guard": {
+      "type": "object",
+      "required": ["must_read_latest_goal_run", "must_run_goal_readiness", "on_stale_context"],
+      "properties": {
+        "must_read_latest_goal_run": {
+          "const": true
+        },
+        "must_run_goal_readiness": {
+          "const": true
+        },
+        "on_stale_context": {
+          "type": "string",
+          "enum": ["backoff_or_stop"]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

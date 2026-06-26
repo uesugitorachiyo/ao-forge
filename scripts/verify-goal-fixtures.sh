@@ -30,6 +30,16 @@ while IFS= read -r update_audit; do
   update_audits+=("$update_audit")
 done < <(find examples -type f -name '*.goal-run-update-audit.json' | sort)
 
+goal_verifications=()
+while IFS= read -r goal_verification; do
+  goal_verifications+=("$goal_verification")
+done < <(find examples -type f -name '*.goal-run-verification.json' | sort)
+
+invalid_goal_verifications=()
+while IFS= read -r invalid_goal_verification; do
+  invalid_goal_verifications+=("$invalid_goal_verification")
+done < <(find examples -type f -name '*.goal-run-verification.invalid.json' | sort)
+
 invalid_goal_runs=()
 while IFS= read -r invalid_goal_run; do
   invalid_goal_runs+=("$invalid_goal_run")
@@ -132,6 +142,16 @@ if [[ "${#update_audits[@]}" -eq 0 ]]; then
   exit 1
 fi
 
+if [[ "${#goal_verifications[@]}" -eq 0 ]]; then
+  echo "no GoalRun verification fixtures found under examples/" >&2
+  exit 1
+fi
+
+if [[ "${#invalid_goal_verifications[@]}" -eq 0 ]]; then
+  echo "no invalid GoalRun verification fixtures found under examples/" >&2
+  exit 1
+fi
+
 for goal_run in "${goal_runs[@]}"; do
   "$forge_bin" goal validate --goal-run "$goal_run"
   "$forge_bin" goal readiness --goal-run "$goal_run" --now 2026-06-19T18:00:00Z
@@ -160,6 +180,15 @@ for goal_run in "${goal_runs[@]}"; do
   "$forge_bin" contract validate \
     --schema docs/contracts/goal-run-evidence-verify-v0.1.schema.json \
     --document "$verify_json"
+done
+
+for goal_verification in "${goal_verifications[@]}"; do
+  "$forge_bin" goal verification validate --verification "$goal_verification"
+  verification_json="$verify_dir/$(basename "$goal_verification").verification.json"
+  "$forge_bin" goal verification validate --verification "$goal_verification" --json > "$verification_json"
+  "$forge_bin" contract validate \
+    --schema docs/contracts/goal-run-verification-v0.1.schema.json \
+    --document "$goal_verification"
 done
 
 retained_evidence_count="$(
@@ -378,6 +407,21 @@ for update_audit in "${update_audits[@]}"; do
     --document "$update_audit"
 done
 
+for invalid_goal_verification in "${invalid_goal_verifications[@]}"; do
+  "$forge_bin" contract validate \
+    --schema docs/contracts/goal-run-verification-v0.1.schema.json \
+    --document "$invalid_goal_verification"
+  if "$forge_bin" goal verification validate --verification "$invalid_goal_verification"; then
+    echo "expected GoalRun verification semantic fixture to fail: $invalid_goal_verification" >&2
+    exit 1
+  fi
+  verification_json="$verify_dir/$(basename "$invalid_goal_verification").verification.json"
+  if "$forge_bin" goal verification validate --verification "$invalid_goal_verification" --json > "$verification_json"; then
+    echo "expected GoalRun verification semantic JSON fixture to fail: $invalid_goal_verification" >&2
+    exit 1
+  fi
+done
+
 for invalid_goal_run in "${invalid_goal_runs[@]}"; do
   "$forge_bin" goal validate --goal-run "$invalid_goal_run"
   if "$forge_bin" goal evidence verify --goal-run "$invalid_goal_run"; then
@@ -474,6 +518,8 @@ echo "goal_run_fixtures_validated=${#goal_runs[@]}"
 echo "goal_run_readiness_audits_validated=${#goal_runs[@]}"
 echo "ao2_pulse_readiness_entrypoints_validated=${#goal_runs[@]}"
 echo "goal_run_update_audits_validated=${#update_audits[@]}"
+echo "goal_run_verifications_validated=${#goal_verifications[@]}"
+echo "goal_run_verification_invalid_fixtures_rejected=${#invalid_goal_verifications[@]}"
 echo "goal_run_invalid_fixtures_rejected=${#invalid_goal_runs[@]}"
 echo "goal_run_invalid_path_fixtures_rejected=${#invalid_path_goal_runs[@]}"
 echo "goal_run_update_audit_invalid_path_fixtures_rejected=${#invalid_path_update_audits[@]}"

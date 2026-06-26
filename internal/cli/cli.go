@@ -48,6 +48,8 @@ const (
 	goalRunSchemaPath            = "docs/contracts/goal-run-v0.1.schema.json"
 	goalContextHandoffVersion    = "ao.forge.goal-run-context-handoff.v0.1"
 	goalContextHandoffSchemaPath = "docs/contracts/goal-run-context-handoff-v0.1.schema.json"
+	goalVerificationVersion      = "ao.forge.goal-run-verification.v0.1"
+	goalVerificationSchemaPath   = "docs/contracts/goal-run-verification-v0.1.schema.json"
 	goalRunUpdateAuditVersion    = "ao.forge.goal-run-update-audit.v0.1"
 	goalRunUpdateAuditSchemaPath = "docs/contracts/goal-run-update-audit-v0.1.schema.json"
 	goalRetainedEvidenceVersion  = "ao.forge.goal-run-retained-evidence.v0.1"
@@ -409,6 +411,7 @@ Usage:
   forge goal transitions --goal-run <goal-run.json> [--to <phase>] [--json]
   forge goal readiness --goal-run <goal-run.json> [--to <phase>] [--now <RFC3339>] [--json]
   forge goal context validate --goal-run <goal-run.json> --handoff <context-handoff.json> [--now <RFC3339>] [--json]
+  forge goal verification validate --verification <goal-run-verification.json> [--json]
   forge goal update --goal-run <goal-run.json> --out <goal-run.json> [--phase <phase>] [--next-task <text>] [--last-verified-at <RFC3339>] [--last-iteration-status <status>] [--last-iteration-summary <text>] [--evidence <path> ...] [--json]
   forge goal evidence verify --goal-run <goal-run.json> [--json]
   forge goal evidence lint --goal-run <goal-run.json> [--json]
@@ -422,7 +425,7 @@ Factory terms:
   factory packet  operator-ready JSON summary of plan, gates, evidence, and next actions
 
 Slice 2.8 status:
-  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm compatibility, interactive operator overrides, real-time TUI dashboard, parallel swarm peer review, closed-loop repair compatibility, archived agy-swarms dynamic planning behind explicit opt-in, release mutation, GitHub publishing, release preview audits, release preview enforcement, release preview audit inspection, production-readiness scoring, artifact checksums, artifact checksum verification, contract schema validation, GoalRun validation and inspection, GoalRun transition checks, GoalRun context handoff validation, guarded GoalRun updates, GoalRun update evidence attachments, GoalRun evidence verification, GoalRun evidence path linting, GoalRun retained evidence retention audits, and GoalRun readiness audits are enabled.
+  durable state persistence, live/dry-run execution orchestration, verification, run resumption, multi-workspace orchestration, worker swarm compatibility, interactive operator overrides, real-time TUI dashboard, parallel swarm peer review, closed-loop repair compatibility, archived agy-swarms dynamic planning behind explicit opt-in, release mutation, GitHub publishing, release preview audits, release preview enforcement, release preview audit inspection, production-readiness scoring, artifact checksums, artifact checksum verification, contract schema validation, GoalRun validation and inspection, GoalRun transition checks, GoalRun context handoff validation, GoalRun verification evidence validation, guarded GoalRun updates, GoalRun update evidence attachments, GoalRun evidence verification, GoalRun evidence path linting, GoalRun retained evidence retention audits, and GoalRun readiness audits are enabled.
   Dynamic planning uses archived agy-swarms compatibility and requires AO_FORGE_ENABLE_ARCHIVED_AGY_SWARMS=1.
 `)
 }
@@ -4655,6 +4658,11 @@ type goalContextFlags struct {
 	json        bool
 }
 
+type goalVerificationFlags struct {
+	verificationPath string
+	json             bool
+}
+
 type goalUpdateFlags struct {
 	goalRunPath          string
 	outPath              string
@@ -4768,6 +4776,38 @@ type goalContextSummary struct {
 	ResumeGuard          string   `json:"resume_guard"`
 	Status               string   `json:"status"`
 	Errors               []string `json:"errors"`
+}
+
+type goalRunVerification struct {
+	SchemaVersion string `json:"schema_version"`
+	GoalID        string `json:"goal_id"`
+	GoalRun       string `json:"goal_run"`
+	VerifiedAt    string `json:"verified_at"`
+	Phases        []struct {
+		Phase    string   `json:"phase"`
+		Status   string   `json:"status"`
+		Command  string   `json:"command"`
+		Evidence []string `json:"evidence"`
+		Required bool     `json:"required"`
+	} `json:"phases"`
+	SecurityReview struct {
+		Status             string   `json:"status"`
+		ScopesChecked      []string `json:"scopes_checked"`
+		Findings           []string `json:"findings"`
+		RecommendedActions []string `json:"recommended_actions"`
+	} `json:"security_review"`
+	MutatesLiveState bool `json:"mutates_live_state"`
+}
+
+type goalVerificationSummary struct {
+	VerificationSchemaVersion string   `json:"verification_schema_version"`
+	Verification              string   `json:"verification"`
+	GoalID                    string   `json:"goal_id,omitempty"`
+	GoalRun                   string   `json:"goal_run,omitempty"`
+	VerifiedAt                string   `json:"verified_at,omitempty"`
+	Status                    string   `json:"status"`
+	PhasesChecked             int      `json:"phases_checked"`
+	Errors                    []string `json:"errors"`
 }
 
 type goalUpdateAudit struct {
@@ -4905,12 +4945,14 @@ func runGoal(args []string, stdout, stderr io.Writer) int {
 		return runGoalReadiness(args[1:], stdout, stderr)
 	case "context":
 		return runGoalContext(args[1:], stdout, stderr)
+	case "verification":
+		return runGoalVerification(args[1:], stdout, stderr)
 	case "update":
 		return runGoalUpdate(args[1:], stdout, stderr)
 	case "evidence":
 		return runGoalEvidence(args[1:], stdout, stderr)
 	case "--help", "-h":
-		fmt.Fprintln(stderr, "forge goal: use `forge goal validate --goal-run <goal-run.json> [--json]`, `forge goal inspect --goal-run <goal-run.json> [--json]`, `forge goal transitions --goal-run <goal-run.json> [--to <phase>] [--json]`, `forge goal readiness --goal-run <goal-run.json> [--to <phase>] [--now <RFC3339>] [--json]`, `forge goal context validate --goal-run <goal-run.json> --handoff <context-handoff.json> [--now <RFC3339>] [--json]`, `forge goal update --goal-run <goal-run.json> --out <goal-run.json> [--phase <phase>] [--next-task <text>] [--last-verified-at <RFC3339>] [--last-iteration-status <status>] [--last-iteration-summary <text>] [--evidence <path> ...] [--json]`, `forge goal evidence verify --goal-run <goal-run.json> [--json]`, `forge goal evidence lint --goal-run <goal-run.json> [--json]`, `forge goal evidence retention --artifact <retained-evidence.json> [--now <RFC3339>] [--json]`, or `forge goal evidence cleanup --dry-run [--root <dir>] [--now <RFC3339>] [--json]`")
+		fmt.Fprintln(stderr, "forge goal: use `forge goal validate --goal-run <goal-run.json> [--json]`, `forge goal inspect --goal-run <goal-run.json> [--json]`, `forge goal transitions --goal-run <goal-run.json> [--to <phase>] [--json]`, `forge goal readiness --goal-run <goal-run.json> [--to <phase>] [--now <RFC3339>] [--json]`, `forge goal context validate --goal-run <goal-run.json> --handoff <context-handoff.json> [--now <RFC3339>] [--json]`, `forge goal verification validate --verification <goal-run-verification.json> [--json]`, `forge goal update --goal-run <goal-run.json> --out <goal-run.json> [--phase <phase>] [--next-task <text>] [--last-verified-at <RFC3339>] [--last-iteration-status <status>] [--last-iteration-summary <text>] [--evidence <path> ...] [--json]`, `forge goal evidence verify --goal-run <goal-run.json> [--json]`, `forge goal evidence lint --goal-run <goal-run.json> [--json]`, `forge goal evidence retention --artifact <retained-evidence.json> [--now <RFC3339>] [--json]`, or `forge goal evidence cleanup --dry-run [--root <dir>] [--now <RFC3339>] [--json]`")
 		return 0
 	default:
 		fmt.Fprintf(stderr, "forge goal: unknown subcommand %q\n", args[0])
@@ -4931,6 +4973,23 @@ func runGoalContext(args []string, stdout, stderr io.Writer) int {
 		return 0
 	default:
 		fmt.Fprintf(stderr, "forge goal context: unknown subcommand %q\n", args[0])
+		return 2
+	}
+}
+
+func runGoalVerification(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "forge goal verification: missing subcommand validate")
+		return 2
+	}
+	switch args[0] {
+	case "validate":
+		return runGoalVerificationValidate(args[1:], stdout, stderr)
+	case "--help", "-h":
+		fmt.Fprintln(stderr, "forge goal verification: use `forge goal verification validate --verification <goal-run-verification.json> [--json]`")
+		return 0
+	default:
+		fmt.Fprintf(stderr, "forge goal verification: unknown subcommand %q\n", args[0])
 		return 2
 	}
 }
@@ -5240,6 +5299,34 @@ func parseGoalReadinessFlags(args []string) (goalReadinessFlags, error) {
 		if _, err := time.Parse(time.RFC3339, flags.now); err != nil {
 			return goalReadinessFlags{}, fmt.Errorf("--now must be RFC3339: %w", err)
 		}
+	}
+	return flags, nil
+}
+
+func parseGoalVerificationFlags(args []string) (goalVerificationFlags, error) {
+	var flags goalVerificationFlags
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--verification":
+			value, next, err := readFlagValue(args, i, "--verification")
+			if err != nil {
+				return goalVerificationFlags{}, err
+			}
+			flags.verificationPath = value
+			i = next
+		case "--json":
+			flags.json = true
+		case "--help", "-h":
+			return goalVerificationFlags{}, fmt.Errorf("help is available with `forge --help`")
+		default:
+			if strings.HasPrefix(args[i], "--") {
+				return goalVerificationFlags{}, fmt.Errorf("unknown flag %s", args[i])
+			}
+			return goalVerificationFlags{}, fmt.Errorf("unexpected argument %s", args[i])
+		}
+	}
+	if flags.verificationPath == "" {
+		return goalVerificationFlags{}, fmt.Errorf("missing required --verification")
 	}
 	return flags, nil
 }
@@ -5605,6 +5692,44 @@ func runGoalContextValidate(args []string, stdout, stderr io.Writer) int {
 	writeGoalContextSummary(stdout, summary, flags.json)
 	if summary.Status != "passed" {
 		fmt.Fprintf(stderr, "forge goal context validate: context handoff validation failed for %s\n", summary.Handoff)
+		return 1
+	}
+	return 0
+}
+
+func runGoalVerificationValidate(args []string, stdout, stderr io.Writer) int {
+	flags, err := parseGoalVerificationFlags(args)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge goal verification validate: %v\n", err)
+		return 2
+	}
+
+	summary := goalVerificationSummary{
+		VerificationSchemaVersion: goalVerificationVersion,
+		Verification:              displayPath(flags.verificationPath),
+		Status:                    "passed",
+		Errors:                    []string{},
+	}
+	verification, err := validateAndReadGoalVerification(flags.verificationPath)
+	if err != nil {
+		summary.Status = "failed"
+		summary.Errors = append(summary.Errors, err.Error())
+		writeGoalVerificationSummary(stdout, summary, flags.json)
+		fmt.Fprintf(stderr, "forge goal verification validate: verification validation failed for %s\n", summary.Verification)
+		return 1
+	}
+	summary.GoalID = verification.GoalID
+	summary.GoalRun = verification.GoalRun
+	summary.VerifiedAt = verification.VerifiedAt
+	summary.PhasesChecked = len(verification.Phases)
+
+	for _, validationErr := range validateGoalVerificationSemantics(verification) {
+		summary.Status = "failed"
+		summary.Errors = append(summary.Errors, validationErr)
+	}
+	writeGoalVerificationSummary(stdout, summary, flags.json)
+	if summary.Status != "passed" {
+		fmt.Fprintf(stderr, "forge goal verification validate: verification validation failed for %s\n", summary.Verification)
 		return 1
 	}
 	return 0
@@ -6371,6 +6496,70 @@ func buildGoalTransitionSummary(path string, goal goalRun, toPhase string) goalT
 	return summary
 }
 
+func validateAndReadGoalVerification(path string) (goalRunVerification, error) {
+	if err := validateJSONSchemaDocument(resolveDefaultContractPath(goalVerificationSchemaPath), path); err != nil {
+		return goalRunVerification{}, err
+	}
+	verification, err := readGoalVerification(path)
+	if err != nil {
+		return goalRunVerification{}, err
+	}
+	if verification.SchemaVersion != goalVerificationVersion {
+		return goalRunVerification{}, fmt.Errorf("unsupported verification schema_version %q", verification.SchemaVersion)
+	}
+	return verification, nil
+}
+
+func validateGoalVerificationSemantics(verification goalRunVerification) []string {
+	var validationErrors []string
+	if verification.MutatesLiveState {
+		validationErrors = append(validationErrors, "verification evidence must be non-mutating")
+	}
+	if _, err := time.Parse(time.RFC3339, verification.VerifiedAt); err != nil {
+		validationErrors = append(validationErrors, fmt.Sprintf("verified_at must be RFC3339: %v", err))
+	}
+	required := map[string]bool{
+		"build":            false,
+		"contract_schema":  false,
+		"lint":             false,
+		"public_readiness": false,
+		"security_scan":    false,
+		"tests":            false,
+		"type_or_vet":      false,
+	}
+	for _, phase := range verification.Phases {
+		if _, ok := required[phase.Phase]; ok {
+			required[phase.Phase] = true
+		}
+		if phase.Required && phase.Status != "passed" {
+			validationErrors = append(validationErrors, fmt.Sprintf("required verification phase %s status=%s", phase.Phase, phase.Status))
+		}
+		if phase.Required && strings.TrimSpace(phase.Command) == "" {
+			validationErrors = append(validationErrors, fmt.Sprintf("required verification phase %s missing command", phase.Phase))
+		}
+		if phase.Required && len(phase.Evidence) == 0 {
+			validationErrors = append(validationErrors, fmt.Sprintf("required verification phase %s missing evidence", phase.Phase))
+		}
+	}
+	keys := make([]string, 0, len(required))
+	for phase := range required {
+		keys = append(keys, phase)
+	}
+	sort.Strings(keys)
+	for _, phase := range keys {
+		if !required[phase] {
+			validationErrors = append(validationErrors, fmt.Sprintf("missing required verification phase %s", phase))
+		}
+	}
+	if verification.SecurityReview.Status != "passed" {
+		validationErrors = append(validationErrors, fmt.Sprintf("security review status=%s", verification.SecurityReview.Status))
+	}
+	if len(verification.SecurityReview.ScopesChecked) == 0 {
+		validationErrors = append(validationErrors, "security review scopes_checked is required")
+	}
+	return validationErrors
+}
+
 func validateGoalRunValue(goal goalRun) error {
 	var document any
 	data, err := json.Marshal(goal)
@@ -6429,6 +6618,18 @@ func readGoalContextHandoff(path string) (goalContextHandoff, error) {
 		return goalContextHandoff{}, fmt.Errorf("parse context handoff JSON: %w", err)
 	}
 	return handoff, nil
+}
+
+func readGoalVerification(path string) (goalRunVerification, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return goalRunVerification{}, err
+	}
+	var verification goalRunVerification
+	if err := decodeJSONStrict(data, &verification); err != nil {
+		return goalRunVerification{}, fmt.Errorf("parse goal verification JSON: %w", err)
+	}
+	return verification, nil
 }
 
 func samePath(left, right string) bool {
@@ -6639,6 +6840,34 @@ func writeGoalContextSummary(stdout io.Writer, summary goalContextSummary, asJSO
 	}
 	fmt.Fprintf(stdout, "age_hours=%d\n", summary.AgeHours)
 	fmt.Fprintf(stdout, "resume_guard=%s\n", summary.ResumeGuard)
+	for _, validationErr := range summary.Errors {
+		fmt.Fprintf(stdout, "error=%s\n", validationErr)
+	}
+}
+
+func writeGoalVerificationSummary(stdout io.Writer, summary goalVerificationSummary, asJSON bool) {
+	if asJSON {
+		data, err := marshalIndented(summary)
+		if err != nil {
+			fmt.Fprintf(stdout, "{\"verification_schema_version\":\"%s\",\"status\":\"failed\",\"errors\":[%q]}\n", goalVerificationVersion, err.Error())
+			return
+		}
+		_, _ = stdout.Write(data)
+		return
+	}
+	fmt.Fprintf(stdout, "goal_verification=%s\n", summary.Status)
+	fmt.Fprintf(stdout, "verification=%s\n", summary.Verification)
+	fmt.Fprintf(stdout, "schema=%s\n", displayPath(resolveDefaultContractPath(goalVerificationSchemaPath)))
+	if summary.GoalID != "" {
+		fmt.Fprintf(stdout, "goal_id=%s\n", summary.GoalID)
+	}
+	if summary.GoalRun != "" {
+		fmt.Fprintf(stdout, "goal_run=%s\n", summary.GoalRun)
+	}
+	if summary.VerifiedAt != "" {
+		fmt.Fprintf(stdout, "verified_at=%s\n", summary.VerifiedAt)
+	}
+	fmt.Fprintf(stdout, "phases_checked=%d\n", summary.PhasesChecked)
 	for _, validationErr := range summary.Errors {
 		fmt.Fprintf(stdout, "error=%s\n", validationErr)
 	}
@@ -7558,13 +7787,17 @@ func productionReadinessGateSpecs() []productionReadinessGateSpec {
 		{
 			GateID:   "goalrun.contracts_and_loop",
 			Category: "goalrun",
-			Summary:  "GoalRun schemas, context handoffs, AO2 Pulse readiness entrypoint, and durable loop documentation are present",
-			Evidence: []string{"docs/contracts/goal-run-v0.1.schema.json", "docs/contracts/goal-run-context-handoff-v0.1.schema.json", "docs/contracts/goal-run-readiness-audit-v0.1.schema.json", "examples/goals/ao2-weekend-hardening.context-handoff.json", "scripts/ao2-pulse-goal-readiness.sh", "docs/design/AO2-PULSE-GOAL-RUN-LOOP.md"},
+			Summary:  "GoalRun schemas, context handoffs, verification evidence, AO2 Pulse readiness entrypoint, and durable loop documentation are present",
+			Evidence: []string{"docs/contracts/goal-run-v0.1.schema.json", "docs/contracts/goal-run-context-handoff-v0.1.schema.json", "docs/contracts/goal-run-verification-v0.1.schema.json", "docs/contracts/goal-run-readiness-audit-v0.1.schema.json", "examples/goals/ao2-weekend-hardening.context-handoff.json", "examples/goals/ao2-weekend-hardening.goal-run-verification.json", "scripts/ao2-pulse-goal-readiness.sh", "scripts/verify-goal-fixtures.sh", "docs/design/GOAL-RUNS.md", "docs/design/AO2-PULSE-GOAL-RUN-LOOP.md"},
 			Requires: []productionReadinessRequirement{
 				{Path: "docs/contracts/goal-run-v0.1.schema.json", Pattern: "ao.forge.goal-run.v0.1"},
 				{Path: "docs/contracts/goal-run-context-handoff-v0.1.schema.json", Pattern: "ao.forge.goal-run-context-handoff.v0.1"},
+				{Path: "docs/contracts/goal-run-verification-v0.1.schema.json", Pattern: "ao.forge.goal-run-verification.v0.1"},
+				{Path: "examples/goals/ao2-weekend-hardening.goal-run-verification.json", Pattern: `"phase": "security_scan"`},
 				{Path: "examples/goals/ao2-weekend-hardening.context-handoff.json", Pattern: "must_run_goal_readiness"},
 				{Path: "docs/contracts/goal-run-readiness-audit-v0.1.schema.json", Pattern: "ao.forge.goal-run-readiness-audit.v0.1"},
+				{Path: "scripts/verify-goal-fixtures.sh", Pattern: "goal verification validate"},
+				{Path: "docs/design/GOAL-RUNS.md", Pattern: "forge goal verification validate"},
 				{Path: "scripts/ao2-pulse-goal-readiness.sh", Pattern: "goal readiness --goal-run"},
 				{Path: "docs/design/AO2-PULSE-GOAL-RUN-LOOP.md", Pattern: "An external scheduler may invoke AO2 Pulse on a schedule"},
 			},

@@ -109,6 +109,7 @@ func TestHelpExplainsFactoryTermsWithoutMarketingCopy(t *testing.T) {
 		"forge goal transitions --goal-run <goal-run.json> [--to <phase>] [--json]",
 		"forge goal readiness --goal-run <goal-run.json> [--to <phase>] [--now <RFC3339>] [--json]",
 		"forge goal context validate --goal-run <goal-run.json> --handoff <context-handoff.json> [--now <RFC3339>] [--json]",
+		"forge goal verification validate --verification <goal-run-verification.json> [--json]",
 		"forge goal update --goal-run <goal-run.json> --out <goal-run.json>",
 		"forge goal evidence verify --goal-run <goal-run.json> [--json]",
 		"forge goal evidence lint --goal-run <goal-run.json> [--json]",
@@ -316,6 +317,34 @@ func TestGoalRunCLIValidatesContextHandoffBeforeResume(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "context handoff validation failed") {
 		t.Fatalf("stale context stderr drifted: %s", stderr)
+	}
+}
+
+func TestGoalRunCLIValidatesVerificationEvidence(t *testing.T) {
+	root := repoRoot(t)
+	validPath := filepath.Join(root, "examples", "goals", "ao2-weekend-hardening.goal-run-verification.json")
+	code, stdout, stderr := runCLI("goal", "verification", "validate", "--verification", validPath, "--json")
+	if code != 0 {
+		t.Fatalf("goal verification validate exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	var summary struct {
+		Status string `json:"status"`
+		GoalID string `json:"goal_id"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &summary); err != nil {
+		t.Fatalf("parse verification summary: %v\n%s", err, stdout)
+	}
+	if summary.Status != "passed" || summary.GoalID != "ao2-weekend-hardening" {
+		t.Fatalf("unexpected verification summary: %#v", summary)
+	}
+
+	invalidPath := filepath.Join(root, "examples", "goals", "invalid", "missing-security.goal-run-verification.invalid.json")
+	code, stdout, stderr = runCLI("goal", "verification", "validate", "--verification", invalidPath, "--json")
+	if code != 1 {
+		t.Fatalf("invalid verification exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "missing required verification phase security_scan") {
+		t.Fatalf("invalid verification stdout missing security failure:\n%s\nstderr:\n%s", stdout, stderr)
 	}
 }
 
@@ -1719,6 +1748,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	ao2PulseReadinessScript := readText("scripts", "ao2-pulse-goal-readiness.sh")
 	goalRunSchema := readText("docs", "contracts", "goal-run-v0.1.schema.json")
 	goalRunContextHandoffSchema := readText("docs", "contracts", "goal-run-context-handoff-v0.1.schema.json")
+	goalRunVerificationSchema := readText("docs", "contracts", "goal-run-verification-v0.1.schema.json")
 	goalRunUpdateAuditSchema := readText("docs", "contracts", "goal-run-update-audit-v0.1.schema.json")
 	goalRunEvidenceVerifySchema := readText("docs", "contracts", "goal-run-evidence-verify-v0.1.schema.json")
 	goalRunEvidenceLintSchema := readText("docs", "contracts", "goal-run-evidence-lint-v0.1.schema.json")
@@ -1731,6 +1761,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	goalRunDocs := readText("docs", "design", "GOAL-RUNS.md")
 	goalRunExample := readText("examples", "goals", "ao2-weekend-hardening.goal-run.json")
 	goalRunContextHandoffExample := readText("examples", "goals", "ao2-weekend-hardening.context-handoff.json")
+	goalRunVerificationExample := readText("examples", "goals", "ao2-weekend-hardening.goal-run-verification.json")
 	goalRunUpdateAuditExample := readText("examples", "goals", "ao2-weekend-hardening.goal-run-update-audit.json")
 	ao2PulseHandoffGoalRunExample := readText("examples", "goals", "ao2-pulse-handoff.goal-run.json")
 	ao2PulseHandoffAuditExample := readText("examples", "goals", "ao2-pulse-handoff.goal-run-update-audit.json")
@@ -1784,6 +1815,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "docs index architecture link", doc: docsIndex, want: "[AO Forge v0.1 Architecture](design/AO-FORGE-V0.1.md)"},
 		{name: "docs index goal run schema link", doc: docsIndex, want: "[GoalRun v0.1 Schema](contracts/goal-run-v0.1.schema.json)"},
 		{name: "docs index goal run context handoff schema link", doc: docsIndex, want: "[GoalRun Context Handoff v0.1 Schema](contracts/goal-run-context-handoff-v0.1.schema.json)"},
+		{name: "docs index goal run verification schema link", doc: docsIndex, want: "[GoalRun Verification v0.1 Schema](contracts/goal-run-verification-v0.1.schema.json)"},
 		{name: "docs index goal run update audit schema link", doc: docsIndex, want: "[GoalRun Update Audit v0.1 Schema](contracts/goal-run-update-audit-v0.1.schema.json)"},
 		{name: "docs index goal run evidence verify schema link", doc: docsIndex, want: "[GoalRun Evidence Verify v0.1 Schema](contracts/goal-run-evidence-verify-v0.1.schema.json)"},
 		{name: "docs index goal run evidence lint schema link", doc: docsIndex, want: "[GoalRun Evidence Lint v0.1 Schema](contracts/goal-run-evidence-lint-v0.1.schema.json)"},
@@ -1794,6 +1826,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "docs index architecture RSI pin readback link", doc: docsIndex, want: "[AO Architecture RSI Pin Readback](evidence/architecture/ao-architecture-rsi-pin-readback.json)"},
 		{name: "docs index goal run example link", doc: docsIndex, want: "[Example GoalRun](../examples/goals/ao2-weekend-hardening.goal-run.json)"},
 		{name: "docs index goal run context handoff example link", doc: docsIndex, want: "[Example GoalRun Context Handoff](../examples/goals/ao2-weekend-hardening.context-handoff.json)"},
+		{name: "docs index goal run verification example link", doc: docsIndex, want: "[Example GoalRun Verification](../examples/goals/ao2-weekend-hardening.goal-run-verification.json)"},
 		{name: "docs index goal run update audit example link", doc: docsIndex, want: "[Example GoalRun Update Audit](../examples/goals/ao2-weekend-hardening.goal-run-update-audit.json)"},
 		{name: "docs index AO2 Pulse handoff goal run link", doc: docsIndex, want: "[AO2 Pulse Handoff GoalRun](../examples/goals/ao2-pulse-handoff.goal-run.json)"},
 		{name: "docs index AO2 Pulse handoff audit link", doc: docsIndex, want: "[AO2 Pulse Handoff Update Audit](../examples/goals/ao2-pulse-handoff.goal-run-update-audit.json)"},
@@ -1808,6 +1841,8 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "README retained readiness audit validate command", doc: readme, want: "forge contract validate --schema docs/contracts/goal-run-readiness-audit-v0.1.schema.json --document docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/goal-run-readiness-audit.json"},
 		{name: "README goal context handoff validate command", doc: readme, want: "forge goal context validate --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --handoff examples/goals/ao2-weekend-hardening.context-handoff.json"},
 		{name: "README goal context handoff schema validate command", doc: readme, want: "forge contract validate --schema docs/contracts/goal-run-context-handoff-v0.1.schema.json --document examples/goals/ao2-weekend-hardening.context-handoff.json"},
+		{name: "README goal verification validate command", doc: readme, want: "forge goal verification validate --verification examples/goals/ao2-weekend-hardening.goal-run-verification.json"},
+		{name: "README goal verification schema validate command", doc: readme, want: "forge contract validate --schema docs/contracts/goal-run-verification-v0.1.schema.json --document examples/goals/ao2-weekend-hardening.goal-run-verification.json"},
 		{name: "README goal run update command", doc: readme, want: `./bin/forge goal update --goal-run examples/goals/ao2-weekend-hardening.goal-run.json --out tmp/ao2-weekend-hardening.goal-run.json --phase implementation`},
 		{name: "README goal run update audit validate command", doc: readme, want: "forge contract validate --schema docs/contracts/goal-run-update-audit-v0.1.schema.json --document examples/goals/ao2-weekend-hardening.goal-run-update-audit.json"},
 		{name: "README goal evidence verify command", doc: readme, want: "forge goal evidence verify --goal-run examples/goals/ao2-pulse-handoff.goal-run.json"},
@@ -1862,6 +1897,13 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run context handoff stale policy", doc: goalRunContextHandoffSchema, want: `"on_stale_context"`},
 		{name: "goal run context handoff example schema", doc: goalRunContextHandoffExample, want: `"schema_version": "ao.forge.goal-run-context-handoff.v0.1"`},
 		{name: "goal run context handoff example guard", doc: goalRunContextHandoffExample, want: `"must_run_goal_readiness": true`},
+		{name: "goal run verification schema id", doc: goalRunVerificationSchema, want: `"ao.forge.goal-run-verification.v0.1"`},
+		{name: "goal run verification strict root", doc: goalRunVerificationSchema, want: `"additionalProperties": false`},
+		{name: "goal run verification phases", doc: goalRunVerificationSchema, want: `"security_scan"`},
+		{name: "goal run verification security review", doc: goalRunVerificationSchema, want: `"security_review"`},
+		{name: "goal run verification non-mutating", doc: goalRunVerificationSchema, want: `"mutates_live_state"`},
+		{name: "goal run verification example schema", doc: goalRunVerificationExample, want: `"schema_version": "ao.forge.goal-run-verification.v0.1"`},
+		{name: "goal run verification example public readiness", doc: goalRunVerificationExample, want: `"phase": "public_readiness"`},
 		{name: "goal run update audit schema id", doc: goalRunUpdateAuditSchema, want: `"ao.forge.goal-run-update-audit.v0.1"`},
 		{name: "goal run update audit strict root", doc: goalRunUpdateAuditSchema, want: `"additionalProperties": false`},
 		{name: "goal run update audit previous phase", doc: goalRunUpdateAuditSchema, want: `"previous_phase"`},
@@ -1973,6 +2015,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		{name: "goal run docs context handoff schema", doc: goalRunDocs, want: "docs/contracts/goal-run-context-handoff-v0.1.schema.json"},
 		{name: "goal run docs context handoff example", doc: goalRunDocs, want: "examples/goals/ao2-weekend-hardening.context-handoff.json"},
 		{name: "goal run docs context handoff command", doc: goalRunDocs, want: "forge goal context validate"},
+		{name: "goal run docs verification command", doc: goalRunDocs, want: "forge goal verification validate"},
 		{name: "goal run docs context stale policy", doc: goalRunDocs, want: "stale context older than 24 hours"},
 		{name: "goal run docs missing retention metadata fixture", doc: goalRunDocs, want: "examples/goals/invalid/missing-retention-metadata.goal-run-retained-evidence.invalid.json"},
 		{name: "goal run docs unsafe cleanup retention fixture", doc: goalRunDocs, want: "examples/goals/invalid/unsafe-cleanup-retention.goal-run-retained-evidence.invalid.json"},

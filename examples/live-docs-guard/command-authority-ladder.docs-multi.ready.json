@@ -1,0 +1,17 @@
+{
+  "schema_version": "ao.command.atlas-authority-ladder.v0.1",
+  "status": "blocked",
+  "readback_status": "ready",
+  "current_class": "docs_only_single_file",
+  "next_class": "docs_only_multi_file",
+  "required_evidence": [
+    "sentinel_no_hold:docs_only_multi_file",
+    "promoter_ready:docs_only_multi_file",
+    "rollback_proof:docs_only_multi_file"
+  ],
+  "denied_higher_classes": {
+    "test_only": "denied until docs_only_multi_file live rehearsal completes"
+  },
+  "operator_mode": "read_only",
+  "mutates_repositories": false
+}

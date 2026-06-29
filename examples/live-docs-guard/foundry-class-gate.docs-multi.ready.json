@@ -1,0 +1,33 @@
+{
+  "schema_version": "ao.foundry.mutation-class-gate.v0.1",
+  "status": "ready",
+  "mutation_class": "docs_only_multi_file",
+  "safe_to_request": true,
+  "safe_to_execute": true,
+  "first_failing_check": "",
+  "required_evidence": [
+    "atlas_classification",
+    "covenant_class_ticket",
+    "sentinel_no_hold",
+    "promoter_ready",
+    "rollback_proof",
+    "command_readback",
+    "ci_passed"
+  ],
+  "source_evidence": [],
+  "denied_classes": [
+    "docs_config_only",
+    "test_only",
+    "low_risk_code",
+    "multi_repo_low_risk",
+    "complex_repo_mutation"
+  ],
+  "authority_boundary": "single_class_only",
+  "next_actions": [
+    "Request exactly one docs_only_multi_file mutation through the next governed gate; do not broaden class scope."
+  ],
+  "schedules_work": false,
+  "executes_work": false,
+  "approves_work": false,
+  "mutates_repositories": false
+}

@@ -2849,6 +2849,71 @@ func TestLiveMutationDryRunPlanContractValidatesAuthorityIsolationAndRollback(t 
 	}
 }
 
+func TestLiveDocsExecutionGuardWritesReadyResult(t *testing.T) {
+	root := repoRoot(t)
+	out := filepath.Join(t.TempDir(), "guard.json")
+	code, stdout, stderr := runCLI(
+		"live-docs", "guard",
+		"--plan", filepath.Join(root, "examples", "live-mutation", "docs-only-dry-run-plan.json"),
+		"--approval-gate", filepath.Join(root, "examples", "live-docs-guard", "foundry-approval-gate.ready.json"),
+		"--ticket", filepath.Join(root, "examples", "live-docs-guard", "covenant-ticket.approved.json"),
+		"--sentinel", filepath.Join(root, "examples", "live-docs-guard", "sentinel.no-hold.json"),
+		"--command-readback", filepath.Join(root, "examples", "live-docs-guard", "command-readback.ready.json"),
+		"--out", out,
+	)
+	if code != 0 {
+		t.Fatalf("live-docs guard exit=%d\nstdout=%s\nstderr=%s", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "live_docs_execution_guard=ready") {
+		t.Fatalf("stdout missing ready guard line:\n%s", stdout)
+	}
+	var guard map[string]any
+	readJSONFixture(t, out, &guard)
+	if guard["schema_version"] != "ao.forge.live-docs-execution-guard.v0.1" ||
+		guard["status"] != "ready" ||
+		guard["safe_to_execute"] != true ||
+		guard["mutates_repositories"] != false {
+		t.Fatalf("unexpected guard result: %#v", guard)
+	}
+}
+
+func TestLiveDocsExecutionGuardBlocksMissingApproval(t *testing.T) {
+	root := repoRoot(t)
+	out := filepath.Join(t.TempDir(), "guard.json")
+	code, stdout, stderr := runCLI(
+		"live-docs", "guard",
+		"--plan", filepath.Join(root, "examples", "live-mutation", "docs-only-dry-run-plan.json"),
+		"--approval-gate", filepath.Join(root, "examples", "live-docs-guard", "foundry-approval-gate.blocked.json"),
+		"--ticket", filepath.Join(root, "examples", "live-docs-guard", "covenant-ticket.pending.json"),
+		"--sentinel", filepath.Join(root, "examples", "live-docs-guard", "sentinel.no-hold.json"),
+		"--command-readback", filepath.Join(root, "examples", "live-docs-guard", "command-readback.ready.json"),
+		"--out", out,
+	)
+	if code != 0 {
+		t.Fatalf("blocked live-docs guard should write blocked result without execution, code=%d\nstdout=%s\nstderr=%s", code, stdout, stderr)
+	}
+	var guard map[string]any
+	readJSONFixture(t, out, &guard)
+	if guard["status"] != "blocked" || guard["safe_to_execute"] != false || guard["first_failing_check"] != "approval_gate" {
+		t.Fatalf("unexpected blocked guard result: %#v", guard)
+	}
+}
+
+func TestLiveDocsExecutionGuardContractFixtures(t *testing.T) {
+	root := repoRoot(t)
+	schemaPath := filepath.Join(root, "docs", "contracts", "live-docs-execution-guard-v0.1.schema.json")
+	validPath := filepath.Join(root, "examples", "live-docs-guard", "execution-guard.ready.json")
+	invalidPath := filepath.Join(root, "examples", "live-docs-guard", "invalid", "execution-guard-authority.invalid.json")
+	code, stdout, stderr := runCLI("contract", "validate", "--schema", schemaPath, "--document", validPath)
+	if code != 0 {
+		t.Fatalf("valid live docs guard fixture failed code=%d\nstdout=%s\nstderr=%s", code, stdout, stderr)
+	}
+	code, stdout, stderr = runCLI("contract", "validate", "--schema", schemaPath, "--document", invalidPath)
+	if code == 0 {
+		t.Fatalf("invalid live docs guard fixture passed\nstdout=%s\nstderr=%s", stdout, stderr)
+	}
+}
+
 func TestReleaseContractsRejectDriftFixtures(t *testing.T) {
 	root := repoRoot(t)
 	inventorySchema := filepath.Join(root, "docs", "contracts", "release-artifact-inventory-v0.1.schema.json")

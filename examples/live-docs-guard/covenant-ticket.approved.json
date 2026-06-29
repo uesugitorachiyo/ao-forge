@@ -1,0 +1,18 @@
+{
+  "schema_version": "covenant.live-docs-approval-ticket.v1",
+  "ticket_id": "covenant-live-docs-ticket-0001",
+  "request_id": "foundry-live-docs-approval-request-0001",
+  "approval_state": "approved",
+  "approver": "operator-fixture",
+  "expires_at": "2030-01-01T00:00:00Z",
+  "consumed": false,
+  "scope": {
+    "repo": "ao-foundry",
+    "branch_prefix": "codex/live-docs-",
+    "allowed_path_class": "docs_only",
+    "allowed_paths": [
+      "docs/operations/OVERNIGHT-REFRACTOR-REHEARSAL-RUNBOOK.md"
+    ],
+    "max_changed_files": 1
+  }
+}

@@ -1,0 +1,107 @@
+{
+  "schema_version": "ao.forge.live-docs-execution-guard.v0.1",
+  "status": "ready",
+  "safe_to_execute": true,
+  "allowed_next_action": "prepare_isolated_docs_only_branch",
+  "first_failing_check": "",
+  "blocking_next_actions": [],
+  "maintenance_suggestions": [
+    "This invalid fixture attempts to imply mutation authority."
+  ],
+  "approved_scope": {
+    "repo": "ao-foundry",
+    "allowed_path_class": "docs_only",
+    "allowed_paths": [
+      "docs/operations/OVERNIGHT-REFRACTOR-REHEARSAL-RUNBOOK.md"
+    ],
+    "mutation_class": "tiny_documentation_change",
+    "branch": "codex/docs-only-live-mutation-dry-run"
+  },
+  "source_hashes": [
+    {
+      "name": "dry_run_plan",
+      "path": "examples/live-mutation/docs-only-dry-run-plan.json",
+      "schema_version": "ao.forge.live-mutation-dry-run-plan.v0.1",
+      "status": "dry_run_only",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "approval_gate",
+      "path": "examples/live-docs-guard/foundry-approval-gate.ready.json",
+      "schema_version": "ao.foundry.live-docs-approval-gate.v0.1",
+      "status": "ready",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+      "name": "covenant_ticket",
+      "path": "examples/live-docs-guard/covenant-ticket.approved.json",
+      "schema_version": "covenant.live-docs-approval-ticket.v1",
+      "status": "approved",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    {
+      "name": "sentinel_no_hold",
+      "path": "examples/live-docs-guard/sentinel.no-hold.json",
+      "schema_version": "ao.sentinel.live-docs-mutation-hold.v0.1",
+      "status": "pass",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    {
+      "name": "command_readback",
+      "path": "examples/live-docs-guard/command-readback.ready.json",
+      "schema_version": "ao.command.live-mutation-approval-status.v0.1",
+      "status": "approved",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    }
+  ],
+  "required_evidence": [
+    {
+      "name": "dry_run_plan",
+      "path": "examples/live-mutation/docs-only-dry-run-plan.json",
+      "schema_version": "ao.forge.live-mutation-dry-run-plan.v0.1",
+      "status": "dry_run_only",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "approval_gate",
+      "path": "examples/live-docs-guard/foundry-approval-gate.ready.json",
+      "schema_version": "ao.foundry.live-docs-approval-gate.v0.1",
+      "status": "ready",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+      "name": "covenant_ticket",
+      "path": "examples/live-docs-guard/covenant-ticket.approved.json",
+      "schema_version": "covenant.live-docs-approval-ticket.v1",
+      "status": "approved",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    {
+      "name": "sentinel_no_hold",
+      "path": "examples/live-docs-guard/sentinel.no-hold.json",
+      "schema_version": "ao.sentinel.live-docs-mutation-hold.v0.1",
+      "status": "pass",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    {
+      "name": "command_readback",
+      "path": "examples/live-docs-guard/command-readback.ready.json",
+      "schema_version": "ao.command.live-mutation-approval-status.v0.1",
+      "status": "approved",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    }
+  ],
+  "guards": {
+    "approval_gate": "passed",
+    "covenant_ticket": "passed",
+    "docs_only_allowlist": "passed",
+    "clean_worktree": "planned",
+    "rollback_plan": "planned",
+    "sentinel_no_hold": "passed",
+    "command_readback": "passed"
+  },
+  "mutates_repositories": true,
+  "executes_work": true,
+  "calls_providers": false,
+  "release_or_publish_allowed": false
+}

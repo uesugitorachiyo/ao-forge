@@ -55,6 +55,7 @@ const (
 	goalRetainedEvidenceVersion  = "ao.forge.goal-run-retained-evidence.v0.1"
 	goalRetainedEvidencePath     = "docs/contracts/goal-run-retained-evidence-v0.1.schema.json"
 	goalEvidenceCleanupVersion   = "ao.forge.goal-run-retained-evidence-cleanup.v0.1"
+	liveDocsGuardVersion         = "ao.forge.live-docs-execution-guard.v0.1"
 )
 
 var (
@@ -370,6 +371,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runContract(args[1:], stdout, stderr)
 	case "goal":
 		return runGoal(args[1:], stdout, stderr)
+	case "live-docs":
+		return runLiveDocs(args[1:], stdout, stderr)
 	case "run":
 		return runRun(args[1:], stdout, stderr)
 	case "once":
@@ -406,6 +409,7 @@ Usage:
   forge release-preview inspect --audit <release-preview-audit.json> [--json]
   forge production-readiness audit [--json]
   forge contract validate --schema <schema.json> --document <document.json> [--json]
+  forge live-docs guard --plan <dry-run-plan.json> --approval-gate <approval-gate.json> --ticket <ticket.json> --sentinel <sentinel.json> --command-readback <command-readback.json> --out <guard.json>
   forge goal validate --goal-run <goal-run.json> [--json]
   forge goal inspect --goal-run <goal-run.json> [--json]
   forge goal transitions --goal-run <goal-run.json> [--to <phase>] [--json]
@@ -4537,6 +4541,41 @@ type contractValidationSummary struct {
 	Errors   []string `json:"errors"`
 }
 
+type liveDocsGuardFlags struct {
+	planPath            string
+	approvalGatePath    string
+	ticketPath          string
+	sentinelPath        string
+	commandReadbackPath string
+	outPath             string
+}
+
+type liveDocsGuardEvidence struct {
+	Name          string `json:"name"`
+	Path          string `json:"path"`
+	SchemaVersion string `json:"schema_version"`
+	Status        string `json:"status"`
+	SHA256        string `json:"sha256"`
+}
+
+type liveDocsGuardResult struct {
+	SchemaVersion           string                  `json:"schema_version"`
+	Status                  string                  `json:"status"`
+	SafeToExecute           bool                    `json:"safe_to_execute"`
+	AllowedNextAction       string                  `json:"allowed_next_action"`
+	FirstFailingCheck       string                  `json:"first_failing_check"`
+	BlockingNextActions     []string                `json:"blocking_next_actions"`
+	MaintenanceSuggestions  []string                `json:"maintenance_suggestions"`
+	ApprovedScope           map[string]any          `json:"approved_scope"`
+	SourceHashes            []liveDocsGuardEvidence `json:"source_hashes"`
+	RequiredEvidence        []liveDocsGuardEvidence `json:"required_evidence"`
+	Guards                  map[string]string       `json:"guards"`
+	MutatesRepositories     bool                    `json:"mutates_repositories"`
+	ExecutesWork            bool                    `json:"executes_work"`
+	CallsProviders          bool                    `json:"calls_providers"`
+	ReleaseOrPublishAllowed bool                    `json:"release_or_publish_allowed"`
+}
+
 func runContract(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, "forge contract: missing subcommand")
@@ -4552,6 +4591,365 @@ func runContract(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "forge contract: unknown subcommand %q\n", args[0])
 		return 2
 	}
+}
+
+func runLiveDocs(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "forge live-docs: missing subcommand")
+		return 2
+	}
+	switch args[0] {
+	case "guard":
+		return runLiveDocsGuard(args[1:], stdout, stderr)
+	case "--help", "-h":
+		fmt.Fprintln(stderr, "forge live-docs: use `forge live-docs guard --plan <dry-run-plan.json> --approval-gate <approval-gate.json> --ticket <ticket.json> --sentinel <sentinel.json> --command-readback <command-readback.json> --out <guard.json>`")
+		return 0
+	default:
+		fmt.Fprintf(stderr, "forge live-docs: unknown subcommand %q\n", args[0])
+		return 2
+	}
+}
+
+func parseLiveDocsGuardFlags(args []string) (liveDocsGuardFlags, error) {
+	var flags liveDocsGuardFlags
+	for i := 0; i < len(args); i++ {
+		readValue := func(flag string) (string, error) {
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return "", fmt.Errorf("%s requires a value", flag)
+			}
+			i++
+			return args[i], nil
+		}
+		var err error
+		switch args[i] {
+		case "--plan":
+			flags.planPath, err = readValue(args[i])
+		case "--approval-gate":
+			flags.approvalGatePath, err = readValue(args[i])
+		case "--ticket":
+			flags.ticketPath, err = readValue(args[i])
+		case "--sentinel":
+			flags.sentinelPath, err = readValue(args[i])
+		case "--command-readback":
+			flags.commandReadbackPath, err = readValue(args[i])
+		case "--out":
+			flags.outPath, err = readValue(args[i])
+		case "--help", "-h":
+			return liveDocsGuardFlags{}, fmt.Errorf("help is available with `forge live-docs --help`")
+		default:
+			if strings.HasPrefix(args[i], "--") {
+				return liveDocsGuardFlags{}, fmt.Errorf("unknown flag %s", args[i])
+			}
+			return liveDocsGuardFlags{}, fmt.Errorf("unexpected argument %s", args[i])
+		}
+		if err != nil {
+			return liveDocsGuardFlags{}, err
+		}
+	}
+	missing := []string{}
+	if flags.planPath == "" {
+		missing = append(missing, "--plan")
+	}
+	if flags.approvalGatePath == "" {
+		missing = append(missing, "--approval-gate")
+	}
+	if flags.ticketPath == "" {
+		missing = append(missing, "--ticket")
+	}
+	if flags.sentinelPath == "" {
+		missing = append(missing, "--sentinel")
+	}
+	if flags.commandReadbackPath == "" {
+		missing = append(missing, "--command-readback")
+	}
+	if flags.outPath == "" {
+		missing = append(missing, "--out")
+	}
+	if len(missing) > 0 {
+		return liveDocsGuardFlags{}, fmt.Errorf("missing required %s", strings.Join(missing, ", "))
+	}
+	return flags, nil
+}
+
+func runLiveDocsGuard(args []string, stdout, stderr io.Writer) int {
+	flags, err := parseLiveDocsGuardFlags(args)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge live-docs guard: %v\n", err)
+		return 2
+	}
+
+	result, err := buildLiveDocsGuardResult(flags)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge live-docs guard: %v\n", err)
+		return 1
+	}
+	data, err := marshalIndented(result)
+	if err != nil {
+		fmt.Fprintf(stderr, "forge live-docs guard: marshal result: %v\n", err)
+		return 1
+	}
+	if err := writeFile(flags.outPath, data); err != nil {
+		fmt.Fprintf(stderr, "forge live-docs guard: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "live_docs_execution_guard=%s\n", result.Status)
+	fmt.Fprintf(stdout, "safe_to_execute=%t\n", result.SafeToExecute)
+	fmt.Fprintf(stdout, "guard=%s\n", displayPath(flags.outPath))
+	if result.FirstFailingCheck != "" {
+		fmt.Fprintf(stdout, "first_failing_check=%s\n", result.FirstFailingCheck)
+	}
+	return 0
+}
+
+func buildLiveDocsGuardResult(flags liveDocsGuardFlags) (liveDocsGuardResult, error) {
+	plan, planEvidence, err := readLiveDocsGuardEvidence("dry_run_plan", flags.planPath)
+	if err != nil {
+		return liveDocsGuardResult{}, err
+	}
+	approvalGate, approvalEvidence, err := readLiveDocsGuardEvidence("approval_gate", flags.approvalGatePath)
+	if err != nil {
+		return liveDocsGuardResult{}, err
+	}
+	ticket, ticketEvidence, err := readLiveDocsGuardEvidence("covenant_ticket", flags.ticketPath)
+	if err != nil {
+		return liveDocsGuardResult{}, err
+	}
+	sentinel, sentinelEvidence, err := readLiveDocsGuardEvidence("sentinel_no_hold", flags.sentinelPath)
+	if err != nil {
+		return liveDocsGuardResult{}, err
+	}
+	commandReadback, commandEvidence, err := readLiveDocsGuardEvidence("command_readback", flags.commandReadbackPath)
+	if err != nil {
+		return liveDocsGuardResult{}, err
+	}
+
+	evidence := []liveDocsGuardEvidence{planEvidence, approvalEvidence, ticketEvidence, sentinelEvidence, commandEvidence}
+	result := liveDocsGuardResult{
+		SchemaVersion:       liveDocsGuardVersion,
+		Status:              "ready",
+		SafeToExecute:       true,
+		AllowedNextAction:   "prepare_isolated_docs_only_branch",
+		FirstFailingCheck:   "",
+		BlockingNextActions: []string{},
+		MaintenanceSuggestions: []string{
+			"Keep execution behind the explicit live docs approval path; this guard does not mutate repositories.",
+		},
+		ApprovedScope: map[string]any{
+			"repo":               liveDocsNestedString(plan, "target", "repo"),
+			"allowed_path_class": liveDocsNestedString(plan, "target", "allowed_path_class"),
+			"allowed_paths":      liveDocsNestedArray(plan, "target", "allowed_paths"),
+			"mutation_class":     liveDocsNestedString(plan, "target", "mutation_class"),
+			"branch":             liveDocsNestedString(plan, "worktree_isolation", "branch"),
+		},
+		SourceHashes:     evidence,
+		RequiredEvidence: evidence,
+		Guards: map[string]string{
+			"approval_gate":       "passed",
+			"covenant_ticket":     "passed",
+			"docs_only_allowlist": "passed",
+			"clean_worktree":      "planned",
+			"rollback_plan":       "planned",
+			"sentinel_no_hold":    "passed",
+			"command_readback":    "passed",
+		},
+		MutatesRepositories:     false,
+		ExecutesWork:            false,
+		CallsProviders:          false,
+		ReleaseOrPublishAllowed: false,
+	}
+
+	if failure := liveDocsPlanFailure(plan); failure != "" {
+		return blockedLiveDocsGuard(result, "dry_run_plan", failure), nil
+	}
+	if failure := liveDocsApprovalGateFailure(approvalGate); failure != "" {
+		return blockedLiveDocsGuard(result, "approval_gate", failure), nil
+	}
+	if failure := liveDocsTicketFailure(ticket); failure != "" {
+		return blockedLiveDocsGuard(result, "covenant_ticket", failure), nil
+	}
+	if failure := liveDocsSentinelFailure(sentinel); failure != "" {
+		return blockedLiveDocsGuard(result, "sentinel_no_hold", failure), nil
+	}
+	if failure := liveDocsCommandReadbackFailure(commandReadback); failure != "" {
+		return blockedLiveDocsGuard(result, "command_readback", failure), nil
+	}
+
+	return result, nil
+}
+
+func blockedLiveDocsGuard(result liveDocsGuardResult, check string, reason string) liveDocsGuardResult {
+	result.Status = "blocked"
+	result.SafeToExecute = false
+	result.AllowedNextAction = "resolve_live_docs_guard_blocker"
+	result.FirstFailingCheck = check
+	result.BlockingNextActions = []string{reason}
+	result.Guards[check] = "blocked"
+	return result
+}
+
+func readLiveDocsGuardEvidence(name, path string) (map[string]any, liveDocsGuardEvidence, error) {
+	doc, err := readJSONAny(path)
+	if err != nil {
+		return nil, liveDocsGuardEvidence{}, fmt.Errorf("read %s: %w", name, err)
+	}
+	obj, ok := doc.(map[string]any)
+	if !ok {
+		return nil, liveDocsGuardEvidence{}, fmt.Errorf("%s must be a JSON object", name)
+	}
+	sum, err := sha256File(path)
+	if err != nil {
+		return nil, liveDocsGuardEvidence{}, fmt.Errorf("hash %s: %w", name, err)
+	}
+	status := liveDocsString(obj, "status")
+	if status == "" {
+		status = liveDocsString(obj, "approval_state")
+	}
+	if status == "" {
+		status = "unknown"
+	}
+	return obj, liveDocsGuardEvidence{
+		Name:          name,
+		Path:          displayPath(path),
+		SchemaVersion: liveDocsString(obj, "schema_version"),
+		Status:        status,
+		SHA256:        sum,
+	}, nil
+}
+
+func liveDocsPlanFailure(plan map[string]any) string {
+	switch {
+	case liveDocsString(plan, "schema_version") != "ao.forge.live-mutation-dry-run-plan.v0.1":
+		return "dry-run plan schema_version must be ao.forge.live-mutation-dry-run-plan.v0.1"
+	case liveDocsString(plan, "mode") != "dry_run_only":
+		return "dry-run plan mode must remain dry_run_only"
+	case liveDocsNestedString(plan, "target", "allowed_path_class") != "docs_only":
+		return "dry-run plan target must be docs_only"
+	case liveDocsNestedString(plan, "target", "mutation_class") != "tiny_documentation_change":
+		return "dry-run plan mutation class must be tiny_documentation_change"
+	case len(liveDocsNestedArray(plan, "target", "allowed_paths")) == 0:
+		return "dry-run plan must include docs-only allowed paths"
+	case liveDocsNestedBool(plan, "worktree_isolation", "isolated_worktree") != true:
+		return "dry-run plan must require isolated worktree"
+	case liveDocsNestedBool(plan, "worktree_isolation", "clean_worktree_required") != true:
+		return "dry-run plan must require clean worktree"
+	case liveDocsNestedBool(plan, "worktree_isolation", "reuse_existing_worktree") != false:
+		return "dry-run plan must forbid reused worktrees"
+	case liveDocsNestedString(plan, "rollback_rehearsal", "status") != "planned":
+		return "dry-run plan must include rollback rehearsal plan"
+	case liveDocsNestedBool(plan, "provider_boundary", "provider_calls_allowed") != false:
+		return "dry-run plan must forbid provider calls"
+	case liveDocsNestedBool(plan, "execution_boundary", "mutates_live_repo") != false:
+		return "dry-run plan must keep live repo mutation disabled"
+	case liveDocsNestedBool(plan, "execution_boundary", "operator_kill_switch_required") != true:
+		return "dry-run plan must require operator kill switch"
+	default:
+		return ""
+	}
+}
+
+func liveDocsApprovalGateFailure(gate map[string]any) string {
+	switch {
+	case liveDocsString(gate, "schema_version") != "ao.foundry.live-docs-approval-gate.v0.1":
+		return "approval gate schema_version must be ao.foundry.live-docs-approval-gate.v0.1"
+	case liveDocsString(gate, "status") != "ready":
+		return "approval gate is not ready"
+	case liveDocsBool(gate, "safe_to_execute") != true:
+		return "approval gate did not grant safe_to_execute"
+	case liveDocsBool(gate, "mutates_repositories") != false:
+		return "approval gate must not mutate repositories"
+	default:
+		return ""
+	}
+}
+
+func liveDocsTicketFailure(ticket map[string]any) string {
+	if liveDocsString(ticket, "schema_version") != "covenant.live-docs-approval-ticket.v1" {
+		return "approval ticket schema_version must be covenant.live-docs-approval-ticket.v1"
+	}
+	state := liveDocsString(ticket, "approval_state")
+	if state == "" {
+		state = liveDocsString(ticket, "status")
+	}
+	if state != "approved" {
+		return "approval ticket is not approved"
+	}
+	if liveDocsString(ticket, "approver") == "" {
+		return "approval ticket must include approver identity"
+	}
+	if liveDocsBool(ticket, "consumed") {
+		return "approval ticket is already consumed"
+	}
+	expiresAt := liveDocsString(ticket, "expires_at")
+	if expiresAt == "" {
+		return "approval ticket must include expires_at"
+	}
+	parsedExpiry, err := time.Parse(time.RFC3339, expiresAt)
+	if err != nil {
+		return "approval ticket expires_at must be RFC3339"
+	}
+	if !parsedExpiry.After(time.Now().UTC()) {
+		return "approval ticket is expired"
+	}
+	return ""
+}
+
+func liveDocsSentinelFailure(sentinel map[string]any) string {
+	switch {
+	case liveDocsString(sentinel, "schema_version") != "ao.sentinel.live-docs-mutation-hold.v0.1":
+		return "sentinel verdict schema_version must be ao.sentinel.live-docs-mutation-hold.v0.1"
+	case liveDocsString(sentinel, "status") != "pass":
+		return "sentinel verdict did not pass"
+	case liveDocsBool(sentinel, "hold") != false:
+		return "sentinel hold is active"
+	default:
+		return ""
+	}
+}
+
+func liveDocsCommandReadbackFailure(readback map[string]any) string {
+	switch {
+	case liveDocsString(readback, "schema_version") != "ao.command.live-mutation-approval-status.v0.1":
+		return "command readback schema_version must be ao.command.live-mutation-approval-status.v0.1"
+	case liveDocsString(readback, "status") != "approved":
+		return "command readback is not approved"
+	case liveDocsBool(readback, "safe_to_execute") != true:
+		return "command readback did not show safe_to_execute"
+	case liveDocsString(readback, "operator_mode") != "read_only":
+		return "command readback must be read_only"
+	case liveDocsBool(readback, "mutates_repositories") != false:
+		return "command readback must not mutate repositories"
+	default:
+		return ""
+	}
+}
+
+func liveDocsString(obj map[string]any, key string) string {
+	val, _ := obj[key].(string)
+	return val
+}
+
+func liveDocsBool(obj map[string]any, key string) bool {
+	val, _ := obj[key].(bool)
+	return val
+}
+
+func liveDocsNestedString(obj map[string]any, outer, inner string) string {
+	nested, _ := obj[outer].(map[string]any)
+	return liveDocsString(nested, inner)
+}
+
+func liveDocsNestedBool(obj map[string]any, outer, inner string) bool {
+	nested, _ := obj[outer].(map[string]any)
+	return liveDocsBool(nested, inner)
+}
+
+func liveDocsNestedArray(obj map[string]any, outer, inner string) []any {
+	nested, _ := obj[outer].(map[string]any)
+	values, _ := nested[inner].([]any)
+	if values == nil {
+		return []any{}
+	}
+	return values
 }
 
 func parseContractValidateFlags(args []string) (contractValidateFlags, error) {

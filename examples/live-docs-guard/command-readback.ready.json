@@ -1,0 +1,9 @@
+{
+  "schema_version": "ao.command.live-mutation-approval-status.v0.1",
+  "status": "approved",
+  "safe_to_request": true,
+  "safe_to_execute": true,
+  "approval_state": "approved",
+  "operator_mode": "read_only",
+  "mutates_repositories": false
+}

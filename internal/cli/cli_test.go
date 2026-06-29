@@ -2794,6 +2794,61 @@ func TestReleaseArtifactInventoryContractDocumentsExpectedPublicArtifacts(t *tes
 	}
 }
 
+func TestLiveMutationDryRunPlanContractValidatesAuthorityIsolationAndRollback(t *testing.T) {
+	root := repoRoot(t)
+	readText := func(path ...string) string {
+		t.Helper()
+		bytes, err := os.ReadFile(filepath.Join(append([]string{root}, path...)...))
+		if err != nil {
+			t.Fatalf("read %s: %v", filepath.Join(path...), err)
+		}
+		return string(bytes)
+	}
+
+	schemaPath := filepath.Join(root, "docs", "contracts", "live-mutation-dry-run-plan-v0.1.schema.json")
+	validPath := filepath.Join(root, "examples", "live-mutation", "docs-only-dry-run-plan.json")
+	invalidPath := filepath.Join(root, "examples", "live-mutation", "invalid", "missing-rollback-authority.dry-run-plan.invalid.json")
+
+	for _, check := range []struct {
+		name string
+		doc  string
+		want string
+	}{
+		{name: "docs index schema link", doc: readText("docs", "README.md"), want: "[Live Mutation Dry-Run Plan v0.1 Schema](contracts/live-mutation-dry-run-plan-v0.1.schema.json)"},
+		{name: "README dry-run boundary", doc: readText("README.md"), want: "live-mutation dry-run plan"},
+		{name: "README no live mutation claim", doc: readText("README.md"), want: "does not permit live repository mutation"},
+	} {
+		if !strings.Contains(check.doc, check.want) {
+			t.Fatalf("%s missing %q", check.name, check.want)
+		}
+	}
+
+	code, stdout, stderr := runCLI("contract", "validate", "--schema", schemaPath, "--document", validPath)
+	if code != 0 {
+		t.Fatalf("live mutation dry-run plan fixture failed validation with code %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	for _, want := range []string{
+		"contract_validation=passed",
+		"schema=" + displayPath(schemaPath),
+		"document=" + displayPath(validPath),
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("contract validate stdout missing %q\n%s", want, stdout)
+		}
+	}
+	if stderr != "" {
+		t.Fatalf("contract validate wrote stderr: %s", stderr)
+	}
+
+	code, stdout, stderr = runCLI("contract", "validate", "--schema", schemaPath, "--document", invalidPath)
+	if code != 1 {
+		t.Fatalf("invalid live mutation dry-run plan should fail validation, code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "contract_validation=failed") || !strings.Contains(stderr, "schema validation failed") {
+		t.Fatalf("invalid dry-run plan did not report schema failure\nstdout: %s\nstderr: %s", stdout, stderr)
+	}
+}
+
 func TestReleaseContractsRejectDriftFixtures(t *testing.T) {
 	root := repoRoot(t)
 	inventorySchema := filepath.Join(root, "docs", "contracts", "release-artifact-inventory-v0.1.schema.json")

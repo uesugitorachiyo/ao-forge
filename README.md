@@ -114,6 +114,12 @@ production-readiness gates. Mutating paths remain fail-closed behind Covenant
 decisions, clean-workspace checks, explicit operator confirmation, release
 preview evidence, and release or promotion workflow gates.
 
+The live-mutation dry-run plan contract adds a narrower pre-authority rehearsal
+surface for future governed repository mutation. It requires Covenant authority,
+isolated branch/worktree planning, verification, PR lifecycle, rollback
+rehearsal, provider boundaries, and an operator kill switch.
+The contract does not permit live repository mutation.
+
 ## Product Thesis
 
 Most orchestration systems either run agents directly or manage task queues.
@@ -151,6 +157,7 @@ Start with the focused public docs:
 - [Release Threat Model](docs/security/RELEASE-THREAT-MODEL.md)
 - [Branch Protection Runbook](docs/release/BRANCH-PROTECTION.md)
 - [Production Readiness Audit Schema](docs/contracts/production-readiness-audit-v0.1.schema.json)
+- [Live Mutation Dry-Run Plan Schema](docs/contracts/live-mutation-dry-run-plan-v0.1.schema.json)
 
 For the full public documentation index, including schemas, release docs,
 foundation evidence, and examples, see [docs/README.md](docs/README.md).

@@ -1,0 +1,76 @@
+{
+  "schema_version": "ao.forge.live-mutation-dry-run-plan.v0.1",
+  "plan_id": "forge-live-mutation-plan-docs-only-0001",
+  "mode": "dry_run_only",
+  "target": {
+    "repo": "ao-foundry",
+    "allowed_path_class": "docs_only",
+    "allowed_paths": [
+      "docs/operations/OVERNIGHT-REFRACTOR-REHEARSAL-RUNBOOK.md"
+    ],
+    "mutation_class": "tiny_documentation_change"
+  },
+  "covenant_authority": {
+    "required": true,
+    "status": "approved_dry_run_fixture",
+    "schema_version": "covenant.live-mutation-authority.v1",
+    "authority_packet": "examples/live-mutation/docs-only-authority.packet.json",
+    "authority_packet_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "worktree_isolation": {
+    "required": true,
+    "status": "planned",
+    "branch": "codex/docs-only-live-mutation-dry-run",
+    "isolated_worktree": true,
+    "clean_worktree_required": true,
+    "reuse_existing_worktree": false
+  },
+  "verification": {
+    "required": true,
+    "commands": [
+      "git diff --check",
+      "scripts/check-public-repo-policy.sh",
+      "go test ./... -count=1"
+    ],
+    "evidence": [
+      {
+        "label": "planned-verification",
+        "path": "examples/live-mutation/evidence/docs-only-verification-plan.json",
+        "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      }
+    ]
+  },
+  "pr_lifecycle": {
+    "required": true,
+    "status": "planned",
+    "one_branch_at_a_time": true,
+    "requires_green_checks": true,
+    "merge_method": "rebase",
+    "delete_branch_after_merge": true
+  },
+  "rollback_rehearsal": {
+    "required": true,
+    "status": "planned",
+    "rollback_plan": "examples/live-mutation/rollback/docs-only-rollback-plan.json",
+    "rollback_plan_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "quarantine_on_failure": true
+  },
+  "provider_boundary": {
+    "provider_calls_allowed": false,
+    "requires_exact_digest_approval": true
+  },
+  "execution_boundary": {
+    "mutates_live_repo": false,
+    "creates_release": false,
+    "pushes_tags": false,
+    "uploads_artifacts": false,
+    "operator_kill_switch_required": true
+  },
+  "next_actions": [
+    {
+      "action_id": "request-operator-review",
+      "description": "Review the dry-run plan and keep live mutation disabled until Covenant, isolation, rollback, Sentinel, and Command readback evidence all pass.",
+      "required": true
+    }
+  ]
+}

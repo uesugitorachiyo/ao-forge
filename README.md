@@ -119,6 +119,21 @@ surface for future governed repository mutation. It requires Covenant authority,
 isolated branch/worktree planning, verification, PR lifecycle, rollback
 rehearsal, provider boundaries, and an operator kill switch.
 The contract does not permit live repository mutation.
+The live-docs execution guard turns an approved docs-only request into a
+machine-readable eligibility result:
+
+```sh
+forge live-docs guard \
+  --plan examples/live-mutation/docs-only-dry-run-plan.json \
+  --approval-gate examples/live-docs-guard/foundry-approval-gate.ready.json \
+  --ticket examples/live-docs-guard/covenant-ticket.approved.json \
+  --sentinel examples/live-docs-guard/sentinel.no-hold.json \
+  --command-readback examples/live-docs-guard/command-readback.ready.json \
+  --out tmp/live-docs-execution-guard.json
+```
+
+The guard is fail-closed and does not execute work, mutate repositories, call
+providers, publish, tag, upload, or bypass rollback and kill-switch evidence.
 
 ## Product Thesis
 

@@ -1,0 +1,7 @@
+{
+  "schema_version": "ao.sentinel.live-docs-mutation-hold.v0.1",
+  "status": "pass",
+  "hold": false,
+  "first_failing_check": "",
+  "missing_evidence": []
+}

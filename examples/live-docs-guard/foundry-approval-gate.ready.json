@@ -1,0 +1,9 @@
+{
+  "schema_version": "ao.foundry.live-docs-approval-gate.v0.1",
+  "status": "ready",
+  "safe_to_execute": true,
+  "allowed_next_action": "prepare_isolated_docs_only_branch",
+  "first_failing_check": "",
+  "blocking_next_actions": [],
+  "mutates_repositories": false
+}

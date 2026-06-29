@@ -1,0 +1,11 @@
+{
+  "schema_version": "ao.foundry.live-docs-approval-gate.v0.1",
+  "status": "blocked",
+  "safe_to_execute": false,
+  "allowed_next_action": "request_operator_approval",
+  "first_failing_check": "approval_ticket",
+  "blocking_next_actions": [
+    "operator approval ticket is pending"
+  ],
+  "mutates_repositories": false
+}

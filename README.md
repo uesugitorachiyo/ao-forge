@@ -132,8 +132,17 @@ forge live-docs guard \
   --out tmp/live-docs-execution-guard.json
 ```
 
-The guard is fail-closed and does not execute work, mutate repositories, call
-providers, publish, tag, upload, or bypass rollback and kill-switch evidence.
+The guard is fail-closed. It requires the Foundry approval gate to report
+`safe_to_execute=true`, the Covenant ticket to be approved, unexpired,
+unconsumed, and approver-bound, the dry-run plan to stay within a docs-only
+allowlist, Sentinel to report no hold, and AO Command readback to remain
+`operator_mode=read_only` with `mutates_repositories=false`.
+
+Even when the guard emits `safe_to_execute=true`, it is only an eligibility
+artifact for the first docs-only PR rehearsal chain. It does not execute work,
+mutate repositories, create branches, call providers, publish, tag, upload,
+bypass rollback or kill-switch evidence, or widen the path into fully
+unsupervised complex live mutation.
 
 ## Product Thesis
 

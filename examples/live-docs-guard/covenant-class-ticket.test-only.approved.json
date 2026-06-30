@@ -1,0 +1,78 @@
+{
+  "schema_version": "covenant.mutation-class-authority-ticket.v1",
+  "ticket_id": "mutation-class-test-only-ticket",
+  "request_id": "test-only-authority-request",
+  "approval_state": "approved",
+  "approver_identity": "ao-operator",
+  "issued_at": "2026-06-30T00:00:00Z",
+  "expires_at": "2099-01-01T00:00:00Z",
+  "consumed": false,
+  "mutation_class": "test_only",
+  "approved_scope": {
+    "repo": {
+      "id": "ao-atlas",
+      "remote": "uesugitorachiyo/ao-atlas",
+      "target_branch": "main"
+    },
+    "branch_policy": {
+      "branch_prefix": "codex/test-only-",
+      "requires_isolated_branch": true,
+      "requires_clean_worktree": true,
+      "requires_pr": true,
+      "allows_direct_main": false
+    },
+    "mutation_class": "test_only",
+    "allowed_paths": [
+      "internal/atlas/atlas_test.go"
+    ],
+    "forbidden_paths": [
+      ".github/**",
+      "cmd/**",
+      "internal/**/*.go",
+      "!internal/**/*_test.go",
+      "schemas/**",
+      "scripts/**",
+      "examples/**",
+      "go.mod",
+      "go.sum"
+    ],
+    "max_changed_files": 1,
+    "required_gates": [
+      "atlas_classification",
+      "foundry_class_gate",
+      "sentinel_coverage_no_hold",
+      "promoter_test_only_ready",
+      "command_readback",
+      "ci_passed"
+    ],
+    "rollback_required": true,
+    "rollback_scope": [
+      "internal/atlas/atlas_test.go"
+    ],
+    "rollback_evidence": {
+      "status": "rehearsed",
+      "artifact_paths": [
+        "examples/mutation-class-authority/rollback-test-only.patch"
+      ],
+      "digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    "authority_boundary": "class_ticket_only"
+  },
+  "scope_digest": {
+    "algorithm": "sha256",
+    "value": "55465aef599415185a2f579dae8d146d54e6dd04c5cd7beea571861b8f6738a8",
+    "covers": [
+      "approved_scope"
+    ]
+  },
+  "authority_boundaries": {
+    "exact_scope": true,
+    "class_bound": true,
+    "digest_bound": true,
+    "single_use": true,
+    "live_mutation_grant": false,
+    "provider_calls_allowed": false,
+    "release_or_publish_allowed": false
+  },
+  "operator_note": "Approve the exact test_only request scope for one class-bound authority check only; this ticket does not grant execution."
+}

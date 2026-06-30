@@ -62,7 +62,7 @@
           "pattern": "^[a-z0-9._-]{2,80}$"
         },
         "allowed_path_class": {
-          "const": "docs_only"
+          "enum": ["docs_only", "test_only"]
         },
         "allowed_paths": {
           "type": "array",
@@ -75,7 +75,8 @@
           "enum": [
             "tiny_documentation_change",
             "docs_only_single_file",
-            "docs_only_multi_file"
+            "docs_only_multi_file",
+            "test_only"
           ]
         },
         "branch": {
@@ -110,11 +111,8 @@
         },
         "permitted_classes": {
           "type": "array",
-          "contains": {
-            "const": "docs_only_single_file"
-          },
           "items": {
-            "enum": ["docs_only_single_file", "docs_only_multi_file"]
+            "enum": ["docs_only_single_file", "docs_only_multi_file", "test_only"]
           }
         },
         "legacy_aliases": {
@@ -139,7 +137,7 @@
           }
         },
         "authority_boundary": {
-          "const": "docs_only_classes_only"
+          "enum": ["docs_only_classes_only", "test_only_class_only"]
         },
         "denial_reason": {
           "type": "string",

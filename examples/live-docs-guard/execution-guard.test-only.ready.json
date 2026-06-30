@@ -1,0 +1,127 @@
+{
+  "schema_version": "ao.forge.live-docs-execution-guard.v0.1",
+  "status": "ready",
+  "safe_to_execute": true,
+  "allowed_next_action": "prepare_isolated_test_only_branch",
+  "first_failing_check": "",
+  "blocking_next_actions": [],
+  "maintenance_suggestions": [
+    "Keep execution behind the explicit class-bound live mutation path; this guard does not mutate repositories.",
+    "Code and multi-repo mutation classes remain denied until later slices add class-specific evidence."
+  ],
+  "mutation_class_policy": {
+    "current_class": "test_only",
+    "permitted_classes": [
+      "test_only"
+    ],
+    "legacy_aliases": [
+      "tiny_documentation_change"
+    ],
+    "denied_classes": [
+      "docs_config_only",
+      "low_risk_code",
+      "multi_repo_low_risk",
+      "complex_repo_mutation"
+    ],
+    "authority_boundary": "test_only_class_only",
+    "denial_reason": "code and multi-repo mutation classes require later rollback, hold, promotion, CI, and readback evidence before Forge may permit them"
+  },
+  "approved_scope": {
+    "repo": "ao-atlas",
+    "allowed_path_class": "test_only",
+    "allowed_paths": [
+      "internal/atlas/atlas_test.go"
+    ],
+    "mutation_class": "test_only",
+    "branch": "codex/test-only-live-rehearsal"
+  },
+  "source_hashes": [
+    {
+      "name": "dry_run_plan",
+      "path": "examples/live-mutation/test-only-dry-run-plan.json",
+      "schema_version": "ao.forge.live-mutation-dry-run-plan.v0.1",
+      "status": "unknown",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "approval_gate",
+      "path": "examples/live-docs-guard/foundry-class-gate.test-only.ready.json",
+      "schema_version": "ao.foundry.mutation-class-gate.v0.1",
+      "status": "ready",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+      "name": "covenant_ticket",
+      "path": "examples/live-docs-guard/covenant-class-ticket.test-only.approved.json",
+      "schema_version": "covenant.mutation-class-authority-ticket.v1",
+      "status": "approved",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    {
+      "name": "sentinel_no_hold",
+      "path": "examples/live-docs-guard/sentinel-class.no-hold.test-only.json",
+      "schema_version": "ao.sentinel.mutation-class-hold.v0.1",
+      "status": "no_hold",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    {
+      "name": "command_readback",
+      "path": "examples/live-docs-guard/command-authority-ladder.test-only.ready.json",
+      "schema_version": "ao.command.atlas-authority-ladder.v0.1",
+      "status": "ready",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    }
+  ],
+  "required_evidence": [
+    {
+      "name": "dry_run_plan",
+      "path": "examples/live-mutation/test-only-dry-run-plan.json",
+      "schema_version": "ao.forge.live-mutation-dry-run-plan.v0.1",
+      "status": "unknown",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "approval_gate",
+      "path": "examples/live-docs-guard/foundry-class-gate.test-only.ready.json",
+      "schema_version": "ao.foundry.mutation-class-gate.v0.1",
+      "status": "ready",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+      "name": "covenant_ticket",
+      "path": "examples/live-docs-guard/covenant-class-ticket.test-only.approved.json",
+      "schema_version": "covenant.mutation-class-authority-ticket.v1",
+      "status": "approved",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    {
+      "name": "sentinel_no_hold",
+      "path": "examples/live-docs-guard/sentinel-class.no-hold.test-only.json",
+      "schema_version": "ao.sentinel.mutation-class-hold.v0.1",
+      "status": "no_hold",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    {
+      "name": "command_readback",
+      "path": "examples/live-docs-guard/command-authority-ladder.test-only.ready.json",
+      "schema_version": "ao.command.atlas-authority-ladder.v0.1",
+      "status": "ready",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    }
+  ],
+  "guards": {
+    "dry_run_plan": "passed",
+    "approval_gate": "passed",
+    "covenant_ticket": "passed",
+    "mutation_class": "passed",
+    "docs_only_allowlist": "passed",
+    "clean_worktree": "planned",
+    "rollback_plan": "planned",
+    "sentinel_no_hold": "passed",
+    "command_readback": "passed"
+  },
+  "mutates_repositories": false,
+  "executes_work": false,
+  "calls_providers": false,
+  "release_or_publish_allowed": false
+}

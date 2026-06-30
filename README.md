@@ -138,19 +138,19 @@ forge live-docs guard \
 The guard is fail-closed. It requires the Foundry approval gate to report
 `safe_to_execute=true`, the Covenant ticket to be approved, unexpired,
 unconsumed, and approver-bound, the dry-run plan to stay within a docs-only
-allowlist, Sentinel to report no hold, and AO Command readback to remain
-`operator_mode=read_only` with `mutates_repositories=false`.
-For `docs_only_multi_file`, the guard accepts the class-bound Foundry gate,
-Covenant mutation-class ticket, Sentinel mutation-class no-hold verdict, and
-Atlas authority-ladder Command readback. It emits `mutation_class_policy` with
-`authority_boundary=docs_only_classes_only` and denies `docs_config_only`,
-`test_only`, `low_risk_code`, `multi_repo_low_risk`, and
-`complex_repo_mutation`.
+or test-only allowlist, Sentinel to report no hold, and AO Command readback to
+remain `operator_mode=read_only` with `mutates_repositories=false`.
+For `docs_only_multi_file` and `test_only`, the guard accepts the class-bound
+Foundry gate, Covenant mutation-class ticket, Sentinel mutation-class no-hold
+verdict, and Atlas authority-ladder Command readback. Test-only plans are
+limited to one `*_test.go` path and emit
+`authority_boundary=test_only_class_only`. Code, multi-repo, and complex
+mutation classes remain denied.
 
 Even when the guard emits `safe_to_execute=true`, it is only an eligibility
-artifact for the first docs-only PR rehearsal chain. It does not execute work,
-mutate repositories, create branches, call providers, publish, tag, upload,
-bypass rollback or kill-switch evidence, or widen the path into fully
+artifact for the current class-bound PR rehearsal chain. It does not execute
+work, mutate repositories, create branches, call providers, publish, tag,
+upload, bypass rollback or kill-switch evidence, or widen the path into fully
 unsupervised complex live mutation.
 
 ## Product Thesis

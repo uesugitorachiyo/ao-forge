@@ -62,8 +62,10 @@ var (
 	planIDPattern              = regexp.MustCompile(`^forge-plan-[a-f0-9]{12}$`)
 	windowsAbsolutePathPattern = regexp.MustCompile(`^[A-Za-z]:/`)
 	liveDocsPermittedClasses   = []string{"docs_only_single_file", "docs_only_multi_file"}
+	liveTestPermittedClasses   = []string{"test_only"}
 	liveDocsLegacyAliases      = []string{"tiny_documentation_change"}
 	liveDocsDeniedClasses      = []string{"docs_config_only", "test_only", "low_risk_code", "multi_repo_low_risk", "complex_repo_mutation"}
+	liveTestDeniedClasses      = []string{"docs_config_only", "low_risk_code", "multi_repo_low_risk", "complex_repo_mutation"}
 )
 
 type factoryBrief struct {
@@ -4739,17 +4741,14 @@ func buildLiveDocsGuardResult(flags liveDocsGuardFlags) (liveDocsGuardResult, er
 	mutationClass := liveDocsNestedString(plan, "target", "mutation_class")
 	evidence := []liveDocsGuardEvidence{planEvidence, approvalEvidence, ticketEvidence, sentinelEvidence, commandEvidence}
 	result := liveDocsGuardResult{
-		SchemaVersion:       liveDocsGuardVersion,
-		Status:              "ready",
-		SafeToExecute:       true,
-		AllowedNextAction:   "prepare_isolated_docs_only_branch",
-		FirstFailingCheck:   "",
-		BlockingNextActions: []string{},
-		MaintenanceSuggestions: []string{
-			"Keep execution behind the explicit live docs approval path; this guard does not mutate repositories.",
-			"Code and non-doc mutation classes remain denied until later slices add class-specific evidence.",
-		},
-		MutationClassPolicy: liveDocsMutationClassPolicy(mutationClass),
+		SchemaVersion:          liveDocsGuardVersion,
+		Status:                 "ready",
+		SafeToExecute:          true,
+		AllowedNextAction:      liveDocsAllowedNextAction(mutationClass),
+		FirstFailingCheck:      "",
+		BlockingNextActions:    []string{},
+		MaintenanceSuggestions: liveDocsMaintenanceSuggestions(mutationClass),
+		MutationClassPolicy:    liveDocsMutationClassPolicy(mutationClass),
 		ApprovedScope: map[string]any{
 			"repo":               liveDocsNestedString(plan, "target", "repo"),
 			"allowed_path_class": liveDocsNestedString(plan, "target", "allowed_path_class"),
@@ -4838,6 +4837,16 @@ func readLiveDocsGuardEvidence(name, path string) (map[string]any, liveDocsGuard
 }
 
 func liveDocsMutationClassPolicy(mutationClass string) liveDocsClassPolicy {
+	if liveDocsClassIn(mutationClass, liveTestPermittedClasses) {
+		return liveDocsClassPolicy{
+			CurrentClass:      mutationClass,
+			PermittedClasses:  append([]string{}, liveTestPermittedClasses...),
+			LegacyAliases:     append([]string{}, liveDocsLegacyAliases...),
+			DeniedClasses:     append([]string{}, liveTestDeniedClasses...),
+			AuthorityBoundary: "test_only_class_only",
+			DenialReason:      "code and multi-repo mutation classes require later rollback, hold, promotion, CI, and readback evidence before Forge may permit them",
+		}
+	}
 	return liveDocsClassPolicy{
 		CurrentClass:      mutationClass,
 		PermittedClasses:  append([]string{}, liveDocsPermittedClasses...),
@@ -4852,7 +4861,7 @@ func liveDocsMutationClassFailure(mutationClass string) string {
 	switch {
 	case mutationClass == "":
 		return "dry-run plan must name a mutation_class"
-	case liveDocsClassIn(mutationClass, liveDocsPermittedClasses), liveDocsClassIn(mutationClass, liveDocsLegacyAliases):
+	case liveDocsClassIn(mutationClass, liveDocsPermittedClasses), liveDocsClassIn(mutationClass, liveTestPermittedClasses), liveDocsClassIn(mutationClass, liveDocsLegacyAliases):
 		return ""
 	case liveDocsClassIn(mutationClass, liveDocsDeniedClasses):
 		return fmt.Sprintf("mutation class %s is denied until later slices add class-specific execution evidence", mutationClass)
@@ -4874,22 +4883,43 @@ func liveDocsUsesLegacyClass(mutationClass string) bool {
 	return liveDocsClassIn(mutationClass, liveDocsLegacyAliases)
 }
 
+func liveDocsAllowedNextAction(mutationClass string) string {
+	if liveDocsClassIn(mutationClass, liveTestPermittedClasses) {
+		return "prepare_isolated_test_only_branch"
+	}
+	return "prepare_isolated_docs_only_branch"
+}
+
+func liveDocsMaintenanceSuggestions(mutationClass string) []string {
+	if liveDocsClassIn(mutationClass, liveTestPermittedClasses) {
+		return []string{
+			"Keep execution behind the explicit class-bound live mutation path; this guard does not mutate repositories.",
+			"Code and multi-repo mutation classes remain denied until later slices add class-specific evidence.",
+		}
+	}
+	return []string{
+		"Keep execution behind the explicit live docs approval path; this guard does not mutate repositories.",
+		"Code and non-doc mutation classes remain denied until later slices add class-specific evidence.",
+	}
+}
+
 func liveDocsPlanFailure(plan map[string]any) string {
 	mutationClass := liveDocsNestedString(plan, "target", "mutation_class")
+	allowedPathClass := liveDocsNestedString(plan, "target", "allowed_path_class")
 	allowedPaths := liveDocsNestedArray(plan, "target", "allowed_paths")
 	switch {
 	case liveDocsString(plan, "schema_version") != "ao.forge.live-mutation-dry-run-plan.v0.1":
 		return "dry-run plan schema_version must be ao.forge.live-mutation-dry-run-plan.v0.1"
 	case liveDocsString(plan, "mode") != "dry_run_only":
 		return "dry-run plan mode must remain dry_run_only"
-	case liveDocsNestedString(plan, "target", "allowed_path_class") != "docs_only":
-		return "dry-run plan target must be docs_only"
+	case liveDocsAllowedPathClassFailure(mutationClass, allowedPathClass) != "":
+		return liveDocsAllowedPathClassFailure(mutationClass, allowedPathClass)
 	case len(allowedPaths) == 0:
-		return "dry-run plan must include docs-only allowed paths"
+		return "dry-run plan must include allowed paths"
 	case !liveDocsAllowedPathCount(mutationClass, len(allowedPaths)):
 		return fmt.Sprintf("dry-run plan allowed path count exceeds %s limit", mutationClass)
-	case !liveDocsAllowedPathsAreDocsOnly(allowedPaths):
-		return "dry-run plan allowed paths must stay within docs-only paths"
+	case !liveDocsAllowedPathsForClass(mutationClass, allowedPaths):
+		return fmt.Sprintf("dry-run plan allowed paths must stay within %s paths", mutationClass)
 	case liveDocsNestedBool(plan, "worktree_isolation", "isolated_worktree") != true:
 		return "dry-run plan must require isolated worktree"
 	case liveDocsNestedBool(plan, "worktree_isolation", "clean_worktree_required") != true:
@@ -4915,9 +4945,34 @@ func liveDocsAllowedPathCount(mutationClass string, count int) bool {
 		return count == 1
 	case "docs_only_multi_file":
 		return count >= 1 && count <= 2
+	case "test_only":
+		return count == 1
 	default:
 		return false
 	}
+}
+
+func liveDocsAllowedPathClassFailure(mutationClass, allowedPathClass string) string {
+	switch {
+	case liveDocsClassIn(mutationClass, liveDocsPermittedClasses), liveDocsClassIn(mutationClass, liveDocsLegacyAliases):
+		if allowedPathClass != "docs_only" {
+			return "dry-run plan docs mutation target must be docs_only"
+		}
+	case liveDocsClassIn(mutationClass, liveTestPermittedClasses):
+		if allowedPathClass != "test_only" {
+			return "dry-run plan test mutation target must be test_only"
+		}
+	default:
+		return "dry-run plan target has no permitted path class for mutation_class"
+	}
+	return ""
+}
+
+func liveDocsAllowedPathsForClass(mutationClass string, paths []any) bool {
+	if liveDocsClassIn(mutationClass, liveTestPermittedClasses) {
+		return liveDocsAllowedPathsAreTestOnly(paths)
+	}
+	return liveDocsAllowedPathsAreDocsOnly(paths)
 }
 
 func liveDocsAllowedPathsAreDocsOnly(paths []any) bool {
@@ -4933,6 +4988,22 @@ func liveDocsAllowedPathsAreDocsOnly(paths []any) bool {
 			continue
 		}
 		return false
+	}
+	return true
+}
+
+func liveDocsAllowedPathsAreTestOnly(paths []any) bool {
+	for _, item := range paths {
+		path, ok := item.(string)
+		if !ok || path == "" {
+			return false
+		}
+		if strings.HasPrefix(path, "/") || strings.HasPrefix(path, "~") || strings.Contains(path, "..") || windowsAbsolutePathPattern.MatchString(path) {
+			return false
+		}
+		if !strings.HasSuffix(path, "_test.go") {
+			return false
+		}
 	}
 	return true
 }

@@ -4575,6 +4575,7 @@ type liveDocsGuardResult struct {
 	BlockingNextActions     []string                `json:"blocking_next_actions"`
 	MaintenanceSuggestions  []string                `json:"maintenance_suggestions"`
 	MutationClassPolicy     liveDocsClassPolicy     `json:"mutation_class_policy"`
+	PatchLimits             *liveDocsPatchLimits    `json:"patch_limits,omitempty"`
 	ApprovedScope           map[string]any          `json:"approved_scope"`
 	SourceHashes            []liveDocsGuardEvidence `json:"source_hashes"`
 	RequiredEvidence        []liveDocsGuardEvidence `json:"required_evidence"`
@@ -4592,6 +4593,16 @@ type liveDocsClassPolicy struct {
 	DeniedClasses     []string `json:"denied_classes"`
 	AuthorityBoundary string   `json:"authority_boundary"`
 	DenialReason      string   `json:"denial_reason"`
+}
+
+type liveDocsPatchLimits struct {
+	MutationClass                string   `json:"mutation_class"`
+	MaxSourceFiles               int      `json:"max_source_files"`
+	MaxTestFiles                 int      `json:"max_test_files"`
+	MaxChangedFiles              int      `json:"max_changed_files"`
+	RequiresRollbackPatch        bool     `json:"requires_rollback_patch"`
+	RequiresVerificationCommands bool     `json:"requires_verification_commands"`
+	DeniedPathClasses            []string `json:"denied_path_classes"`
 }
 
 func runContract(args []string, stdout, stderr io.Writer) int {
@@ -4754,6 +4765,7 @@ func buildLiveDocsGuardResult(flags liveDocsGuardFlags) (liveDocsGuardResult, er
 		BlockingNextActions:    []string{},
 		MaintenanceSuggestions: liveDocsMaintenanceSuggestions(mutationClass),
 		MutationClassPolicy:    liveDocsMutationClassPolicy(mutationClass),
+		PatchLimits:            liveDocsPatchLimitsForClass(mutationClass),
 		ApprovedScope: map[string]any{
 			"repo":               liveDocsNestedString(plan, "target", "repo"),
 			"allowed_path_class": liveDocsNestedString(plan, "target", "allowed_path_class"),
@@ -4957,6 +4969,10 @@ func liveDocsPlanFailure(plan map[string]any) string {
 		return "dry-run plan must forbid reused worktrees"
 	case liveDocsNestedString(plan, "rollback_rehearsal", "status") != "planned":
 		return "dry-run plan must include rollback rehearsal plan"
+	case liveDocsNestedString(plan, "rollback_rehearsal", "rollback_plan") == "":
+		return "dry-run plan must include rollback plan evidence"
+	case len(liveDocsNestedArray(plan, "verification", "commands")) == 0:
+		return "dry-run plan must include verification commands"
 	case liveDocsNestedBool(plan, "provider_boundary", "provider_calls_allowed") != false:
 		return "dry-run plan must forbid provider calls"
 	case liveDocsNestedBool(plan, "execution_boundary", "mutates_live_repo") != false:
@@ -4977,7 +4993,7 @@ func liveDocsAllowedPathCount(mutationClass string, count int) bool {
 	case "test_only":
 		return count == 1
 	case "low_risk_code":
-		return count == 1
+		return count >= 1 && count <= 2
 	default:
 		return false
 	}
@@ -5047,6 +5063,8 @@ func liveDocsAllowedPathsAreTestOnly(paths []any) bool {
 }
 
 func liveDocsAllowedPathsAreLowRiskCode(paths []any) bool {
+	sourceFiles := 0
+	testFiles := 0
 	for _, item := range paths {
 		path, ok := item.(string)
 		if !ok || path == "" {
@@ -5055,11 +5073,66 @@ func liveDocsAllowedPathsAreLowRiskCode(paths []any) bool {
 		if strings.HasPrefix(path, "/") || strings.HasPrefix(path, "~") || strings.Contains(path, "..") || windowsAbsolutePathPattern.MatchString(path) {
 			return false
 		}
-		if !strings.HasPrefix(path, "internal/") || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+		if liveDocsLowRiskForbiddenPath(path) || !strings.HasPrefix(path, "internal/") || !strings.HasSuffix(path, ".go") {
 			return false
 		}
+		if strings.HasSuffix(path, "_test.go") {
+			testFiles++
+			continue
+		}
+		sourceFiles++
 	}
-	return true
+	return sourceFiles <= 1 && testFiles <= 1 && sourceFiles+testFiles > 0
+}
+
+func liveDocsLowRiskForbiddenPath(path string) bool {
+	for _, forbidden := range []string{
+		".github/",
+		"cmd/",
+		"config/",
+		"configs/",
+		"docs/",
+		"examples/",
+		"release/",
+		"releases/",
+		"schemas/",
+		"scripts/",
+		"secrets/",
+		"providers/",
+		"internal/provider/",
+		"internal/providers/",
+		"internal/secrets/",
+		"go.mod",
+		"go.sum",
+	} {
+		if path == strings.TrimSuffix(forbidden, "/") || strings.HasPrefix(path, forbidden) {
+			return true
+		}
+	}
+	return false
+}
+
+func liveDocsPatchLimitsForClass(mutationClass string) *liveDocsPatchLimits {
+	if !liveDocsClassIn(mutationClass, liveLowRiskPermittedClasses) {
+		return nil
+	}
+	return &liveDocsPatchLimits{
+		MutationClass:                mutationClass,
+		MaxSourceFiles:               1,
+		MaxTestFiles:                 1,
+		MaxChangedFiles:              2,
+		RequiresRollbackPatch:        true,
+		RequiresVerificationCommands: true,
+		DeniedPathClasses: []string{
+			"scripts",
+			"ci_workflows",
+			"release",
+			"secrets",
+			"config_expansion",
+			"provider_paths",
+			"broad_refactors",
+		},
+	}
 }
 
 func liveDocsApprovalGateFailure(gate map[string]any, mutationClass string) string {

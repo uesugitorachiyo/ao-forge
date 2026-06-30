@@ -148,8 +148,12 @@ limited to one `*_test.go` path and emit
 `authority_boundary=test_only_class_only`. For `low_risk_code`, the guard may
 emit `safe_to_request=true` only when all low-risk dry-run evidence is present,
 but it must keep `safe_to_execute=false` and
-`authority_boundary=low_risk_code_dry_run_only`. Multi-repo, complex, and fully
-unsupervised mutation classes remain denied.
+`authority_boundary=low_risk_code_dry_run_only`. Its `patch_limits` allow at
+most one `internal/**/*.go` source file and one matching test file, require
+rollback-patch and verification-command evidence before execution authority can
+exist, and deny scripts, CI workflow, release, secret, config-expansion,
+provider, and broad-refactor paths. Multi-repo, complex, and fully unsupervised
+mutation classes remain denied.
 
 Even when the guard emits `safe_to_execute=true` for lower classes, it is only
 an eligibility artifact for the current class-bound PR rehearsal chain. It does

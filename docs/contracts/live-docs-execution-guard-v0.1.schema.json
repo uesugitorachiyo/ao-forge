@@ -148,6 +148,42 @@
       },
       "additionalProperties": false
     },
+    "patch_limits": {
+      "type": "object",
+      "required": [
+        "mutation_class",
+        "max_source_files",
+        "max_test_files",
+        "max_changed_files",
+        "requires_rollback_patch",
+        "requires_verification_commands",
+        "denied_path_classes"
+      ],
+      "properties": {
+        "mutation_class": { "const": "low_risk_code" },
+        "max_source_files": { "const": 1 },
+        "max_test_files": { "const": 1 },
+        "max_changed_files": { "const": 2 },
+        "requires_rollback_patch": { "const": true },
+        "requires_verification_commands": { "const": true },
+        "denied_path_classes": {
+          "type": "array",
+          "minItems": 7,
+          "items": {
+            "enum": [
+              "scripts",
+              "ci_workflows",
+              "release",
+              "secrets",
+              "config_expansion",
+              "provider_paths",
+              "broad_refactors"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "source_hashes": {
       "type": "array",
       "minItems": 5,

@@ -26,14 +26,31 @@
     "authority_boundary": "low_risk_code_dry_run_only",
     "denial_reason": "low_risk_code may only request dry-run evidence here; live code execution requires later rollback, hold, promotion, CI, and readback proof"
   },
+  "patch_limits": {
+    "mutation_class": "low_risk_code",
+    "max_source_files": 1,
+    "max_test_files": 1,
+    "max_changed_files": 2,
+    "requires_rollback_patch": true,
+    "requires_verification_commands": true,
+    "denied_path_classes": [
+      "scripts",
+      "ci_workflows",
+      "release",
+      "secrets",
+      "config_expansion",
+      "provider_paths",
+      "broad_refactors"
+    ]
+  },
   "approved_scope": {
-    "repo": "ao-atlas",
     "allowed_path_class": "low_risk_code",
     "allowed_paths": [
       "internal/atlas/validate.go"
     ],
+    "branch": "codex/low-risk-code-dry-run",
     "mutation_class": "low_risk_code",
-    "branch": "codex/low-risk-code-dry-run"
+    "repo": "ao-atlas"
   },
   "source_hashes": [
     {
@@ -41,35 +58,35 @@
       "path": "examples/live-mutation/low-risk-code-dry-run-plan.json",
       "schema_version": "ao.forge.live-mutation-dry-run-plan.v0.1",
       "status": "unknown",
-      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      "sha256": "5edf15502dbee9cda06a8d8bc77ea1601128a46292787a3e9be7e89bc234465f"
     },
     {
       "name": "approval_gate",
       "path": "examples/live-docs-guard/foundry-class-gate.low-risk-code.dry-run-ready.json",
       "schema_version": "ao.foundry.mutation-class-gate.v0.1",
       "status": "ready",
-      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      "sha256": "ad6bc984fe50f84732f8b04b7bdc32c2c45802f1ada9aa36a182f8345351b255"
     },
     {
       "name": "covenant_ticket",
       "path": "examples/live-docs-guard/covenant-class-ticket.low-risk-code.approved.json",
       "schema_version": "covenant.mutation-class-authority-ticket.v1",
       "status": "approved",
-      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      "sha256": "32247d58925557115cdd4c88a593909144ba8b77ff333e77ed1d090a326807ee"
     },
     {
       "name": "sentinel_no_hold",
       "path": "examples/live-docs-guard/sentinel-class.no-hold.low-risk-code.json",
       "schema_version": "ao.sentinel.mutation-class-hold.v0.1",
       "status": "no_hold",
-      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      "sha256": "acf857061861a8a4832ae680004fac3dead455c9063c160f2befb67ff479b115"
     },
     {
       "name": "command_readback",
       "path": "examples/live-docs-guard/command-authority-ladder.low-risk-code.dry-run-ready.json",
       "schema_version": "ao.command.atlas-authority-ladder.v0.1",
       "status": "ready",
-      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      "sha256": "ab5d28bac7f81bb411e2678bbc32ce6913d5214cf768f121228a3a30763e7db7"
     }
   ],
   "required_evidence": [
@@ -78,47 +95,47 @@
       "path": "examples/live-mutation/low-risk-code-dry-run-plan.json",
       "schema_version": "ao.forge.live-mutation-dry-run-plan.v0.1",
       "status": "unknown",
-      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      "sha256": "5edf15502dbee9cda06a8d8bc77ea1601128a46292787a3e9be7e89bc234465f"
     },
     {
       "name": "approval_gate",
       "path": "examples/live-docs-guard/foundry-class-gate.low-risk-code.dry-run-ready.json",
       "schema_version": "ao.foundry.mutation-class-gate.v0.1",
       "status": "ready",
-      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      "sha256": "ad6bc984fe50f84732f8b04b7bdc32c2c45802f1ada9aa36a182f8345351b255"
     },
     {
       "name": "covenant_ticket",
       "path": "examples/live-docs-guard/covenant-class-ticket.low-risk-code.approved.json",
       "schema_version": "covenant.mutation-class-authority-ticket.v1",
       "status": "approved",
-      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      "sha256": "32247d58925557115cdd4c88a593909144ba8b77ff333e77ed1d090a326807ee"
     },
     {
       "name": "sentinel_no_hold",
       "path": "examples/live-docs-guard/sentinel-class.no-hold.low-risk-code.json",
       "schema_version": "ao.sentinel.mutation-class-hold.v0.1",
       "status": "no_hold",
-      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      "sha256": "acf857061861a8a4832ae680004fac3dead455c9063c160f2befb67ff479b115"
     },
     {
       "name": "command_readback",
       "path": "examples/live-docs-guard/command-authority-ladder.low-risk-code.dry-run-ready.json",
       "schema_version": "ao.command.atlas-authority-ladder.v0.1",
       "status": "ready",
-      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      "sha256": "ab5d28bac7f81bb411e2678bbc32ce6913d5214cf768f121228a3a30763e7db7"
     }
   ],
   "guards": {
-    "dry_run_plan": "passed",
     "approval_gate": "passed",
-    "covenant_ticket": "passed",
-    "mutation_class": "passed",
-    "docs_only_allowlist": "passed",
     "clean_worktree": "planned",
+    "command_readback": "passed",
+    "covenant_ticket": "passed",
+    "docs_only_allowlist": "passed",
+    "dry_run_plan": "passed",
+    "mutation_class": "passed",
     "rollback_plan": "planned",
-    "sentinel_no_hold": "passed",
-    "command_readback": "passed"
+    "sentinel_no_hold": "passed"
   },
   "mutates_repositories": false,
   "executes_work": false,

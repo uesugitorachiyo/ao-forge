@@ -3023,11 +3023,121 @@ func TestLiveDocsExecutionGuardAllowsLowRiskCodeDryRunWithoutExecution(t *testin
 	if !ok || policy["current_class"] != "low_risk_code" || policy["authority_boundary"] != "low_risk_code_dry_run_only" {
 		t.Fatalf("low-risk-code policy missing dry-run boundary: %#v", guard["mutation_class_policy"])
 	}
+	limits, ok := guard["patch_limits"].(map[string]any)
+	if !ok {
+		t.Fatalf("low-risk-code guard missing patch limits: %#v", guard)
+	}
+	if limits["max_source_files"] != float64(1) ||
+		limits["max_test_files"] != float64(1) ||
+		limits["max_changed_files"] != float64(2) ||
+		limits["requires_rollback_patch"] != true ||
+		limits["requires_verification_commands"] != true {
+		t.Fatalf("low-risk-code patch limits drifted: %#v", limits)
+	}
+	if !stringSliceContainsAny(limits["denied_path_classes"], "scripts") ||
+		!stringSliceContainsAny(limits["denied_path_classes"], "ci_workflows") ||
+		!stringSliceContainsAny(limits["denied_path_classes"], "provider_paths") {
+		t.Fatalf("low-risk-code patch limits must deny script, CI, and provider paths: %#v", limits)
+	}
 	if stringSliceContainsAny(policy["denied_classes"], "complex_repo_mutation") != true {
 		t.Fatalf("low-risk-code policy must still deny higher classes: %#v", policy)
 	}
 	if guard["mutates_repositories"] != false || guard["executes_work"] != false || guard["release_or_publish_allowed"] != false {
 		t.Fatalf("low-risk-code guard must remain non-mutating: %#v", guard)
+	}
+}
+
+func TestLiveDocsExecutionGuardAllowsLowRiskCodeOneSourceAndOneTestFile(t *testing.T) {
+	root := repoRoot(t)
+	var plan map[string]any
+	readJSONFixture(t, filepath.Join(root, "examples", "live-mutation", "low-risk-code-dry-run-plan.json"), &plan)
+	target := plan["target"].(map[string]any)
+	target["allowed_paths"] = []any{
+		"internal/atlas/validate.go",
+		"internal/atlas/validate_test.go",
+	}
+	planPath := filepath.Join(t.TempDir(), "low-risk-code-source-and-test.json")
+	data, err := json.MarshalIndent(plan, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal low-risk plan: %v", err)
+	}
+	if err := os.WriteFile(planPath, append(data, '\n'), 0o644); err != nil {
+		t.Fatalf("write low-risk plan: %v", err)
+	}
+	out := filepath.Join(t.TempDir(), "guard.json")
+	code, stdout, stderr := runCLI(
+		"live-docs", "guard",
+		"--plan", planPath,
+		"--approval-gate", filepath.Join(root, "examples", "live-docs-guard", "foundry-class-gate.low-risk-code.dry-run-ready.json"),
+		"--ticket", filepath.Join(root, "examples", "live-docs-guard", "covenant-class-ticket.low-risk-code.approved.json"),
+		"--sentinel", filepath.Join(root, "examples", "live-docs-guard", "sentinel-class.no-hold.low-risk-code.json"),
+		"--command-readback", filepath.Join(root, "examples", "live-docs-guard", "command-authority-ladder.low-risk-code.dry-run-ready.json"),
+		"--out", out,
+	)
+	if code != 0 {
+		t.Fatalf("low-risk source+test guard exit=%d\nstdout=%s\nstderr=%s", code, stdout, stderr)
+	}
+	var guard map[string]any
+	readJSONFixture(t, out, &guard)
+	if guard["status"] != "ready" || guard["safe_to_request"] != true || guard["safe_to_execute"] != false {
+		t.Fatalf("low-risk source+test guard must stay request-ready and execution-denied: %#v", guard)
+	}
+	scope := guard["approved_scope"].(map[string]any)
+	paths, ok := scope["allowed_paths"].([]any)
+	if !ok || len(paths) != 2 {
+		t.Fatalf("low-risk source+test scope was not preserved: %#v", scope)
+	}
+}
+
+func TestLiveDocsExecutionGuardBlocksLowRiskForbiddenPathClasses(t *testing.T) {
+	root := repoRoot(t)
+	cases := []struct {
+		name string
+		path string
+	}{
+		{name: "script", path: "scripts/run-sh-script.js"},
+		{name: "provider", path: "internal/providers/client.go"},
+		{name: "ci", path: ".github/workflows/ci.yml"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var plan map[string]any
+			readJSONFixture(t, filepath.Join(root, "examples", "live-mutation", "low-risk-code-dry-run-plan.json"), &plan)
+			target := plan["target"].(map[string]any)
+			target["allowed_paths"] = []any{tc.path}
+			planPath := filepath.Join(t.TempDir(), "low-risk-code-forbidden.json")
+			data, err := json.MarshalIndent(plan, "", "  ")
+			if err != nil {
+				t.Fatalf("marshal low-risk plan: %v", err)
+			}
+			if err := os.WriteFile(planPath, append(data, '\n'), 0o644); err != nil {
+				t.Fatalf("write low-risk plan: %v", err)
+			}
+			out := filepath.Join(t.TempDir(), "guard.json")
+			code, stdout, stderr := runCLI(
+				"live-docs", "guard",
+				"--plan", planPath,
+				"--approval-gate", filepath.Join(root, "examples", "live-docs-guard", "foundry-class-gate.low-risk-code.dry-run-ready.json"),
+				"--ticket", filepath.Join(root, "examples", "live-docs-guard", "covenant-class-ticket.low-risk-code.approved.json"),
+				"--sentinel", filepath.Join(root, "examples", "live-docs-guard", "sentinel-class.no-hold.low-risk-code.json"),
+				"--command-readback", filepath.Join(root, "examples", "live-docs-guard", "command-authority-ladder.low-risk-code.dry-run-ready.json"),
+				"--out", out,
+			)
+			if code != 0 {
+				t.Fatalf("blocked low-risk guard should write result without execution, code=%d\nstdout=%s\nstderr=%s", code, stdout, stderr)
+			}
+			var guard map[string]any
+			readJSONFixture(t, out, &guard)
+			if guard["status"] != "blocked" ||
+				guard["safe_to_request"] != false ||
+				guard["safe_to_execute"] != false ||
+				guard["first_failing_check"] != "dry_run_plan" {
+				t.Fatalf("unexpected forbidden low-risk path guard: %#v", guard)
+			}
+			if !strings.Contains(fmt.Sprint(guard["blocking_next_actions"]), "low_risk_code paths") {
+				t.Fatalf("forbidden low-risk path did not explain class path blocker: %#v", guard["blocking_next_actions"])
+			}
+		})
 	}
 }
 

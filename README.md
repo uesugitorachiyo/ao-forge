@@ -116,8 +116,9 @@ preview evidence, and release or promotion workflow gates.
 
 The live-mutation dry-run plan contract adds a narrower pre-authority rehearsal
 surface for future governed repository mutation. It now models the docs-only
-mutation classes `docs_only_single_file` and `docs_only_multi_file` while
-keeping `tiny_documentation_change` as the legacy single-file docs alias. It
+mutation classes `docs_only_single_file` and `docs_only_multi_file`, `test_only`,
+and a request-only `low_risk_code` dry-run boundary while keeping
+`tiny_documentation_change` as the legacy single-file docs alias. It
 requires Covenant authority, isolated branch/worktree planning, verification,
 PR lifecycle, rollback rehearsal, provider boundaries, and an operator kill
 switch.
@@ -136,22 +137,25 @@ forge live-docs guard \
 ```
 
 The guard is fail-closed. It requires the Foundry approval gate to report
-`safe_to_execute=true`, the Covenant ticket to be approved, unexpired,
-unconsumed, and approver-bound, the dry-run plan to stay within a docs-only
-or test-only allowlist, Sentinel to report no hold, and AO Command readback to
-remain `operator_mode=read_only` with `mutates_repositories=false`.
+class-appropriate authority, the Covenant ticket to be approved, unexpired,
+unconsumed, and approver-bound, the dry-run plan to stay within the class
+allowlist, Sentinel to report no hold, and AO Command readback to remain
+`operator_mode=read_only` with `mutates_repositories=false`.
 For `docs_only_multi_file` and `test_only`, the guard accepts the class-bound
 Foundry gate, Covenant mutation-class ticket, Sentinel mutation-class no-hold
 verdict, and Atlas authority-ladder Command readback. Test-only plans are
 limited to one `*_test.go` path and emit
-`authority_boundary=test_only_class_only`. Code, multi-repo, and complex
-mutation classes remain denied.
+`authority_boundary=test_only_class_only`. For `low_risk_code`, the guard may
+emit `safe_to_request=true` only when all low-risk dry-run evidence is present,
+but it must keep `safe_to_execute=false` and
+`authority_boundary=low_risk_code_dry_run_only`. Multi-repo, complex, and fully
+unsupervised mutation classes remain denied.
 
-Even when the guard emits `safe_to_execute=true`, it is only an eligibility
-artifact for the current class-bound PR rehearsal chain. It does not execute
-work, mutate repositories, create branches, call providers, publish, tag,
-upload, bypass rollback or kill-switch evidence, or widen the path into fully
-unsupervised complex live mutation.
+Even when the guard emits `safe_to_execute=true` for lower classes, it is only
+an eligibility artifact for the current class-bound PR rehearsal chain. It does
+not execute work, mutate repositories, create branches, call providers, publish,
+tag, upload, bypass rollback or kill-switch evidence, or widen the path into
+fully unsupervised complex live mutation.
 
 ## Product Thesis
 

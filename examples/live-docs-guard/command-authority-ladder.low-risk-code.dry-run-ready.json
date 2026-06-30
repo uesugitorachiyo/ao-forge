@@ -1,0 +1,27 @@
+{
+  "schema_version": "ao.command.atlas-authority-ladder.v0.1",
+  "status": "ready",
+  "readback_status": "ready",
+  "allowed_next_action": "request_low_risk_code_dry_run",
+  "current_class": "test_only",
+  "next_class": "low_risk_code",
+  "safe_to_request": true,
+  "safe_to_execute": false,
+  "required_evidence": [
+    "test_only_success",
+    "covenant_class_ticket:low_risk_code",
+    "foundry_class_gate:low_risk_code",
+    "ao2_dry_run_packet:low_risk_code",
+    "sentinel_no_hold:low_risk_code",
+    "promoter_ready:low_risk_code",
+    "rollback_proof:low_risk_code",
+    "ci_passed:main"
+  ],
+  "denied_higher_classes": {
+    "multi_repo_low_risk": "denied until low_risk_code live rehearsal completes",
+    "complex_repo_mutation": "denied until low_risk_code live rehearsal completes",
+    "fully_unsupervised_rsi": "denied until every lower class has successful live evidence and complex mutation is separately proven"
+  },
+  "operator_mode": "read_only",
+  "mutates_repositories": false
+}

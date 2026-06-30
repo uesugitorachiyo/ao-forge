@@ -6,6 +6,7 @@
   "required": [
     "schema_version",
     "status",
+    "safe_to_request",
     "safe_to_execute",
     "allowed_next_action",
     "first_failing_check",
@@ -29,6 +30,9 @@
       "enum": ["ready", "blocked", "failed"]
     },
     "safe_to_execute": {
+      "type": "boolean"
+    },
+    "safe_to_request": {
       "type": "boolean"
     },
     "allowed_next_action": {
@@ -62,7 +66,7 @@
           "pattern": "^[a-z0-9._-]{2,80}$"
         },
         "allowed_path_class": {
-          "enum": ["docs_only", "test_only"]
+          "enum": ["docs_only", "test_only", "low_risk_code"]
         },
         "allowed_paths": {
           "type": "array",
@@ -76,7 +80,8 @@
             "tiny_documentation_change",
             "docs_only_single_file",
             "docs_only_multi_file",
-            "test_only"
+            "test_only",
+            "low_risk_code"
           ]
         },
         "branch": {
@@ -112,7 +117,7 @@
         "permitted_classes": {
           "type": "array",
           "items": {
-            "enum": ["docs_only_single_file", "docs_only_multi_file", "test_only"]
+            "enum": ["docs_only_single_file", "docs_only_multi_file", "test_only", "low_risk_code"]
           }
         },
         "legacy_aliases": {
@@ -123,9 +128,6 @@
         },
         "denied_classes": {
           "type": "array",
-          "contains": {
-            "const": "low_risk_code"
-          },
           "items": {
             "enum": [
               "docs_config_only",
@@ -137,7 +139,7 @@
           }
         },
         "authority_boundary": {
-          "enum": ["docs_only_classes_only", "test_only_class_only"]
+          "enum": ["docs_only_classes_only", "test_only_class_only", "low_risk_code_dry_run_only"]
         },
         "denial_reason": {
           "type": "string",
@@ -228,7 +230,7 @@
       },
       "then": {
         "properties": {
-          "safe_to_execute": {
+          "safe_to_request": {
             "const": true
           },
           "first_failing_check": {
@@ -250,6 +252,9 @@
       },
       "then": {
         "properties": {
+          "safe_to_request": {
+            "const": false
+          },
           "safe_to_execute": {
             "const": false
           },
@@ -258,6 +263,57 @@
           },
           "blocking_next_actions": {
             "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "ready"
+          },
+          "approved_scope": {
+            "properties": {
+              "mutation_class": {
+                "const": "low_risk_code"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "safe_to_execute": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "ready"
+          },
+          "approved_scope": {
+            "properties": {
+              "mutation_class": {
+                "enum": [
+                  "tiny_documentation_change",
+                  "docs_only_single_file",
+                  "docs_only_multi_file",
+                  "test_only"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "safe_to_execute": {
+            "const": true
           }
         }
       }

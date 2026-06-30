@@ -1,0 +1,37 @@
+{
+  "schema_version": "ao.foundry.mutation-class-gate.v0.1",
+  "status": "ready",
+  "mutation_class": "low_risk_code",
+  "safe_to_request": true,
+  "safe_to_execute": false,
+  "first_failing_check": "",
+  "required_evidence": [
+    "atlas_classification",
+    "test_only_success",
+    "covenant_class_ticket",
+    "sentinel_no_hold",
+    "promoter_ready",
+    "rollback_proof",
+    "command_readback",
+    "ci_passed"
+  ],
+  "source_evidence": [
+    "test_only_live_rehearsal:ao-atlas#28"
+  ],
+  "denied_classes": [
+    "docs_only_single_file",
+    "docs_only_multi_file",
+    "docs_config_only",
+    "test_only",
+    "multi_repo_low_risk",
+    "complex_repo_mutation"
+  ],
+  "authority_boundary": "single_class_only",
+  "next_actions": [
+    "Request low_risk_code dry-run evidence only; keep safe_to_execute=false until later promotion."
+  ],
+  "schedules_work": false,
+  "executes_work": false,
+  "approves_work": false,
+  "mutates_repositories": false
+}

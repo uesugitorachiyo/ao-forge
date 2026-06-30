@@ -115,9 +115,12 @@ decisions, clean-workspace checks, explicit operator confirmation, release
 preview evidence, and release or promotion workflow gates.
 
 The live-mutation dry-run plan contract adds a narrower pre-authority rehearsal
-surface for future governed repository mutation. It requires Covenant authority,
-isolated branch/worktree planning, verification, PR lifecycle, rollback
-rehearsal, provider boundaries, and an operator kill switch.
+surface for future governed repository mutation. It now models the docs-only
+mutation classes `docs_only_single_file` and `docs_only_multi_file` while
+keeping `tiny_documentation_change` as the legacy single-file docs alias. It
+requires Covenant authority, isolated branch/worktree planning, verification,
+PR lifecycle, rollback rehearsal, provider boundaries, and an operator kill
+switch.
 The contract does not permit live repository mutation.
 The live-docs execution guard turns an approved docs-only request into a
 machine-readable eligibility result:
@@ -137,6 +140,12 @@ The guard is fail-closed. It requires the Foundry approval gate to report
 unconsumed, and approver-bound, the dry-run plan to stay within a docs-only
 allowlist, Sentinel to report no hold, and AO Command readback to remain
 `operator_mode=read_only` with `mutates_repositories=false`.
+For `docs_only_multi_file`, the guard accepts the class-bound Foundry gate,
+Covenant mutation-class ticket, Sentinel mutation-class no-hold verdict, and
+Atlas authority-ladder Command readback. It emits `mutation_class_policy` with
+`authority_boundary=docs_only_classes_only` and denies `docs_config_only`,
+`test_only`, `low_risk_code`, `multi_repo_low_risk`, and
+`complex_repo_mutation`.
 
 Even when the guard emits `safe_to_execute=true`, it is only an eligibility
 artifact for the first docs-only PR rehearsal chain. It does not execute work,

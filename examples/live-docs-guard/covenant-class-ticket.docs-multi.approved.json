@@ -1,0 +1,77 @@
+{
+  "schema_version": "covenant.mutation-class-authority-ticket.v1",
+  "ticket_id": "mutation-class-docs-multi-ticket",
+  "request_id": "docs-multi-authority-request",
+  "approval_state": "approved",
+  "approver_identity": "ao-operator",
+  "issued_at": "2026-06-29T00:00:00Z",
+  "expires_at": "2099-01-01T00:00:00Z",
+  "consumed": false,
+  "mutation_class": "docs_only_multi_file",
+  "approved_scope": {
+    "repo": {
+      "id": "ao-atlas",
+      "remote": "uesugitorachiyo/ao-atlas",
+      "target_branch": "main"
+    },
+    "branch_policy": {
+      "branch_prefix": "codex/docs-multi-",
+      "requires_isolated_branch": true,
+      "requires_clean_worktree": true,
+      "requires_pr": true,
+      "allows_direct_main": false
+    },
+    "mutation_class": "docs_only_multi_file",
+    "allowed_paths": [
+      "README.md",
+      "docs/sdd/AO-ATLAS-WORKGRAPH.md"
+    ],
+    "forbidden_paths": [
+      ".github/**",
+      "cmd/**",
+      "internal/**",
+      "schemas/**",
+      "scripts/**",
+      "examples/**"
+    ],
+    "max_changed_files": 2,
+    "required_gates": [
+      "atlas_classification",
+      "foundry_class_gate",
+      "sentinel_no_hold",
+      "promoter_ready",
+      "command_readback",
+      "ci_passed"
+    ],
+    "rollback_required": true,
+    "rollback_scope": [
+      "README.md",
+      "docs/sdd/AO-ATLAS-WORKGRAPH.md"
+    ],
+    "rollback_evidence": {
+      "status": "rehearsed",
+      "artifact_paths": [
+        "examples/mutation-class-authority/rollback-docs-multi.patch"
+      ],
+      "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "authority_boundary": "class_ticket_only"
+  },
+  "scope_digest": {
+    "algorithm": "sha256",
+    "value": "2e513e4fd08c5c6395f59b1c82bab05572b9f43eac560525eab4f0d7c4ad7a53",
+    "covers": [
+      "approved_scope"
+    ]
+  },
+  "authority_boundaries": {
+    "exact_scope": true,
+    "class_bound": true,
+    "digest_bound": true,
+    "single_use": true,
+    "live_mutation_grant": false,
+    "provider_calls_allowed": false,
+    "release_or_publish_allowed": false
+  },
+  "operator_note": "Approve the exact docs_only_multi_file request scope for one class-bound authority check only."
+}

@@ -11,6 +11,7 @@
     "first_failing_check",
     "blocking_next_actions",
     "maintenance_suggestions",
+    "mutation_class_policy",
     "approved_scope",
     "source_hashes",
     "required_evidence",
@@ -71,11 +72,78 @@
           }
         },
         "mutation_class": {
-          "const": "tiny_documentation_change"
+          "enum": [
+            "tiny_documentation_change",
+            "docs_only_single_file",
+            "docs_only_multi_file"
+          ]
         },
         "branch": {
           "type": "string",
           "pattern": "^codex/[a-z0-9._-]{3,80}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "mutation_class_policy": {
+      "type": "object",
+      "required": [
+        "current_class",
+        "permitted_classes",
+        "legacy_aliases",
+        "denied_classes",
+        "authority_boundary",
+        "denial_reason"
+      ],
+      "properties": {
+        "current_class": {
+          "enum": [
+            "tiny_documentation_change",
+            "docs_only_single_file",
+            "docs_only_multi_file",
+            "docs_config_only",
+            "test_only",
+            "low_risk_code",
+            "multi_repo_low_risk",
+            "complex_repo_mutation"
+          ]
+        },
+        "permitted_classes": {
+          "type": "array",
+          "contains": {
+            "const": "docs_only_single_file"
+          },
+          "items": {
+            "enum": ["docs_only_single_file", "docs_only_multi_file"]
+          }
+        },
+        "legacy_aliases": {
+          "type": "array",
+          "items": {
+            "const": "tiny_documentation_change"
+          }
+        },
+        "denied_classes": {
+          "type": "array",
+          "contains": {
+            "const": "low_risk_code"
+          },
+          "items": {
+            "enum": [
+              "docs_config_only",
+              "test_only",
+              "low_risk_code",
+              "multi_repo_low_risk",
+              "complex_repo_mutation"
+            ]
+          }
+        },
+        "authority_boundary": {
+          "const": "docs_only_classes_only"
+        },
+        "denial_reason": {
+          "type": "string",
+          "minLength": 1
         }
       },
       "additionalProperties": false
@@ -97,8 +165,10 @@
     "guards": {
       "type": "object",
       "required": [
+        "dry_run_plan",
         "approval_gate",
         "covenant_ticket",
+        "mutation_class",
         "docs_only_allowlist",
         "clean_worktree",
         "rollback_plan",
@@ -106,10 +176,16 @@
         "command_readback"
       ],
       "properties": {
+        "dry_run_plan": {
+          "enum": ["passed", "blocked", "failed"]
+        },
         "approval_gate": {
           "enum": ["passed", "blocked", "failed"]
         },
         "covenant_ticket": {
+          "enum": ["passed", "blocked", "failed"]
+        },
+        "mutation_class": {
           "enum": ["passed", "blocked", "failed"]
         },
         "docs_only_allowlist": {

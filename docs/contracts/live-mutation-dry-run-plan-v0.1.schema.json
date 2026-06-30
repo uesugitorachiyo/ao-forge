@@ -47,7 +47,11 @@
           }
         },
         "mutation_class": {
-          "const": "tiny_documentation_change"
+          "enum": [
+            "tiny_documentation_change",
+            "docs_only_single_file",
+            "docs_only_multi_file"
+          ]
         }
       },
       "additionalProperties": false
@@ -263,6 +267,58 @@
     }
   },
   "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "target": {
+            "properties": {
+              "mutation_class": {
+                "enum": ["tiny_documentation_change", "docs_only_single_file"]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "target": {
+            "properties": {
+              "allowed_paths": {
+                "minItems": 1,
+                "maxItems": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "target": {
+            "properties": {
+              "mutation_class": {
+                "const": "docs_only_multi_file"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "target": {
+            "properties": {
+              "allowed_paths": {
+                "minItems": 1,
+                "maxItems": 2
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "sha256": {
       "type": "string",

@@ -2807,7 +2807,9 @@ func TestLiveMutationDryRunPlanContractValidatesAuthorityIsolationAndRollback(t 
 
 	schemaPath := filepath.Join(root, "docs", "contracts", "live-mutation-dry-run-plan-v0.1.schema.json")
 	validPath := filepath.Join(root, "examples", "live-mutation", "docs-only-dry-run-plan.json")
+	docsMultiValidPath := filepath.Join(root, "examples", "live-mutation", "docs-multi-dry-run-plan.json")
 	invalidPath := filepath.Join(root, "examples", "live-mutation", "invalid", "missing-rollback-authority.dry-run-plan.invalid.json")
+	codeClassInvalidPath := filepath.Join(root, "examples", "live-mutation", "invalid", "low-risk-code.dry-run-plan.invalid.json")
 
 	for _, check := range []struct {
 		name string
@@ -2840,12 +2842,21 @@ func TestLiveMutationDryRunPlanContractValidatesAuthorityIsolationAndRollback(t 
 		t.Fatalf("contract validate wrote stderr: %s", stderr)
 	}
 
+	code, stdout, stderr = runCLI("contract", "validate", "--schema", schemaPath, "--document", docsMultiValidPath)
+	if code != 0 {
+		t.Fatalf("docs multi live mutation dry-run plan fixture failed validation with code %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+
 	code, stdout, stderr = runCLI("contract", "validate", "--schema", schemaPath, "--document", invalidPath)
 	if code != 1 {
 		t.Fatalf("invalid live mutation dry-run plan should fail validation, code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
 	}
 	if !strings.Contains(stdout, "contract_validation=failed") || !strings.Contains(stderr, "schema validation failed") {
 		t.Fatalf("invalid dry-run plan did not report schema failure\nstdout: %s\nstderr: %s", stdout, stderr)
+	}
+	code, stdout, stderr = runCLI("contract", "validate", "--schema", schemaPath, "--document", codeClassInvalidPath)
+	if code != 1 {
+		t.Fatalf("code-class dry-run plan should fail validation, code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
 	}
 }
 
@@ -2875,6 +2886,75 @@ func TestLiveDocsExecutionGuardWritesReadyResult(t *testing.T) {
 		guard["mutates_repositories"] != false {
 		t.Fatalf("unexpected guard result: %#v", guard)
 	}
+	policy, ok := guard["mutation_class_policy"].(map[string]any)
+	if !ok {
+		t.Fatalf("guard missing mutation_class_policy: %#v", guard)
+	}
+	if policy["authority_boundary"] != "docs_only_classes_only" {
+		t.Fatalf("unexpected mutation class policy: %#v", policy)
+	}
+	if !stringSliceContainsAny(policy["permitted_classes"], "docs_only_multi_file") ||
+		!stringSliceContainsAny(policy["denied_classes"], "low_risk_code") {
+		t.Fatalf("mutation class policy does not expose docs-only permit/code deny boundary: %#v", policy)
+	}
+}
+
+func TestLiveDocsExecutionGuardPermitsDocsOnlyMultiFileClass(t *testing.T) {
+	root := repoRoot(t)
+	out := filepath.Join(t.TempDir(), "guard.json")
+	code, stdout, stderr := runCLI(
+		"live-docs", "guard",
+		"--plan", filepath.Join(root, "examples", "live-mutation", "docs-multi-dry-run-plan.json"),
+		"--approval-gate", filepath.Join(root, "examples", "live-docs-guard", "foundry-class-gate.docs-multi.ready.json"),
+		"--ticket", filepath.Join(root, "examples", "live-docs-guard", "covenant-class-ticket.docs-multi.approved.json"),
+		"--sentinel", filepath.Join(root, "examples", "live-docs-guard", "sentinel-class.no-hold.docs-multi.json"),
+		"--command-readback", filepath.Join(root, "examples", "live-docs-guard", "command-authority-ladder.docs-multi.ready.json"),
+		"--out", out,
+	)
+	if code != 0 {
+		t.Fatalf("live-docs guard docs multi exit=%d\nstdout=%s\nstderr=%s", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "safe_to_execute=true") {
+		t.Fatalf("stdout missing safe_to_execute=true:\n%s", stdout)
+	}
+	var guard map[string]any
+	readJSONFixture(t, out, &guard)
+	if guard["status"] != "ready" || guard["safe_to_execute"] != true {
+		t.Fatalf("docs multi guard did not pass: %#v", guard)
+	}
+	scope, ok := guard["approved_scope"].(map[string]any)
+	if !ok || scope["mutation_class"] != "docs_only_multi_file" {
+		t.Fatalf("docs multi approved scope missing mutation class: %#v", guard["approved_scope"])
+	}
+	policy, ok := guard["mutation_class_policy"].(map[string]any)
+	if !ok || policy["current_class"] != "docs_only_multi_file" {
+		t.Fatalf("docs multi policy missing current class: %#v", guard["mutation_class_policy"])
+	}
+}
+
+func TestLiveDocsExecutionGuardDeniesCodeMutationClasses(t *testing.T) {
+	root := repoRoot(t)
+	out := filepath.Join(t.TempDir(), "guard.json")
+	code, stdout, stderr := runCLI(
+		"live-docs", "guard",
+		"--plan", filepath.Join(root, "examples", "live-mutation", "invalid", "low-risk-code.dry-run-plan.invalid.json"),
+		"--approval-gate", filepath.Join(root, "examples", "live-docs-guard", "foundry-approval-gate.ready.json"),
+		"--ticket", filepath.Join(root, "examples", "live-docs-guard", "covenant-ticket.approved.json"),
+		"--sentinel", filepath.Join(root, "examples", "live-docs-guard", "sentinel.no-hold.json"),
+		"--command-readback", filepath.Join(root, "examples", "live-docs-guard", "command-readback.ready.json"),
+		"--out", out,
+	)
+	if code != 0 {
+		t.Fatalf("blocked live-docs guard should write blocked result without execution, code=%d\nstdout=%s\nstderr=%s", code, stdout, stderr)
+	}
+	var guard map[string]any
+	readJSONFixture(t, out, &guard)
+	if guard["status"] != "blocked" || guard["safe_to_execute"] != false || guard["first_failing_check"] != "mutation_class" {
+		t.Fatalf("unexpected low-risk code denial result: %#v", guard)
+	}
+	if !strings.Contains(fmt.Sprint(guard["blocking_next_actions"]), "low_risk_code") {
+		t.Fatalf("low-risk code denial did not name denied class: %#v", guard["blocking_next_actions"])
+	}
 }
 
 func TestLiveDocsExecutionGuardBlocksMissingApproval(t *testing.T) {
@@ -2903,15 +2983,33 @@ func TestLiveDocsExecutionGuardContractFixtures(t *testing.T) {
 	root := repoRoot(t)
 	schemaPath := filepath.Join(root, "docs", "contracts", "live-docs-execution-guard-v0.1.schema.json")
 	validPath := filepath.Join(root, "examples", "live-docs-guard", "execution-guard.ready.json")
+	docsMultiValidPath := filepath.Join(root, "examples", "live-docs-guard", "execution-guard.docs-multi.ready.json")
 	invalidPath := filepath.Join(root, "examples", "live-docs-guard", "invalid", "execution-guard-authority.invalid.json")
 	code, stdout, stderr := runCLI("contract", "validate", "--schema", schemaPath, "--document", validPath)
 	if code != 0 {
 		t.Fatalf("valid live docs guard fixture failed code=%d\nstdout=%s\nstderr=%s", code, stdout, stderr)
 	}
+	code, stdout, stderr = runCLI("contract", "validate", "--schema", schemaPath, "--document", docsMultiValidPath)
+	if code != 0 {
+		t.Fatalf("valid docs multi live docs guard fixture failed code=%d\nstdout=%s\nstderr=%s", code, stdout, stderr)
+	}
 	code, stdout, stderr = runCLI("contract", "validate", "--schema", schemaPath, "--document", invalidPath)
 	if code == 0 {
 		t.Fatalf("invalid live docs guard fixture passed\nstdout=%s\nstderr=%s", stdout, stderr)
 	}
+}
+
+func stringSliceContainsAny(value any, want string) bool {
+	items, ok := value.([]any)
+	if !ok {
+		return false
+	}
+	for _, item := range items {
+		if item == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestReleaseContractsRejectDriftFixtures(t *testing.T) {

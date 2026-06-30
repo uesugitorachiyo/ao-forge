@@ -1,0 +1,7 @@
+{
+  "schema_version": "ao.sentinel.mutation-class-hold.v0.1",
+  "status": "no_hold",
+  "mutation_class": "docs_only_multi_file",
+  "hold": false,
+  "reason": "No Sentinel hold for docs_only_multi_file fixture."
+}

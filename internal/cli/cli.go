@@ -61,6 +61,9 @@ const (
 var (
 	planIDPattern              = regexp.MustCompile(`^forge-plan-[a-f0-9]{12}$`)
 	windowsAbsolutePathPattern = regexp.MustCompile(`^[A-Za-z]:/`)
+	liveDocsPermittedClasses   = []string{"docs_only_single_file", "docs_only_multi_file"}
+	liveDocsLegacyAliases      = []string{"tiny_documentation_change"}
+	liveDocsDeniedClasses      = []string{"docs_config_only", "test_only", "low_risk_code", "multi_repo_low_risk", "complex_repo_mutation"}
 )
 
 type factoryBrief struct {
@@ -4566,6 +4569,7 @@ type liveDocsGuardResult struct {
 	FirstFailingCheck       string                  `json:"first_failing_check"`
 	BlockingNextActions     []string                `json:"blocking_next_actions"`
 	MaintenanceSuggestions  []string                `json:"maintenance_suggestions"`
+	MutationClassPolicy     liveDocsClassPolicy     `json:"mutation_class_policy"`
 	ApprovedScope           map[string]any          `json:"approved_scope"`
 	SourceHashes            []liveDocsGuardEvidence `json:"source_hashes"`
 	RequiredEvidence        []liveDocsGuardEvidence `json:"required_evidence"`
@@ -4574,6 +4578,15 @@ type liveDocsGuardResult struct {
 	ExecutesWork            bool                    `json:"executes_work"`
 	CallsProviders          bool                    `json:"calls_providers"`
 	ReleaseOrPublishAllowed bool                    `json:"release_or_publish_allowed"`
+}
+
+type liveDocsClassPolicy struct {
+	CurrentClass      string   `json:"current_class"`
+	PermittedClasses  []string `json:"permitted_classes"`
+	LegacyAliases     []string `json:"legacy_aliases"`
+	DeniedClasses     []string `json:"denied_classes"`
+	AuthorityBoundary string   `json:"authority_boundary"`
+	DenialReason      string   `json:"denial_reason"`
 }
 
 func runContract(args []string, stdout, stderr io.Writer) int {
@@ -4723,6 +4736,7 @@ func buildLiveDocsGuardResult(flags liveDocsGuardFlags) (liveDocsGuardResult, er
 		return liveDocsGuardResult{}, err
 	}
 
+	mutationClass := liveDocsNestedString(plan, "target", "mutation_class")
 	evidence := []liveDocsGuardEvidence{planEvidence, approvalEvidence, ticketEvidence, sentinelEvidence, commandEvidence}
 	result := liveDocsGuardResult{
 		SchemaVersion:       liveDocsGuardVersion,
@@ -4733,19 +4747,23 @@ func buildLiveDocsGuardResult(flags liveDocsGuardFlags) (liveDocsGuardResult, er
 		BlockingNextActions: []string{},
 		MaintenanceSuggestions: []string{
 			"Keep execution behind the explicit live docs approval path; this guard does not mutate repositories.",
+			"Code and non-doc mutation classes remain denied until later slices add class-specific evidence.",
 		},
+		MutationClassPolicy: liveDocsMutationClassPolicy(mutationClass),
 		ApprovedScope: map[string]any{
 			"repo":               liveDocsNestedString(plan, "target", "repo"),
 			"allowed_path_class": liveDocsNestedString(plan, "target", "allowed_path_class"),
 			"allowed_paths":      liveDocsNestedArray(plan, "target", "allowed_paths"),
-			"mutation_class":     liveDocsNestedString(plan, "target", "mutation_class"),
+			"mutation_class":     mutationClass,
 			"branch":             liveDocsNestedString(plan, "worktree_isolation", "branch"),
 		},
 		SourceHashes:     evidence,
 		RequiredEvidence: evidence,
 		Guards: map[string]string{
+			"dry_run_plan":        "passed",
 			"approval_gate":       "passed",
 			"covenant_ticket":     "passed",
+			"mutation_class":      "passed",
 			"docs_only_allowlist": "passed",
 			"clean_worktree":      "planned",
 			"rollback_plan":       "planned",
@@ -4758,19 +4776,22 @@ func buildLiveDocsGuardResult(flags liveDocsGuardFlags) (liveDocsGuardResult, er
 		ReleaseOrPublishAllowed: false,
 	}
 
+	if failure := liveDocsMutationClassFailure(mutationClass); failure != "" {
+		return blockedLiveDocsGuard(result, "mutation_class", failure), nil
+	}
 	if failure := liveDocsPlanFailure(plan); failure != "" {
 		return blockedLiveDocsGuard(result, "dry_run_plan", failure), nil
 	}
-	if failure := liveDocsApprovalGateFailure(approvalGate); failure != "" {
+	if failure := liveDocsApprovalGateFailure(approvalGate, mutationClass); failure != "" {
 		return blockedLiveDocsGuard(result, "approval_gate", failure), nil
 	}
-	if failure := liveDocsTicketFailure(ticket); failure != "" {
+	if failure := liveDocsTicketFailure(ticket, mutationClass); failure != "" {
 		return blockedLiveDocsGuard(result, "covenant_ticket", failure), nil
 	}
-	if failure := liveDocsSentinelFailure(sentinel); failure != "" {
+	if failure := liveDocsSentinelFailure(sentinel, mutationClass); failure != "" {
 		return blockedLiveDocsGuard(result, "sentinel_no_hold", failure), nil
 	}
-	if failure := liveDocsCommandReadbackFailure(commandReadback); failure != "" {
+	if failure := liveDocsCommandReadbackFailure(commandReadback, mutationClass); failure != "" {
 		return blockedLiveDocsGuard(result, "command_readback", failure), nil
 	}
 
@@ -4816,7 +4837,46 @@ func readLiveDocsGuardEvidence(name, path string) (map[string]any, liveDocsGuard
 	}, nil
 }
 
+func liveDocsMutationClassPolicy(mutationClass string) liveDocsClassPolicy {
+	return liveDocsClassPolicy{
+		CurrentClass:      mutationClass,
+		PermittedClasses:  append([]string{}, liveDocsPermittedClasses...),
+		LegacyAliases:     append([]string{}, liveDocsLegacyAliases...),
+		DeniedClasses:     append([]string{}, liveDocsDeniedClasses...),
+		AuthorityBoundary: "docs_only_classes_only",
+		DenialReason:      "non-docs and code mutation classes require later rollback, hold, promotion, CI, and readback evidence before Forge may permit them",
+	}
+}
+
+func liveDocsMutationClassFailure(mutationClass string) string {
+	switch {
+	case mutationClass == "":
+		return "dry-run plan must name a mutation_class"
+	case liveDocsClassIn(mutationClass, liveDocsPermittedClasses), liveDocsClassIn(mutationClass, liveDocsLegacyAliases):
+		return ""
+	case liveDocsClassIn(mutationClass, liveDocsDeniedClasses):
+		return fmt.Sprintf("mutation class %s is denied until later slices add class-specific execution evidence", mutationClass)
+	default:
+		return fmt.Sprintf("mutation class %s is not permitted by the docs-only Forge guard", mutationClass)
+	}
+}
+
+func liveDocsClassIn(mutationClass string, values []string) bool {
+	for _, value := range values {
+		if mutationClass == value {
+			return true
+		}
+	}
+	return false
+}
+
+func liveDocsUsesLegacyClass(mutationClass string) bool {
+	return liveDocsClassIn(mutationClass, liveDocsLegacyAliases)
+}
+
 func liveDocsPlanFailure(plan map[string]any) string {
+	mutationClass := liveDocsNestedString(plan, "target", "mutation_class")
+	allowedPaths := liveDocsNestedArray(plan, "target", "allowed_paths")
 	switch {
 	case liveDocsString(plan, "schema_version") != "ao.forge.live-mutation-dry-run-plan.v0.1":
 		return "dry-run plan schema_version must be ao.forge.live-mutation-dry-run-plan.v0.1"
@@ -4824,10 +4884,12 @@ func liveDocsPlanFailure(plan map[string]any) string {
 		return "dry-run plan mode must remain dry_run_only"
 	case liveDocsNestedString(plan, "target", "allowed_path_class") != "docs_only":
 		return "dry-run plan target must be docs_only"
-	case liveDocsNestedString(plan, "target", "mutation_class") != "tiny_documentation_change":
-		return "dry-run plan mutation class must be tiny_documentation_change"
-	case len(liveDocsNestedArray(plan, "target", "allowed_paths")) == 0:
+	case len(allowedPaths) == 0:
 		return "dry-run plan must include docs-only allowed paths"
+	case !liveDocsAllowedPathCount(mutationClass, len(allowedPaths)):
+		return fmt.Sprintf("dry-run plan allowed path count exceeds %s limit", mutationClass)
+	case !liveDocsAllowedPathsAreDocsOnly(allowedPaths):
+		return "dry-run plan allowed paths must stay within docs-only paths"
 	case liveDocsNestedBool(plan, "worktree_isolation", "isolated_worktree") != true:
 		return "dry-run plan must require isolated worktree"
 	case liveDocsNestedBool(plan, "worktree_isolation", "clean_worktree_required") != true:
@@ -4847,24 +4909,82 @@ func liveDocsPlanFailure(plan map[string]any) string {
 	}
 }
 
-func liveDocsApprovalGateFailure(gate map[string]any) string {
-	switch {
-	case liveDocsString(gate, "schema_version") != "ao.foundry.live-docs-approval-gate.v0.1":
-		return "approval gate schema_version must be ao.foundry.live-docs-approval-gate.v0.1"
-	case liveDocsString(gate, "status") != "ready":
-		return "approval gate is not ready"
-	case liveDocsBool(gate, "safe_to_execute") != true:
-		return "approval gate did not grant safe_to_execute"
-	case liveDocsBool(gate, "mutates_repositories") != false:
-		return "approval gate must not mutate repositories"
+func liveDocsAllowedPathCount(mutationClass string, count int) bool {
+	switch mutationClass {
+	case "tiny_documentation_change", "docs_only_single_file":
+		return count == 1
+	case "docs_only_multi_file":
+		return count >= 1 && count <= 2
 	default:
-		return ""
+		return false
 	}
 }
 
-func liveDocsTicketFailure(ticket map[string]any) string {
-	if liveDocsString(ticket, "schema_version") != "covenant.live-docs-approval-ticket.v1" {
-		return "approval ticket schema_version must be covenant.live-docs-approval-ticket.v1"
+func liveDocsAllowedPathsAreDocsOnly(paths []any) bool {
+	for _, item := range paths {
+		path, ok := item.(string)
+		if !ok || path == "" {
+			return false
+		}
+		if strings.HasPrefix(path, "/") || strings.HasPrefix(path, "~") || strings.Contains(path, "..") || windowsAbsolutePathPattern.MatchString(path) {
+			return false
+		}
+		if path == "README.md" || path == "CHANGELOG.md" || strings.HasPrefix(path, "docs/") {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func liveDocsApprovalGateFailure(gate map[string]any, mutationClass string) string {
+	switch liveDocsString(gate, "schema_version") {
+	case "ao.foundry.live-docs-approval-gate.v0.1":
+		if !liveDocsUsesLegacyClass(mutationClass) {
+			return "legacy live-docs approval gate may only approve the legacy single-file docs class"
+		}
+		switch {
+		case liveDocsString(gate, "status") != "ready":
+			return "approval gate is not ready"
+		case liveDocsBool(gate, "safe_to_execute") != true:
+			return "approval gate did not grant safe_to_execute"
+		case liveDocsBool(gate, "mutates_repositories") != false:
+			return "approval gate must not mutate repositories"
+		default:
+			return ""
+		}
+	case "ao.foundry.mutation-class-gate.v0.1":
+		switch {
+		case liveDocsString(gate, "status") != "ready":
+			return "mutation-class gate is not ready"
+		case liveDocsString(gate, "mutation_class") != mutationClass:
+			return "mutation-class gate class does not match dry-run plan"
+		case liveDocsBool(gate, "safe_to_execute") != true:
+			return "mutation-class gate did not grant safe_to_execute"
+		case liveDocsString(gate, "authority_boundary") != "single_class_only":
+			return "mutation-class gate must remain single_class_only"
+		case liveDocsBool(gate, "mutates_repositories") != false:
+			return "mutation-class gate must not mutate repositories"
+		case liveDocsBool(gate, "executes_work") != false:
+			return "mutation-class gate must not execute work"
+		default:
+			return ""
+		}
+	default:
+		return "approval gate schema_version must be ao.foundry.live-docs-approval-gate.v0.1 or ao.foundry.mutation-class-gate.v0.1"
+	}
+}
+
+func liveDocsTicketFailure(ticket map[string]any, mutationClass string) string {
+	switch liveDocsString(ticket, "schema_version") {
+	case "covenant.live-docs-approval-ticket.v1":
+		if !liveDocsUsesLegacyClass(mutationClass) {
+			return "legacy live-docs approval ticket may only approve the legacy single-file docs class"
+		}
+	case "covenant.mutation-class-authority-ticket.v1":
+		return liveDocsClassTicketFailure(ticket, mutationClass)
+	default:
+		return "approval ticket schema_version must be covenant.live-docs-approval-ticket.v1 or covenant.mutation-class-authority-ticket.v1"
 	}
 	state := liveDocsString(ticket, "approval_state")
 	if state == "" {
@@ -4893,33 +5013,119 @@ func liveDocsTicketFailure(ticket map[string]any) string {
 	return ""
 }
 
-func liveDocsSentinelFailure(sentinel map[string]any) string {
+func liveDocsClassTicketFailure(ticket map[string]any, mutationClass string) string {
+	state := liveDocsString(ticket, "approval_state")
+	if state == "" {
+		state = liveDocsString(ticket, "status")
+	}
 	switch {
-	case liveDocsString(sentinel, "schema_version") != "ao.sentinel.live-docs-mutation-hold.v0.1":
-		return "sentinel verdict schema_version must be ao.sentinel.live-docs-mutation-hold.v0.1"
-	case liveDocsString(sentinel, "status") != "pass":
-		return "sentinel verdict did not pass"
-	case liveDocsBool(sentinel, "hold") != false:
-		return "sentinel hold is active"
+	case state != "approved":
+		return "mutation-class authority ticket is not approved"
+	case liveDocsString(ticket, "approver_identity") == "":
+		return "mutation-class authority ticket must include approver identity"
+	case liveDocsBool(ticket, "consumed"):
+		return "mutation-class authority ticket is already consumed"
+	case liveDocsString(ticket, "mutation_class") != mutationClass:
+		return "mutation-class authority ticket class does not match dry-run plan"
+	}
+	expiresAt := liveDocsString(ticket, "expires_at")
+	if expiresAt == "" {
+		return "mutation-class authority ticket must include expires_at"
+	}
+	parsedExpiry, err := time.Parse(time.RFC3339, expiresAt)
+	if err != nil {
+		return "mutation-class authority ticket expires_at must be RFC3339"
+	}
+	if !parsedExpiry.After(time.Now().UTC()) {
+		return "mutation-class authority ticket is expired"
+	}
+	boundaries, _ := ticket["authority_boundaries"].(map[string]any)
+	switch {
+	case !liveDocsBool(boundaries, "exact_scope"):
+		return "mutation-class authority ticket must be exact-scope"
+	case !liveDocsBool(boundaries, "class_bound"):
+		return "mutation-class authority ticket must be class-bound"
+	case !liveDocsBool(boundaries, "digest_bound"):
+		return "mutation-class authority ticket must be digest-bound"
+	case !liveDocsBool(boundaries, "single_use"):
+		return "mutation-class authority ticket must be single-use"
+	case liveDocsBool(boundaries, "live_mutation_grant"):
+		return "mutation-class authority ticket must not be a broad live mutation grant"
+	case liveDocsBool(boundaries, "provider_calls_allowed"):
+		return "mutation-class authority ticket must forbid provider calls"
+	case liveDocsBool(boundaries, "release_or_publish_allowed"):
+		return "mutation-class authority ticket must forbid release or publish"
+	}
+	approvedScope, _ := ticket["approved_scope"].(map[string]any)
+	if len(approvedScope) > 0 && liveDocsString(approvedScope, "mutation_class") != mutationClass {
+		return "mutation-class authority ticket approved_scope class does not match dry-run plan"
+	}
+	return ""
+}
+
+func liveDocsSentinelFailure(sentinel map[string]any, mutationClass string) string {
+	switch liveDocsString(sentinel, "schema_version") {
+	case "ao.sentinel.live-docs-mutation-hold.v0.1":
+		if !liveDocsUsesLegacyClass(mutationClass) {
+			return "legacy Sentinel live-docs hold may only approve the legacy single-file docs class"
+		}
+		switch {
+		case liveDocsString(sentinel, "status") != "pass":
+			return "sentinel verdict did not pass"
+		case liveDocsBool(sentinel, "hold") != false:
+			return "sentinel hold is active"
+		default:
+			return ""
+		}
+	case "ao.sentinel.mutation-class-hold.v0.1":
+		switch {
+		case liveDocsString(sentinel, "status") != "no_hold":
+			return "sentinel mutation-class verdict did not report no_hold"
+		case liveDocsString(sentinel, "mutation_class") != mutationClass:
+			return "sentinel mutation-class verdict class does not match dry-run plan"
+		case liveDocsBool(sentinel, "hold") != false:
+			return "sentinel hold is active"
+		default:
+			return ""
+		}
 	default:
-		return ""
+		return "sentinel verdict schema_version must be ao.sentinel.live-docs-mutation-hold.v0.1 or ao.sentinel.mutation-class-hold.v0.1"
 	}
 }
 
-func liveDocsCommandReadbackFailure(readback map[string]any) string {
-	switch {
-	case liveDocsString(readback, "schema_version") != "ao.command.live-mutation-approval-status.v0.1":
-		return "command readback schema_version must be ao.command.live-mutation-approval-status.v0.1"
-	case liveDocsString(readback, "status") != "approved":
-		return "command readback is not approved"
-	case liveDocsBool(readback, "safe_to_execute") != true:
-		return "command readback did not show safe_to_execute"
-	case liveDocsString(readback, "operator_mode") != "read_only":
-		return "command readback must be read_only"
-	case liveDocsBool(readback, "mutates_repositories") != false:
-		return "command readback must not mutate repositories"
+func liveDocsCommandReadbackFailure(readback map[string]any, mutationClass string) string {
+	switch liveDocsString(readback, "schema_version") {
+	case "ao.command.live-mutation-approval-status.v0.1":
+		if !liveDocsUsesLegacyClass(mutationClass) {
+			return "legacy command live-mutation readback may only approve the legacy single-file docs class"
+		}
+		switch {
+		case liveDocsString(readback, "status") != "approved":
+			return "command readback is not approved"
+		case liveDocsBool(readback, "safe_to_execute") != true:
+			return "command readback did not show safe_to_execute"
+		case liveDocsString(readback, "operator_mode") != "read_only":
+			return "command readback must be read_only"
+		case liveDocsBool(readback, "mutates_repositories") != false:
+			return "command readback must not mutate repositories"
+		default:
+			return ""
+		}
+	case "ao.command.atlas-authority-ladder.v0.1":
+		switch {
+		case liveDocsString(readback, "readback_status") != "ready":
+			return "authority ladder readback is not ready"
+		case liveDocsString(readback, "operator_mode") != "read_only":
+			return "authority ladder readback must be read_only"
+		case liveDocsBool(readback, "mutates_repositories") != false:
+			return "authority ladder readback must not mutate repositories"
+		case liveDocsString(readback, "current_class") != mutationClass && liveDocsString(readback, "next_class") != mutationClass:
+			return "authority ladder readback does not expose the requested mutation class"
+		default:
+			return ""
+		}
 	default:
-		return ""
+		return "command readback schema_version must be ao.command.live-mutation-approval-status.v0.1 or ao.command.atlas-authority-ladder.v0.1"
 	}
 }
 

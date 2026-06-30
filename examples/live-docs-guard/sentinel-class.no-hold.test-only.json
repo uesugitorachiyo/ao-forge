@@ -1,0 +1,7 @@
+{
+  "schema_version": "ao.sentinel.mutation-class-hold.v0.1",
+  "status": "no_hold",
+  "mutation_class": "test_only",
+  "hold": false,
+  "reason": "No Sentinel hold for test_only fixture."
+}

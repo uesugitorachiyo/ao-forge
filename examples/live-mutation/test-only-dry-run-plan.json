@@ -1,0 +1,75 @@
+{
+  "schema_version": "ao.forge.live-mutation-dry-run-plan.v0.1",
+  "plan_id": "forge-live-mutation-plan-test-only-0001",
+  "mode": "dry_run_only",
+  "target": {
+    "repo": "ao-atlas",
+    "allowed_path_class": "test_only",
+    "allowed_paths": [
+      "internal/atlas/atlas_test.go"
+    ],
+    "mutation_class": "test_only"
+  },
+  "covenant_authority": {
+    "required": true,
+    "status": "approved_dry_run_fixture",
+    "schema_version": "covenant.live-mutation-authority.v1",
+    "authority_packet": "examples/live-mutation/test-only-authority.packet.json",
+    "authority_packet_sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+  },
+  "worktree_isolation": {
+    "required": true,
+    "status": "planned",
+    "branch": "codex/test-only-live-rehearsal",
+    "isolated_worktree": true,
+    "clean_worktree_required": true,
+    "reuse_existing_worktree": false
+  },
+  "verification": {
+    "required": true,
+    "commands": [
+      "go test ./...",
+      "git diff --check"
+    ],
+    "evidence": [
+      {
+        "label": "planned-verification",
+        "path": "examples/live-mutation/evidence/test-only-verification-plan.json",
+        "sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+      }
+    ]
+  },
+  "pr_lifecycle": {
+    "required": true,
+    "status": "planned",
+    "one_branch_at_a_time": true,
+    "requires_green_checks": true,
+    "merge_method": "squash_if_rebase_unavailable",
+    "delete_branch_after_merge": true
+  },
+  "rollback_rehearsal": {
+    "required": true,
+    "status": "planned",
+    "rollback_plan": "examples/live-mutation/rollback/test-only-rollback-plan.json",
+    "rollback_plan_sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+    "quarantine_on_failure": true
+  },
+  "provider_boundary": {
+    "provider_calls_allowed": false,
+    "requires_exact_digest_approval": true
+  },
+  "execution_boundary": {
+    "mutates_live_repo": false,
+    "creates_release": false,
+    "pushes_tags": false,
+    "uploads_artifacts": false,
+    "operator_kill_switch_required": true
+  },
+  "next_actions": [
+    {
+      "action_id": "request-class-bound-test-only-packet",
+      "description": "Request exactly one test_only patch packet after Atlas, Covenant, Sentinel, Promoter, Command, rollback, and CI evidence are ready.",
+      "required": true
+    }
+  ]
+}

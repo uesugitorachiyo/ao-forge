@@ -1,0 +1,20 @@
+{
+  "schema_version": "ao.command.atlas-authority-ladder.v0.1",
+  "status": "ready",
+  "readback_status": "ready",
+  "current_class": "docs_only_multi_file",
+  "next_class": "test_only",
+  "required_evidence": [
+    "sentinel_no_hold:test_only",
+    "promoter_ready:test_only",
+    "rollback_proof:test_only",
+    "ci_passed:test_only"
+  ],
+  "denied_higher_classes": {
+    "low_risk_code": "denied until test_only live rehearsal completes",
+    "multi_repo_low_risk": "denied until test_only live rehearsal completes",
+    "complex_repo_mutation": "denied until test_only live rehearsal completes"
+  },
+  "operator_mode": "read_only",
+  "mutates_repositories": false
+}

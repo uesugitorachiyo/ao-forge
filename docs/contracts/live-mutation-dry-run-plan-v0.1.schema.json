@@ -37,7 +37,7 @@
           "pattern": "^[a-z0-9._-]{2,80}$"
         },
         "allowed_path_class": {
-          "enum": ["docs_only", "test_only"]
+          "enum": ["docs_only", "test_only", "low_risk_code"]
         },
         "allowed_paths": {
           "type": "array",
@@ -51,7 +51,8 @@
             "tiny_documentation_change",
             "docs_only_single_file",
             "docs_only_multi_file",
-            "test_only"
+            "test_only",
+            "low_risk_code"
           ]
         }
       },
@@ -313,6 +314,34 @@
               "allowed_paths": {
                 "minItems": 1,
                 "maxItems": 2
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "target": {
+            "properties": {
+              "mutation_class": {
+                "const": "low_risk_code"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "target": {
+            "properties": {
+              "allowed_path_class": {
+                "const": "low_risk_code"
+              },
+              "allowed_paths": {
+                "minItems": 1,
+                "maxItems": 1
               }
             }
           }

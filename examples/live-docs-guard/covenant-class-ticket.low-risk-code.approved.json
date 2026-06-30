@@ -1,0 +1,80 @@
+{
+  "schema_version": "covenant.mutation-class-authority-ticket.v1",
+  "ticket_id": "mutation-class-low-risk-code-ticket",
+  "request_id": "low-risk-code-authority-request",
+  "approval_state": "approved",
+  "approver_identity": "ao-operator",
+  "issued_at": "2026-06-30T00:00:00Z",
+  "expires_at": "2099-01-01T00:00:00Z",
+  "consumed": false,
+  "mutation_class": "low_risk_code",
+  "approved_scope": {
+    "repo": {
+      "id": "ao-atlas",
+      "remote": "uesugitorachiyo/ao-atlas",
+      "target_branch": "main"
+    },
+    "branch_policy": {
+      "branch_prefix": "codex/low-risk-",
+      "requires_isolated_branch": true,
+      "requires_clean_worktree": true,
+      "requires_pr": true,
+      "allows_direct_main": false
+    },
+    "mutation_class": "low_risk_code",
+    "allowed_paths": [
+      "internal/atlas/validate.go"
+    ],
+    "forbidden_paths": [
+      ".github/**",
+      "cmd/**",
+      "docs/**",
+      "examples/**",
+      "schemas/**",
+      "scripts/**",
+      "go.mod",
+      "go.sum"
+    ],
+    "max_changed_files": 1,
+    "safe_to_request": true,
+    "safe_to_execute": false,
+    "required_gates": [
+      "atlas_classification",
+      "test_only_success",
+      "foundry_class_gate",
+      "sentinel_no_hold",
+      "promoter_low_risk_ready",
+      "command_readback",
+      "ci_passed"
+    ],
+    "rollback_required": true,
+    "rollback_scope": [
+      "internal/atlas/validate.go"
+    ],
+    "rollback_evidence": {
+      "status": "planned",
+      "artifact_paths": [
+        "examples/mutation-class-authority/rollback-low-risk-code.patch"
+      ],
+      "digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    },
+    "authority_boundary": "class_ticket_only"
+  },
+  "scope_digest": {
+    "algorithm": "sha256",
+    "value": "f7a8ad6d6f90b40609b49b0f8b2270113b3469d205672fc9614b478918f77fea",
+    "covers": [
+      "approved_scope"
+    ]
+  },
+  "authority_boundaries": {
+    "exact_scope": true,
+    "class_bound": true,
+    "digest_bound": true,
+    "single_use": true,
+    "live_mutation_grant": false,
+    "provider_calls_allowed": false,
+    "release_or_publish_allowed": false
+  },
+  "operator_note": "Approve the exact low_risk_code dry-run request scope only; this ticket does not grant live execution."
+}

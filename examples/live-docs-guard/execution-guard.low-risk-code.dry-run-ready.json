@@ -2,114 +2,110 @@
   "schema_version": "ao.forge.live-docs-execution-guard.v0.1",
   "status": "ready",
   "safe_to_request": true,
-  "safe_to_execute": true,
-  "allowed_next_action": "prepare_isolated_docs_only_branch",
+  "safe_to_execute": false,
+  "allowed_next_action": "request_low_risk_code_dry_run_only",
   "first_failing_check": "",
   "blocking_next_actions": [],
   "maintenance_suggestions": [
-    "Keep execution behind the explicit live docs approval path; this guard does not mutate repositories.",
-    "Code and non-doc mutation classes remain denied until later slices add class-specific evidence."
+    "Keep low_risk_code limited to dry-run packet evidence; this guard does not mutate repositories.",
+    "Live low-risk execution and higher mutation classes remain denied until later slices add promotion evidence."
   ],
   "mutation_class_policy": {
-    "current_class": "docs_only_multi_file",
+    "current_class": "low_risk_code",
     "permitted_classes": [
-      "docs_only_single_file",
-      "docs_only_multi_file"
+      "low_risk_code"
     ],
     "legacy_aliases": [
       "tiny_documentation_change"
     ],
     "denied_classes": [
       "docs_config_only",
-      "test_only",
-      "low_risk_code",
       "multi_repo_low_risk",
       "complex_repo_mutation"
     ],
-    "authority_boundary": "docs_only_classes_only",
-    "denial_reason": "non-docs and code mutation classes require later rollback, hold, promotion, CI, and readback evidence before Forge may permit them"
+    "authority_boundary": "low_risk_code_dry_run_only",
+    "denial_reason": "low_risk_code may only request dry-run evidence here; live code execution requires later rollback, hold, promotion, CI, and readback proof"
   },
   "approved_scope": {
     "repo": "ao-atlas",
-    "allowed_path_class": "docs_only",
+    "allowed_path_class": "low_risk_code",
     "allowed_paths": [
-      "README.md",
-      "docs/sdd/AO-ATLAS-WORKGRAPH.md"
+      "internal/atlas/validate.go"
     ],
-    "mutation_class": "docs_only_multi_file",
-    "branch": "codex/docs-multi-live-rehearsal"
+    "mutation_class": "low_risk_code",
+    "branch": "codex/low-risk-code-dry-run"
   },
   "source_hashes": [
     {
       "name": "dry_run_plan",
-      "path": "examples/live-mutation/docs-multi-dry-run-plan.json",
+      "path": "examples/live-mutation/low-risk-code-dry-run-plan.json",
       "schema_version": "ao.forge.live-mutation-dry-run-plan.v0.1",
       "status": "unknown",
       "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     },
     {
       "name": "approval_gate",
-      "path": "examples/live-docs-guard/foundry-class-gate.docs-multi.ready.json",
+      "path": "examples/live-docs-guard/foundry-class-gate.low-risk-code.dry-run-ready.json",
       "schema_version": "ao.foundry.mutation-class-gate.v0.1",
       "status": "ready",
       "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     },
     {
       "name": "covenant_ticket",
-      "path": "examples/live-docs-guard/covenant-class-ticket.docs-multi.approved.json",
+      "path": "examples/live-docs-guard/covenant-class-ticket.low-risk-code.approved.json",
       "schema_version": "covenant.mutation-class-authority-ticket.v1",
       "status": "approved",
       "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
     },
     {
       "name": "sentinel_no_hold",
-      "path": "examples/live-docs-guard/sentinel-class.no-hold.docs-multi.json",
+      "path": "examples/live-docs-guard/sentinel-class.no-hold.low-risk-code.json",
       "schema_version": "ao.sentinel.mutation-class-hold.v0.1",
       "status": "no_hold",
       "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
     },
     {
       "name": "command_readback",
-      "path": "examples/live-docs-guard/command-authority-ladder.docs-multi.ready.json",
+      "path": "examples/live-docs-guard/command-authority-ladder.low-risk-code.dry-run-ready.json",
       "schema_version": "ao.command.atlas-authority-ladder.v0.1",
-      "status": "blocked",
+      "status": "ready",
       "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
     }
   ],
   "required_evidence": [
     {
       "name": "dry_run_plan",
-      "path": "examples/live-mutation/docs-multi-dry-run-plan.json",
+      "path": "examples/live-mutation/low-risk-code-dry-run-plan.json",
       "schema_version": "ao.forge.live-mutation-dry-run-plan.v0.1",
       "status": "unknown",
       "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     },
     {
       "name": "approval_gate",
-      "path": "examples/live-docs-guard/foundry-class-gate.docs-multi.ready.json",
+      "path": "examples/live-docs-guard/foundry-class-gate.low-risk-code.dry-run-ready.json",
       "schema_version": "ao.foundry.mutation-class-gate.v0.1",
       "status": "ready",
       "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     },
     {
       "name": "covenant_ticket",
-      "path": "examples/live-docs-guard/covenant-class-ticket.docs-multi.approved.json",
+      "path": "examples/live-docs-guard/covenant-class-ticket.low-risk-code.approved.json",
       "schema_version": "covenant.mutation-class-authority-ticket.v1",
       "status": "approved",
       "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
     },
     {
       "name": "sentinel_no_hold",
-      "path": "examples/live-docs-guard/sentinel-class.no-hold.docs-multi.json",
+      "path": "examples/live-docs-guard/sentinel-class.no-hold.low-risk-code.json",
       "schema_version": "ao.sentinel.mutation-class-hold.v0.1",
       "status": "no_hold",
       "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
     },
     {
       "name": "command_readback",
-      "path": "examples/live-docs-guard/command-authority-ladder.docs-multi.ready.json",
+      "path": "examples/live-docs-guard/command-authority-ladder.low-risk-code.dry-run-ready.json",
       "schema_version": "ao.command.atlas-authority-ladder.v0.1",
-      "status": "blocked",
+      "status": "ready",
       "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
     }
   ],

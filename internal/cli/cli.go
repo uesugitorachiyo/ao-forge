@@ -59,13 +59,15 @@ const (
 )
 
 var (
-	planIDPattern              = regexp.MustCompile(`^forge-plan-[a-f0-9]{12}$`)
-	windowsAbsolutePathPattern = regexp.MustCompile(`^[A-Za-z]:/`)
-	liveDocsPermittedClasses   = []string{"docs_only_single_file", "docs_only_multi_file"}
-	liveTestPermittedClasses   = []string{"test_only"}
-	liveDocsLegacyAliases      = []string{"tiny_documentation_change"}
-	liveDocsDeniedClasses      = []string{"docs_config_only", "test_only", "low_risk_code", "multi_repo_low_risk", "complex_repo_mutation"}
-	liveTestDeniedClasses      = []string{"docs_config_only", "low_risk_code", "multi_repo_low_risk", "complex_repo_mutation"}
+	planIDPattern               = regexp.MustCompile(`^forge-plan-[a-f0-9]{12}$`)
+	windowsAbsolutePathPattern  = regexp.MustCompile(`^[A-Za-z]:/`)
+	liveDocsPermittedClasses    = []string{"docs_only_single_file", "docs_only_multi_file"}
+	liveTestPermittedClasses    = []string{"test_only"}
+	liveLowRiskPermittedClasses = []string{"low_risk_code"}
+	liveDocsLegacyAliases       = []string{"tiny_documentation_change"}
+	liveDocsDeniedClasses       = []string{"docs_config_only", "test_only", "low_risk_code", "multi_repo_low_risk", "complex_repo_mutation"}
+	liveTestDeniedClasses       = []string{"docs_config_only", "low_risk_code", "multi_repo_low_risk", "complex_repo_mutation"}
+	liveLowRiskDeniedClasses    = []string{"docs_config_only", "multi_repo_low_risk", "complex_repo_mutation"}
 )
 
 type factoryBrief struct {
@@ -4566,6 +4568,7 @@ type liveDocsGuardEvidence struct {
 type liveDocsGuardResult struct {
 	SchemaVersion           string                  `json:"schema_version"`
 	Status                  string                  `json:"status"`
+	SafeToRequest           bool                    `json:"safe_to_request"`
 	SafeToExecute           bool                    `json:"safe_to_execute"`
 	AllowedNextAction       string                  `json:"allowed_next_action"`
 	FirstFailingCheck       string                  `json:"first_failing_check"`
@@ -4708,6 +4711,7 @@ func runLiveDocsGuard(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	fmt.Fprintf(stdout, "live_docs_execution_guard=%s\n", result.Status)
+	fmt.Fprintf(stdout, "safe_to_request=%t\n", result.SafeToRequest)
 	fmt.Fprintf(stdout, "safe_to_execute=%t\n", result.SafeToExecute)
 	fmt.Fprintf(stdout, "guard=%s\n", displayPath(flags.outPath))
 	if result.FirstFailingCheck != "" {
@@ -4743,7 +4747,8 @@ func buildLiveDocsGuardResult(flags liveDocsGuardFlags) (liveDocsGuardResult, er
 	result := liveDocsGuardResult{
 		SchemaVersion:          liveDocsGuardVersion,
 		Status:                 "ready",
-		SafeToExecute:          true,
+		SafeToRequest:          true,
+		SafeToExecute:          liveDocsClassHasExecutionAuthority(mutationClass),
 		AllowedNextAction:      liveDocsAllowedNextAction(mutationClass),
 		FirstFailingCheck:      "",
 		BlockingNextActions:    []string{},
@@ -4799,6 +4804,7 @@ func buildLiveDocsGuardResult(flags liveDocsGuardFlags) (liveDocsGuardResult, er
 
 func blockedLiveDocsGuard(result liveDocsGuardResult, check string, reason string) liveDocsGuardResult {
 	result.Status = "blocked"
+	result.SafeToRequest = false
 	result.SafeToExecute = false
 	result.AllowedNextAction = "resolve_live_docs_guard_blocker"
 	result.FirstFailingCheck = check
@@ -4837,6 +4843,16 @@ func readLiveDocsGuardEvidence(name, path string) (map[string]any, liveDocsGuard
 }
 
 func liveDocsMutationClassPolicy(mutationClass string) liveDocsClassPolicy {
+	if liveDocsClassIn(mutationClass, liveLowRiskPermittedClasses) {
+		return liveDocsClassPolicy{
+			CurrentClass:      mutationClass,
+			PermittedClasses:  append([]string{}, liveLowRiskPermittedClasses...),
+			LegacyAliases:     append([]string{}, liveDocsLegacyAliases...),
+			DeniedClasses:     append([]string{}, liveLowRiskDeniedClasses...),
+			AuthorityBoundary: "low_risk_code_dry_run_only",
+			DenialReason:      "low_risk_code may only request dry-run evidence here; live code execution requires later rollback, hold, promotion, CI, and readback proof",
+		}
+	}
 	if liveDocsClassIn(mutationClass, liveTestPermittedClasses) {
 		return liveDocsClassPolicy{
 			CurrentClass:      mutationClass,
@@ -4861,7 +4877,7 @@ func liveDocsMutationClassFailure(mutationClass string) string {
 	switch {
 	case mutationClass == "":
 		return "dry-run plan must name a mutation_class"
-	case liveDocsClassIn(mutationClass, liveDocsPermittedClasses), liveDocsClassIn(mutationClass, liveTestPermittedClasses), liveDocsClassIn(mutationClass, liveDocsLegacyAliases):
+	case liveDocsClassIn(mutationClass, liveDocsPermittedClasses), liveDocsClassIn(mutationClass, liveTestPermittedClasses), liveDocsClassIn(mutationClass, liveLowRiskPermittedClasses), liveDocsClassIn(mutationClass, liveDocsLegacyAliases):
 		return ""
 	case liveDocsClassIn(mutationClass, liveDocsDeniedClasses):
 		return fmt.Sprintf("mutation class %s is denied until later slices add class-specific execution evidence", mutationClass)
@@ -4883,7 +4899,14 @@ func liveDocsUsesLegacyClass(mutationClass string) bool {
 	return liveDocsClassIn(mutationClass, liveDocsLegacyAliases)
 }
 
+func liveDocsClassHasExecutionAuthority(mutationClass string) bool {
+	return !liveDocsClassIn(mutationClass, liveLowRiskPermittedClasses)
+}
+
 func liveDocsAllowedNextAction(mutationClass string) string {
+	if liveDocsClassIn(mutationClass, liveLowRiskPermittedClasses) {
+		return "request_low_risk_code_dry_run_only"
+	}
 	if liveDocsClassIn(mutationClass, liveTestPermittedClasses) {
 		return "prepare_isolated_test_only_branch"
 	}
@@ -4891,6 +4914,12 @@ func liveDocsAllowedNextAction(mutationClass string) string {
 }
 
 func liveDocsMaintenanceSuggestions(mutationClass string) []string {
+	if liveDocsClassIn(mutationClass, liveLowRiskPermittedClasses) {
+		return []string{
+			"Keep low_risk_code limited to dry-run packet evidence; this guard does not mutate repositories.",
+			"Live low-risk execution and higher mutation classes remain denied until later slices add promotion evidence.",
+		}
+	}
 	if liveDocsClassIn(mutationClass, liveTestPermittedClasses) {
 		return []string{
 			"Keep execution behind the explicit class-bound live mutation path; this guard does not mutate repositories.",
@@ -4947,6 +4976,8 @@ func liveDocsAllowedPathCount(mutationClass string, count int) bool {
 		return count >= 1 && count <= 2
 	case "test_only":
 		return count == 1
+	case "low_risk_code":
+		return count == 1
 	default:
 		return false
 	}
@@ -4962,6 +4993,10 @@ func liveDocsAllowedPathClassFailure(mutationClass, allowedPathClass string) str
 		if allowedPathClass != "test_only" {
 			return "dry-run plan test mutation target must be test_only"
 		}
+	case liveDocsClassIn(mutationClass, liveLowRiskPermittedClasses):
+		if allowedPathClass != "low_risk_code" {
+			return "dry-run plan low-risk code mutation target must be low_risk_code"
+		}
 	default:
 		return "dry-run plan target has no permitted path class for mutation_class"
 	}
@@ -4971,6 +5006,9 @@ func liveDocsAllowedPathClassFailure(mutationClass, allowedPathClass string) str
 func liveDocsAllowedPathsForClass(mutationClass string, paths []any) bool {
 	if liveDocsClassIn(mutationClass, liveTestPermittedClasses) {
 		return liveDocsAllowedPathsAreTestOnly(paths)
+	}
+	if liveDocsClassIn(mutationClass, liveLowRiskPermittedClasses) {
+		return liveDocsAllowedPathsAreLowRiskCode(paths)
 	}
 	return liveDocsAllowedPathsAreDocsOnly(paths)
 }
@@ -5008,6 +5046,22 @@ func liveDocsAllowedPathsAreTestOnly(paths []any) bool {
 	return true
 }
 
+func liveDocsAllowedPathsAreLowRiskCode(paths []any) bool {
+	for _, item := range paths {
+		path, ok := item.(string)
+		if !ok || path == "" {
+			return false
+		}
+		if strings.HasPrefix(path, "/") || strings.HasPrefix(path, "~") || strings.Contains(path, "..") || windowsAbsolutePathPattern.MatchString(path) {
+			return false
+		}
+		if !strings.HasPrefix(path, "internal/") || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return false
+		}
+	}
+	return true
+}
+
 func liveDocsApprovalGateFailure(gate map[string]any, mutationClass string) string {
 	switch liveDocsString(gate, "schema_version") {
 	case "ao.foundry.live-docs-approval-gate.v0.1":
@@ -5030,7 +5084,11 @@ func liveDocsApprovalGateFailure(gate map[string]any, mutationClass string) stri
 			return "mutation-class gate is not ready"
 		case liveDocsString(gate, "mutation_class") != mutationClass:
 			return "mutation-class gate class does not match dry-run plan"
-		case liveDocsBool(gate, "safe_to_execute") != true:
+		case liveDocsClassIn(mutationClass, liveLowRiskPermittedClasses) && liveDocsBool(gate, "safe_to_request") != true:
+			return "mutation-class gate did not grant safe_to_request"
+		case liveDocsClassIn(mutationClass, liveLowRiskPermittedClasses) && liveDocsBool(gate, "safe_to_execute") != false:
+			return "mutation-class gate must keep low_risk_code safe_to_execute false"
+		case !liveDocsClassIn(mutationClass, liveLowRiskPermittedClasses) && liveDocsBool(gate, "safe_to_execute") != true:
 			return "mutation-class gate did not grant safe_to_execute"
 		case liveDocsString(gate, "authority_boundary") != "single_class_only":
 			return "mutation-class gate must remain single_class_only"
@@ -5131,6 +5189,14 @@ func liveDocsClassTicketFailure(ticket map[string]any, mutationClass string) str
 	if len(approvedScope) > 0 && liveDocsString(approvedScope, "mutation_class") != mutationClass {
 		return "mutation-class authority ticket approved_scope class does not match dry-run plan"
 	}
+	if liveDocsClassIn(mutationClass, liveLowRiskPermittedClasses) {
+		switch {
+		case liveDocsBool(approvedScope, "safe_to_request") != true:
+			return "mutation-class authority ticket must allow low_risk_code request only"
+		case liveDocsBool(approvedScope, "safe_to_execute") != false:
+			return "mutation-class authority ticket must keep low_risk_code safe_to_execute false"
+		}
+	}
 	return ""
 }
 
@@ -5192,6 +5258,10 @@ func liveDocsCommandReadbackFailure(readback map[string]any, mutationClass strin
 			return "authority ladder readback must not mutate repositories"
 		case liveDocsString(readback, "current_class") != mutationClass && liveDocsString(readback, "next_class") != mutationClass:
 			return "authority ladder readback does not expose the requested mutation class"
+		case liveDocsClassIn(mutationClass, liveLowRiskPermittedClasses) && liveDocsBool(readback, "safe_to_request") != true:
+			return "authority ladder readback did not show safe_to_request"
+		case liveDocsClassIn(mutationClass, liveLowRiskPermittedClasses) && liveDocsBool(readback, "safe_to_execute") != false:
+			return "authority ladder readback must keep low_risk_code safe_to_execute false"
 		default:
 			return ""
 		}

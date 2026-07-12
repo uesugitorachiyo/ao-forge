@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/uesugitorachiyo/ao-forge/docs/contracts/goal-run-lease-expiry-replay-v0.1.schema.json",
+  "title": "AO Forge GoalRun Lease Expiry Replay v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "mode",
+    "goal_run",
+    "lease",
+    "replay_decision",
+    "checks",
+    "evidence",
+    "authority_boundaries",
+    "no_promotion",
+    "rsi"
+  ],
+  "properties": {
+    "schema_version": { "const": "ao.forge.goal-run-lease-expiry-replay.v0.1" },
+    "status": { "enum": ["recovered_expired_lease", "blocked"] },
+    "mode": { "const": "fixture_only_replay" },
+    "goal_run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "goal_id", "phase"],
+      "properties": {
+        "path": { "type": "string", "pattern": "^examples/goals/[A-Za-z0-9._/-]+\\.goal-run\\.json$" },
+        "goal_id": { "type": "string", "minLength": 1 },
+        "phase": { "type": "string", "minLength": 1 }
+      }
+    },
+    "lease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lease_id", "holder", "acquired_at", "expires_at", "replayed_at", "expiry_state"],
+      "properties": {
+        "lease_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$" },
+        "holder": { "type": "string", "minLength": 1 },
+        "acquired_at": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$" },
+        "expires_at": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$" },
+        "replayed_at": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$" },
+        "expiry_state": { "const": "expired_before_replay" }
+      }
+    },
+    "replay_decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "safe_to_resume", "requires_new_lease", "preserve_goal_state", "next_action"],
+      "properties": {
+        "decision": { "const": "recover_without_execution" },
+        "safe_to_resume": { "const": false },
+        "requires_new_lease": { "const": true },
+        "preserve_goal_state": { "const": true },
+        "next_action": { "const": "issue_new_goalrun_lease_before_resuming" }
+      }
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "status", "summary"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "status": { "enum": ["passed", "blocked"] },
+          "summary": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label", "path"],
+        "properties": {
+          "label": { "type": "string", "minLength": 1 },
+          "path": { "type": "string", "pattern": "^(examples|docs|scripts)/[A-Za-z0-9._/-]+$" }
+        }
+      }
+    },
+    "authority_boundaries": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fixture_only",
+        "provider_calls_allowed",
+        "credential_access_allowed",
+        "mutates_repositories",
+        "schedules_work",
+        "executes_work",
+        "release_or_publish_allowed"
+      ],
+      "properties": {
+        "fixture_only": { "const": true },
+        "provider_calls_allowed": { "const": false },
+        "credential_access_allowed": { "const": false },
+        "mutates_repositories": { "const": false },
+        "schedules_work": { "const": false },
+        "executes_work": { "const": false },
+        "release_or_publish_allowed": { "const": false }
+      }
+    },
+    "no_promotion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["promotion_requested", "status"],
+      "properties": {
+        "promotion_requested": { "const": false },
+        "status": { "const": "no_promotion_requested" }
+      }
+    },
+    "rsi": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unrestricted_rsi_denied", "broad_rsi_claim"],
+      "properties": {
+        "unrestricted_rsi_denied": { "const": true },
+        "broad_rsi_claim": { "const": false }
+      }
+    }
+  }
+}

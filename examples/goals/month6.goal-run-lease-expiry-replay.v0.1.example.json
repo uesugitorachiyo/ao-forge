@@ -1,0 +1,74 @@
+{
+  "schema_version": "ao.forge.goal-run-lease-expiry-replay.v0.1",
+  "status": "recovered_expired_lease",
+  "mode": "fixture_only_replay",
+  "goal_run": {
+    "path": "examples/goals/ao2-weekend-hardening.goal-run.json",
+    "goal_id": "ao2-weekend-hardening",
+    "phase": "planning"
+  },
+  "lease": {
+    "lease_id": "goalrun_lease_expired_fixture",
+    "holder": "ao-forge",
+    "acquired_at": "2026-07-12T09:00:00Z",
+    "expires_at": "2026-07-12T10:00:00Z",
+    "replayed_at": "2026-07-12T10:30:00Z",
+    "expiry_state": "expired_before_replay"
+  },
+  "replay_decision": {
+    "decision": "recover_without_execution",
+    "safe_to_resume": false,
+    "requires_new_lease": true,
+    "preserve_goal_state": true,
+    "next_action": "issue_new_goalrun_lease_before_resuming"
+  },
+  "checks": [
+    {
+      "name": "lease_expired_before_replay",
+      "status": "passed",
+      "summary": "Replay time is after the lease expiry time."
+    },
+    {
+      "name": "goal_state_preserved",
+      "status": "passed",
+      "summary": "Expired lease recovery does not advance the GoalRun phase."
+    },
+    {
+      "name": "resume_blocked_until_new_lease",
+      "status": "passed",
+      "summary": "Continuation requires a fresh lease before any work resumes."
+    },
+    {
+      "name": "authority_boundaries_preserved",
+      "status": "passed",
+      "summary": "Replay is fixture-only and performs no execution or release action."
+    }
+  ],
+  "evidence": [
+    {
+      "label": "goal_run_fixture",
+      "path": "examples/goals/ao2-weekend-hardening.goal-run.json"
+    },
+    {
+      "label": "verification_script",
+      "path": "scripts/verify-goal-fixtures.sh"
+    }
+  ],
+  "authority_boundaries": {
+    "fixture_only": true,
+    "provider_calls_allowed": false,
+    "credential_access_allowed": false,
+    "mutates_repositories": false,
+    "schedules_work": false,
+    "executes_work": false,
+    "release_or_publish_allowed": false
+  },
+  "no_promotion": {
+    "promotion_requested": false,
+    "status": "no_promotion_requested"
+  },
+  "rsi": {
+    "unrestricted_rsi_denied": true,
+    "broad_rsi_claim": false
+  }
+}

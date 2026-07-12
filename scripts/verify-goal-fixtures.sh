@@ -80,6 +80,16 @@ while IFS= read -r invalid_readiness_provenance_audit; do
   invalid_readiness_provenance_audits+=("$invalid_readiness_provenance_audit")
 done < <(find examples -type f -name '*.goal-run-readiness-audit.provenance-invalid.json' | sort)
 
+lease_expiry_replays=()
+while IFS= read -r lease_expiry_replay; do
+  lease_expiry_replays+=("$lease_expiry_replay")
+done < <(find examples -type f -name '*.goal-run-lease-expiry-replay.v0.1.example.json' | sort)
+
+invalid_lease_expiry_replays=()
+while IFS= read -r invalid_lease_expiry_replay; do
+  invalid_lease_expiry_replays+=("$invalid_lease_expiry_replay")
+done < <(find examples -type f -name '*.goal-run-lease-expiry-replay.invalid.json' | sort)
+
 bounded_rsi_retention_proof="docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/bounded-rsi-improvement-chain-retention-proof.json"
 ao_stack_rsi_chain_binding_retention_proof="docs/evidence/goals/ao2-weekend-hardening/20260619T180000Z-verification/ao-stack-rsi-chain-binding-readback-retention-proof.json"
 
@@ -234,6 +244,16 @@ fi
 
 if [[ "${#invalid_readiness_provenance_audits[@]}" -eq 0 ]]; then
   echo "no invalid GoalRun readiness provenance fixtures found under examples/" >&2
+  exit 1
+fi
+
+if [[ "${#lease_expiry_replays[@]}" -eq 0 ]]; then
+  echo "no GoalRun lease expiry replay fixtures found under examples/" >&2
+  exit 1
+fi
+
+if [[ "${#invalid_lease_expiry_replays[@]}" -eq 0 ]]; then
+  echo "no invalid GoalRun lease expiry replay fixtures found under examples/" >&2
   exit 1
 fi
 
@@ -449,6 +469,21 @@ for invalid_readiness_provenance_audit in "${invalid_readiness_provenance_audits
   fi
 done
 
+for lease_expiry_replay in "${lease_expiry_replays[@]}"; do
+  "$forge_bin" contract validate \
+    --schema docs/contracts/goal-run-lease-expiry-replay-v0.1.schema.json \
+    --document "$lease_expiry_replay"
+done
+
+for invalid_lease_expiry_replay in "${invalid_lease_expiry_replays[@]}"; do
+  if "$forge_bin" contract validate \
+    --schema docs/contracts/goal-run-lease-expiry-replay-v0.1.schema.json \
+    --document "$invalid_lease_expiry_replay" >/dev/null 2>&1; then
+    echo "expected GoalRun lease expiry replay fixture to fail: $invalid_lease_expiry_replay" >&2
+    exit 1
+  fi
+done
+
 for update_audit in "${update_audits[@]}"; do
   "$forge_bin" goal evidence lint --update-audit "$update_audit"
   lint_json="$verify_dir/$(basename "$update_audit").evidence-lint.json"
@@ -586,4 +621,6 @@ echo "goal_run_retained_readiness_provenance_verified=${#retained_readiness_audi
 echo "goal_run_retained_evidence_invalid_fixtures_rejected=${#invalid_retained_evidence_artifacts[@]}"
 echo "goal_run_readiness_audit_invalid_fixtures_rejected=${#invalid_readiness_audits[@]}"
 echo "goal_run_readiness_provenance_invalid_fixtures_rejected=${#invalid_readiness_provenance_audits[@]}"
+echo "goal_run_lease_expiry_replay_fixtures=${#lease_expiry_replays[@]}"
+echo "goal_run_lease_expiry_replay_invalid_fixtures_rejected=${#invalid_lease_expiry_replays[@]}"
 echo "ao2_pulse_failed_readiness_audits_preserved=${#invalid_goal_runs[@]}"

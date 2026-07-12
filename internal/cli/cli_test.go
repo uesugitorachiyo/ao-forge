@@ -2870,6 +2870,61 @@ func TestLiveMutationDryRunPlanContractValidatesAuthorityIsolationAndRollback(t 
 	}
 }
 
+func TestGoalRunLeaseExpiryReplayContractFixture(t *testing.T) {
+	root := repoRoot(t)
+	readText := func(path ...string) string {
+		t.Helper()
+		bytes, err := os.ReadFile(filepath.Join(append([]string{root}, path...)...))
+		if err != nil {
+			t.Fatalf("read %s: %v", filepath.Join(path...), err)
+		}
+		return string(bytes)
+	}
+
+	schemaPath := filepath.Join(root, "docs", "contracts", "goal-run-lease-expiry-replay-v0.1.schema.json")
+	validPath := filepath.Join(root, "examples", "goals", "month6.goal-run-lease-expiry-replay.v0.1.example.json")
+	invalidPath := filepath.Join(root, "examples", "goals", "invalid", "resumes-expired.goal-run-lease-expiry-replay.invalid.json")
+
+	for _, check := range []struct {
+		name string
+		doc  string
+		want string
+	}{
+		{name: "docs index schema link", doc: readText("docs", "README.md"), want: "[GoalRun Lease Expiry Replay v0.1 Schema](contracts/goal-run-lease-expiry-replay-v0.1.schema.json)"},
+		{name: "goal fixture verifier covers replay", doc: readText("scripts", "verify-goal-fixtures.sh"), want: "*.goal-run-lease-expiry-replay.v0.1.example.json"},
+		{name: "goal fixture verifier covers invalid replay", doc: readText("scripts", "verify-goal-fixtures.sh"), want: "*.goal-run-lease-expiry-replay.invalid.json"},
+	} {
+		if !strings.Contains(check.doc, check.want) {
+			t.Fatalf("%s missing %q", check.name, check.want)
+		}
+	}
+
+	code, stdout, stderr := runCLI("contract", "validate", "--schema", schemaPath, "--document", validPath)
+	if code != 0 {
+		t.Fatalf("GoalRun lease expiry replay fixture failed validation with code %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	for _, want := range []string{
+		"contract_validation=passed",
+		"schema=" + displayPath(schemaPath),
+		"document=" + displayPath(validPath),
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("contract validate stdout missing %q\n%s", want, stdout)
+		}
+	}
+	if stderr != "" {
+		t.Fatalf("contract validate wrote stderr: %s", stderr)
+	}
+
+	code, stdout, stderr = runCLI("contract", "validate", "--schema", schemaPath, "--document", invalidPath)
+	if code != 1 {
+		t.Fatalf("invalid GoalRun lease expiry replay should fail validation, code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "contract_validation=failed") || !strings.Contains(stderr, "schema validation failed") {
+		t.Fatalf("invalid GoalRun lease expiry replay did not report schema failure\nstdout: %s\nstderr: %s", stdout, stderr)
+	}
+}
+
 func TestLiveDocsExecutionGuardWritesReadyResult(t *testing.T) {
 	root := repoRoot(t)
 	out := filepath.Join(t.TempDir(), "guard.json")

@@ -1,5 +1,39 @@
 # AO Forge
 
+## Role
+
+AO Forge owns one governed GoalRun: scheduling, leases, gates, planning, and
+bounded delegation to AO2. See [AO Architecture](https://github.com/uesugitorachiyo/ao-architecture)
+and the [canonical AO Forge component page](https://github.com/uesugitorachiyo/ao-architecture/blob/main/components/ao-forge.md).
+
+## Maturity
+
+Alpha. GoalRun scheduling and gates are `implemented` and `executable-tested`;
+restart and lease recovery are `clean-room-rehearsed`.
+
+## Install
+
+```sh
+go build -o bin/forge ./cmd/forge
+```
+
+## Quickstart
+
+```sh
+bin/forge --help
+```
+
+## Safety
+
+Forge delegates only after its gates pass. It does not grant Covenant approval,
+bypass AO2 policy, use credentials, call providers in this preflight, or publish
+releases.
+
+## External Beta
+
+External beta has not launched. No promotion is requested. RSI remains denied.
+GoalRun recovery evidence is a bounded rehearsal, not launch authority.
+
 AO Forge is the factory brain for the AO stack and the central place to
 understand how the AO repositories work together.
 

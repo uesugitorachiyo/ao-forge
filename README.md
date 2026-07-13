@@ -1,109 +1,20 @@
 # AO Forge
 
-AO Forge is the factory brain for the AO stack and the central place to
-understand how the AO repositories work together.
+AO Forge orchestrates one governed GoalRun. It turns a bounded Foundry handoff into a run plan, checks the required gates, delegates approved execution, tracks run state, and retains the resulting evidence. Use Forge after portfolio coordination has selected a concrete item and that item needs one controlled execution lifecycle.
 
-## AO Stack Architecture
+## How it fits in AO
 
-This repository is part of the AO agent orchestration stack. Start with the
-central architecture guide at
-[uesugitorachiyo/ao-architecture](https://github.com/uesugitorachiyo/ao-architecture);
-the AO Forge-specific architecture page is
-[ao-forge](https://github.com/uesugitorachiyo/ao-architecture/tree/main/ao-forge).
+- **Primary responsibility:** Per-GoalRun orchestration and delegation.
+- **Inputs:** Foundry handoffs, GoalRun state, task plans, Covenant decisions, and AO2 run evidence.
+- **Outputs:** Run plans, execution guards, AO2 packets, retained evidence, readiness results, and operator packets.
+- **Upstream:** AO Foundry.
+- **Downstream:** AO Covenant for policy and approval decisions, AO2 for execution, and AO Foundry or AO Command for readback.
 
-It does not replace AO2, ao2-control-plane, AO Covenant, or AO Command.
-Deprecated AO Operator/AO Conductor paths and archived `agy-swarms` materials
-are reference-only for AO Foundry work; AO Forge keeps legacy compatibility
-paths only behind explicit operator opt-in. Forge coordinates the active stack
-into a higher-level agentic factory where work is planned, policy-gated,
-executed, evidenced, reviewed, and promoted only when the required gates pass.
-
-## AO Stack Map
-
-The current AO stack is split by authority instead of by convenience. Each repo
-owns a different part of the factory so no single component silently plans,
-executes, approves, stores, and promotes work by itself.
-
-| Repo | Role | Owns | Must not own |
-| --- | --- | --- | --- |
-| [AO Forge](https://github.com/uesugitorachiyo/ao-forge) | Factory brain | Factory plans, workcell scheduling, GoalRun state, release gates, production-readiness scoring, retained-evidence policy, operator packets | Provider execution, final policy authority, evidence archive UI, operator command UX |
-| [AO2](https://github.com/uesugitorachiyo/ao2) | Governed execution engine | Local agent/work execution, policy-checked runs, exact-digest approvals, replayable evidence, evaluator closure | Cross-repo factory scheduling, release promotion policy, control-plane approval |
-| [ao2-control-plane](https://github.com/uesugitorachiyo/ao2-control-plane) | Evidence observer | Signed evidence ingest, content-addressed storage, authenticated read APIs, dashboards, backup/restore and retention reports | Approving AO2 runs, executing providers, deciding release readiness |
-| [AO Covenant](https://github.com/uesugitorachiyo/ao-covenant) | Trust and policy kernel | Contracts, policy decisions, provenance, declared side-effect gates, approval tickets, tamper-evident evidence packs | Running the whole factory, storing all AO2 evidence, operator dashboard UX |
-| [AO Command](https://github.com/uesugitorachiyo/ao-command) | Operator command surface | Read-only status, next actions, GoalRun inspection, evidence validation, release rehearsal summaries | Replacing AO Forge policy, mutating releases by default, provider writes |
-
-The practical rule is:
-
-```text
-AO Command shows what is happening.
-AO Forge decides what factory step is allowed next.
-AO Covenant decides whether declared side effects are trusted.
-AO2 executes governed work and produces evidence.
-ao2-control-plane stores and exposes evidence after the fact.
-```
-
-## How Work Moves Through The Stack
-
-The normal factory path is evidence-first:
-
-```text
-operator objective
--> AO Command status / next-action view
--> AO Forge GoalRun and factory plan
--> AO Covenant policy and side-effect gate
--> AO2 governed execution
--> AO2 evidence pack
--> optional ao2-control-plane ingest and readback
--> AO Forge operator packet, release gate, or production-readiness audit
--> AO Command operator summary
-```
-
-AO Forge is intentionally in the middle of this path. It keeps durable task
-state and readiness semantics close to the factory contracts, while leaving
-execution, trust, evidence storage, and operator UX in the repos that own those
-responsibilities.
-
-`agy-swarms` compatibility remains only for legacy/reference scenarios. Dynamic
-planning through `forge plan --dynamic` requires
-`AO_FORGE_ENABLE_ARCHIVED_AGY_SWARMS=1`; active plans should use AO2 execution
-paths.
-
-## Repo Boundaries
-
-- AO Forge owns durable goal/task state through `GoalRun`. AO2 Pulse, Codex, or
-  another loop runner may propose updates, but the next iteration must read the
-  latest GoalRun and prove the next action still matches objective, scope,
-  acceptance criteria, and stop conditions.
-- AO Forge owns release-preview, release-verify, install-verify, rollback,
-  promotion, retained-evidence, and production-readiness audit contracts.
-- AO Forge treats AO Covenant decisions as gates. Missing, malformed, denied,
-  or blocked decisions fail closed.
-- AO Forge treats AO2 as the execution adapter. AO2 produces local, replayable
-  evidence; Forge should not replace AO2's evaluator closure or evidence model.
-- AO Forge treats ao2-control-plane as an observer. Control-plane publication or
-  readback can support an operator decision, but upload is never approval.
-- AO Command consumes AO Forge and Covenant evidence for humans. It is read-only
-  by default and should not mutate provider state or release state without a
-  future explicit operator-approved path.
-
-## Daily Operating Model
-
-For day-to-day work, start from the operator surface and then drill down into the
-owning repo:
-
-1. Use AO Command to ask "what is the current status and next action?"
-2. Use AO Forge to inspect the GoalRun, production-readiness audit, release
-   preview, promotion gate, or retained-evidence policy that explains the
-   recommendation.
-3. Use AO Covenant evidence to understand why a side effect was allowed,
-   denied, or blocked.
-4. Use AO2 evidence to inspect what actually ran and whether evaluator closure
-   was reached.
-5. Use ao2-control-plane when evidence has been published and should be read
-   through the durable observer instead of a local run directory.
-
-This keeps the stack operator-friendly without weakening the separation of
-authority that makes the factory auditable.
+See the
+[AO Architecture guide](https://github.com/uesugitorachiyo/ao-architecture)
+and the
+[AO Forge component page](https://github.com/uesugitorachiyo/ao-architecture/blob/main/components/ao-forge.md)
+for the cross-repository flow.
 
 ## Status
 

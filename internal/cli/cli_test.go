@@ -259,6 +259,101 @@ func TestGoalRunCLIValidatesAndInspectsContract(t *testing.T) {
 	}
 }
 
+func TestConsumesFoundrySafeNextWorkCompatibilityVector(t *testing.T) {
+	root := repoRoot(t)
+	vectorPath := filepath.Join(root, "examples", "compatibility", "foundry-safe-next-work-to-forge-goal-run-v0.1.json")
+	var vector struct {
+		SchemaVersion string `json:"schema_version"`
+		VectorID      string `json:"vector_id"`
+		Edge          string `json:"edge"`
+		Producer      struct {
+			Repository string `json:"repository"`
+		} `json:"producer"`
+		Consumer struct {
+			Repository      string `json:"repository"`
+			ExpectedCommand string `json:"expected_command"`
+		} `json:"consumer"`
+		ExpectedGoalRun map[string]any `json:"expected_forge_goal_run"`
+		Boundaries      map[string]any `json:"boundaries"`
+	}
+	readJSONFixture(t, vectorPath, &vector)
+
+	if vector.SchemaVersion != "ao.compatibility.foundry-safe-next-work-to-forge-goal-run-vector.v1" ||
+		vector.VectorID != "ao-foundry-safe-next-work-to-ao-forge-goal-run-v1" ||
+		vector.Edge != "ao-foundry.safe_next_work_schedule -> ao-forge.goal_run_request" ||
+		vector.Producer.Repository != "ao-foundry" ||
+		vector.Consumer.Repository != "ao-forge" ||
+		vector.Consumer.ExpectedCommand != "forge goal validate" {
+		t.Fatalf("bad Foundry to Forge vector identity: %+v", vector)
+	}
+	for _, field := range []string{"release_or_publish", "creates_tag", "uploads_assets", "deploys", "contacts_external_users", "provider_pilot", "promotion_requested", "promotion_granted", "schedules_work", "executes_work", "approves_work", "mutates_repositories", "calls_providers", "opens_pr", "merges_pr"} {
+		if vector.Boundaries[field] != false {
+			t.Fatalf("compatibility vector must not grant %s: %#v", field, vector.Boundaries)
+		}
+	}
+	if vector.Boundaries["rsi_remains_denied"] != true {
+		t.Fatalf("compatibility vector must keep RSI denied: %#v", vector.Boundaries)
+	}
+	goalRunPath := filepath.Join(t.TempDir(), "foundry-selected.goal-run.json")
+	goalRunBytes, err := json.MarshalIndent(vector.ExpectedGoalRun, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal expected goal run: %v", err)
+	}
+	if err := os.WriteFile(goalRunPath, append(goalRunBytes, '\n'), 0o644); err != nil {
+		t.Fatalf("write expected goal run: %v", err)
+	}
+	code, stdout, stderr := runCLI("goal", "validate", "--goal-run", goalRunPath)
+	if code != 0 {
+		t.Fatalf("goal validate exit code = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	for _, want := range []string{
+		"goal_run_validation=passed",
+		"schema_version=ao.forge.goal-run.v0.1",
+		"goal_id=ao2-month3-compatibility-wave-c",
+		"current_phase=planning",
+		"next_action_guard=enabled",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("goal validate stdout missing %q\n%s", want, stdout)
+		}
+	}
+}
+
+func TestProducesForgeGoalRunToCovenantPolicyTicketCompatibilityVector(t *testing.T) {
+	root := repoRoot(t)
+	vectorPath := filepath.Join(root, "examples", "compatibility", "forge-goal-run-to-covenant-policy-ticket-v0.1.json")
+	var vector struct {
+		SchemaVersion string         `json:"schema_version"`
+		VectorID      string         `json:"vector_id"`
+		Edge          string         `json:"edge"`
+		Producer      map[string]any `json:"producer"`
+		Consumer      map[string]any `json:"consumer"`
+		GoalRun       map[string]any `json:"forge_goal_run"`
+		Expected      map[string]any `json:"expected_covenant_policy_ticket"`
+		Boundaries    map[string]any `json:"boundaries"`
+	}
+	readJSONFixture(t, vectorPath, &vector)
+
+	if vector.SchemaVersion != "ao.compatibility.forge-goal-run-to-covenant-policy-ticket-vector.v1" ||
+		vector.VectorID != "ao-forge-goal-run-to-ao-covenant-policy-ticket-v1" ||
+		vector.Edge != "ao-forge.goal_run -> ao-covenant.policy_ticket" ||
+		vector.Producer["repository"] != "ao-forge" ||
+		vector.Consumer["repository"] != "ao-covenant" {
+		t.Fatalf("bad Forge to Covenant vector identity: %+v", vector)
+	}
+	if vector.GoalRun["schema_version"] != "ao.forge.goal-run.v0.1" ||
+		vector.Expected["schema_version"] != "ao.covenant.policy-ticket.v1" ||
+		vector.Expected["decision"] != "allow" ||
+		vector.Expected["safe_to_execute"] != false {
+		t.Fatalf("bad expected Covenant policy ticket: goal=%#v expected=%#v", vector.GoalRun, vector.Expected)
+	}
+	if vector.Boundaries["rsi_remains_denied"] != true ||
+		vector.Boundaries["approves_work"] != false ||
+		vector.Boundaries["executes_work"] != false {
+		t.Fatalf("bad vector boundaries: %#v", vector.Boundaries)
+	}
+}
+
 func TestGoalRunCLIValidatesContextHandoffBeforeResume(t *testing.T) {
 	root := repoRoot(t)
 	goalPath := filepath.Join(root, "examples", "goals", "ao2-weekend-hardening.goal-run.json")

@@ -1,0 +1,78 @@
+{
+  "schema_version": "ao.compatibility.forge-goal-run-to-covenant-policy-ticket-vector.v1",
+  "vector_id": "ao-forge-goal-run-to-ao-covenant-policy-ticket-v1",
+  "edge": "ao-forge.goal_run -> ao-covenant.policy_ticket",
+  "producer": {
+    "repository": "ao-forge",
+    "contract": "ao.forge.goal-run.v0.1"
+  },
+  "consumer": {
+    "repository": "ao-covenant",
+    "contract": "ao.covenant.policy-ticket.v1"
+  },
+  "forge_goal_run": {
+    "schema_version": "ao.forge.goal-run.v0.1",
+    "goal_id": "ao2-month3-compatibility-wave-c",
+    "repo": "ao2",
+    "objective": "Validate the current public AO2 compatibility edge without widening release or provider authority.",
+    "acceptance_criteria": [
+      "The selected task remains bounded to compatibility evidence.",
+      "The consumer test validates the canonical vector.",
+      "No release, provider, or external-user action is permitted."
+    ],
+    "allowed_scope": [
+      "Compatibility fixtures.",
+      "Consumer tests.",
+      "Architecture matrix evidence after proof exists."
+    ],
+    "stop_conditions": [
+      "The task would require release publication.",
+      "The task would require provider credentials.",
+      "The task would require external user contact."
+    ],
+    "current_phase": "planning",
+    "next_task": "Add the consumer test for the next compatibility edge.",
+    "last_verified_at": "2026-07-15T23:19:37Z",
+    "continuation_prompt": "Read this GoalRun before taking action. Continue only if the next task stays inside compatibility evidence work.",
+    "loop_owner": {
+      "state_owner": "ao-forge",
+      "executor": "codex",
+      "scheduler": "operator"
+    },
+    "next_action_guard": {
+      "must_read_latest_goal_run": true,
+      "must_match_allowed_scope": true,
+      "must_satisfy_acceptance_criteria": true,
+      "on_mismatch": "backoff_or_stop"
+    }
+  },
+  "expected_covenant_policy_ticket": {
+    "schema_version": "ao.covenant.policy-ticket.v1",
+    "ticket_id": "policy-ao2-month3-compatibility-wave-c",
+    "goal_id": "ao2-month3-compatibility-wave-c",
+    "decision": "allow",
+    "reason": "GoalRun is bounded to compatibility fixtures and consumer tests.",
+    "safe_to_execute": false,
+    "required_next_step": "submit exact approval ticket before AO2 execution",
+    "expires_at": "2026-07-16T23:19:37Z"
+  },
+  "compatibility": {
+    "matrix_status": "proposed",
+    "full_stack_compatibility_complete": false
+  },
+  "boundaries": {
+    "release_or_publish": false,
+    "creates_tag": false,
+    "uploads_assets": false,
+    "deploys": false,
+    "contacts_external_users": false,
+    "provider_pilot": false,
+    "promotion_requested": false,
+    "promotion_granted": false,
+    "rsi_remains_denied": true,
+    "executes_work": false,
+    "approves_work": false,
+    "mutates_repositories": false,
+    "calls_providers": false
+  }
+}

@@ -1,0 +1,98 @@
+{
+  "schema_version": "ao.compatibility.foundry-safe-next-work-to-forge-goal-run-vector.v1",
+  "vector_id": "ao-foundry-safe-next-work-to-ao-forge-goal-run-v1",
+  "edge": "ao-foundry.safe_next_work_schedule -> ao-forge.goal_run_request",
+  "producer": {
+    "repository": "ao-foundry",
+    "source_fixture": "examples/contract-fixtures/valid/foundry-atlas-workgraph-to-safe-next-work-v0.1.json",
+    "safe_next_work_schema": "ao.foundry.pulse-atlas-scheduler-input.v0.1",
+    "selected_node_id": "month3-wave-c-forge-goal-run",
+    "selected_task_id": "month3-wave-c-foundry-forge-task",
+    "allowed_next_action": "start_next_slice"
+  },
+  "consumer": {
+    "repository": "ao-forge",
+    "expected_command": "forge goal validate"
+  },
+  "safe_next_work_schedule": {
+    "schema_version": "ao.foundry.pulse-atlas-scheduler-input.v0.1",
+    "status": "ready",
+    "allowed_next_action": "start_next_slice",
+    "atlas_compile_only": true,
+    "selected_node_id": "month3-wave-c-forge-goal-run",
+    "selected_task_id": "month3-wave-c-foundry-forge-task",
+    "schedules_work": false,
+    "executes_work": false,
+    "approves_work": false,
+    "mutates_repositories": false,
+    "calls_providers": false
+  },
+  "expected_forge_goal_run": {
+    "schema_version": "ao.forge.goal-run.v0.1",
+    "goal_id": "ao2-month3-compatibility-wave-c",
+    "repo": "ao2",
+    "objective": "Validate the current public AO2 compatibility edge without widening release or provider authority.",
+    "acceptance_criteria": [
+      "The selected task remains bounded to compatibility evidence.",
+      "The consumer test validates the canonical vector.",
+      "No release, provider, or external-user action is permitted."
+    ],
+    "allowed_scope": [
+      "Compatibility fixtures.",
+      "Consumer tests.",
+      "Architecture matrix evidence after proof exists."
+    ],
+    "stop_conditions": [
+      "The task would require release publication.",
+      "The task would require provider credentials.",
+      "The task would require external user contact."
+    ],
+    "current_phase": "planning",
+    "next_task": "Add the consumer test for the next compatibility edge.",
+    "last_verified_at": "2026-07-15T23:19:37Z",
+    "continuation_prompt": "Read this GoalRun before taking action. Continue only if the next task stays inside compatibility evidence work.",
+    "loop_owner": {
+      "state_owner": "ao-forge",
+      "executor": "codex",
+      "scheduler": "operator"
+    },
+    "next_action_guard": {
+      "must_read_latest_goal_run": true,
+      "must_match_allowed_scope": true,
+      "must_satisfy_acceptance_criteria": true,
+      "on_mismatch": "backoff_or_stop"
+    },
+    "last_iteration": {
+      "status": "not_started",
+      "summary": "Foundry selected a bounded compatibility-evidence task for Forge.",
+      "evidence": [
+        {
+          "label": "foundry-safe-next-work-to-forge-goal-run",
+          "path": "examples/contract-fixtures/valid/foundry-safe-next-work-to-forge-goal-run-v0.1.json"
+        }
+      ]
+    }
+  },
+  "compatibility": {
+    "matrix_status": "proposed",
+    "full_stack_compatibility_complete": false
+  },
+  "boundaries": {
+    "release_or_publish": false,
+    "creates_tag": false,
+    "uploads_assets": false,
+    "deploys": false,
+    "contacts_external_users": false,
+    "provider_pilot": false,
+    "promotion_requested": false,
+    "promotion_granted": false,
+    "rsi_remains_denied": true,
+    "schedules_work": false,
+    "executes_work": false,
+    "approves_work": false,
+    "mutates_repositories": false,
+    "calls_providers": false,
+    "opens_pr": false,
+    "merges_pr": false
+  }
+}

@@ -1,0 +1,93 @@
+{
+  "schema_version": "ao.compatibility.forge-run-status-to-command-timeline-vector.v1",
+  "vector_id": "ao-forge-run-status-to-ao-command-timeline-v1",
+  "edge": "ao-forge.run_status -> ao-command.run_timeline",
+  "producer": {
+    "repository": "ao-forge",
+    "contract": "ao.forge.run-status.v1"
+  },
+  "consumer": {
+    "repository": "ao-command",
+    "contract": "ao-command.run-timeline.v1"
+  },
+  "forge_run_status": {
+    "schema_version": "ao.forge.run-status.v1",
+    "goal_id": "ao2-month3-compatibility-wave-d",
+    "status": "ready",
+    "current_phase": "consumer_readback",
+    "safe_to_execute": false,
+    "executes_work": false,
+    "approves_work": false,
+    "mutates_repositories": false,
+    "exact_next_action": "render Wave D run status as Command timeline readback only"
+  },
+  "timeline": {
+    "schema_version": "ao.forge.run-timeline.v1",
+    "goal_id": "ao2-month3-compatibility-wave-d",
+    "events": [
+      {
+        "schema_version": "ao.forge.run-event.v1",
+        "goal_id": "ao2-month3-compatibility-wave-d",
+        "kind": "goal_selected",
+        "sequence": 1,
+        "status": "ready",
+        "summary": "Wave D GoalRun selected for Command readback compatibility."
+      },
+      {
+        "schema_version": "ao.forge.run-event.v1",
+        "goal_id": "ao2-month3-compatibility-wave-d",
+        "kind": "consumer_vector",
+        "sequence": 2,
+        "status": "ready",
+        "summary": "Forge run status vector prepared without execution authority."
+      },
+      {
+        "schema_version": "ao.forge.run-event.v1",
+        "goal_id": "ao2-month3-compatibility-wave-d",
+        "kind": "command_readback",
+        "sequence": 3,
+        "status": "ready",
+        "summary": "AO Command can render Forge run status as a read-only timeline."
+      }
+    ],
+    "safe_to_execute": false,
+    "executes_work": false,
+    "approves_work": false,
+    "mutates_repositories": false
+  },
+  "expected_command_run_timeline": {
+    "schema_version": "ao-command.run-timeline.v1",
+    "status": "ready",
+    "goal_id": "ao2-month3-compatibility-wave-d",
+    "run_status": "ready",
+    "current_phase": "consumer_readback",
+    "timeline_event_count": 3,
+    "latest_event": "command_readback",
+    "tested_edge_count": 10,
+    "full_stack_compatibility_complete": false,
+    "safe_to_execute": false,
+    "executes_work": false,
+    "approves_work": false,
+    "mutates_repositories": false
+  },
+  "compatibility": {
+    "matrix_status": "proposed",
+    "tested_edge_count": 10,
+    "full_stack_compatibility_complete": false
+  },
+  "boundaries": {
+    "release_or_publish": false,
+    "creates_tag": false,
+    "uploads_assets": false,
+    "deploys": false,
+    "contacts_external_users": false,
+    "provider_pilot": false,
+    "promotion_requested": false,
+    "promotion_granted": false,
+    "rsi_remains_denied": true,
+    "executes_work": false,
+    "approves_work": false,
+    "mutates_repositories": false,
+    "calls_providers": false
+  }
+}

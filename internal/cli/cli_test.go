@@ -354,6 +354,43 @@ func TestProducesForgeGoalRunToCovenantPolicyTicketCompatibilityVector(t *testin
 	}
 }
 
+func TestProducesForgeRunStatusToCommandTimelineCompatibilityVector(t *testing.T) {
+	root := repoRoot(t)
+	vectorPath := filepath.Join(root, "examples", "compatibility", "forge-run-status-to-command-timeline-v0.1.json")
+	var vector struct {
+		SchemaVersion string         `json:"schema_version"`
+		VectorID      string         `json:"vector_id"`
+		Edge          string         `json:"edge"`
+		Producer      map[string]any `json:"producer"`
+		Consumer      map[string]any `json:"consumer"`
+		RunStatus     map[string]any `json:"forge_run_status"`
+		Expected      map[string]any `json:"expected_command_run_timeline"`
+		Boundaries    map[string]any `json:"boundaries"`
+	}
+	readJSONFixture(t, vectorPath, &vector)
+
+	if vector.SchemaVersion != "ao.compatibility.forge-run-status-to-command-timeline-vector.v1" ||
+		vector.VectorID != "ao-forge-run-status-to-ao-command-timeline-v1" ||
+		vector.Edge != "ao-forge.run_status -> ao-command.run_timeline" ||
+		vector.Producer["repository"] != "ao-forge" ||
+		vector.Consumer["repository"] != "ao-command" {
+		t.Fatalf("bad Forge to Command vector identity: %+v", vector)
+	}
+	if vector.RunStatus["schema_version"] != "ao.forge.run-status.v1" ||
+		vector.RunStatus["status"] != "ready" ||
+		vector.Expected["schema_version"] != "ao-command.run-timeline.v1" ||
+		vector.Expected["goal_id"] != vector.RunStatus["goal_id"] ||
+		vector.Expected["safe_to_execute"] != false {
+		t.Fatalf("bad expected Command run timeline: status=%#v expected=%#v", vector.RunStatus, vector.Expected)
+	}
+	if vector.Boundaries["rsi_remains_denied"] != true ||
+		vector.Boundaries["provider_pilot"] != false ||
+		vector.Boundaries["release_or_publish"] != false ||
+		vector.Boundaries["executes_work"] != false {
+		t.Fatalf("bad vector boundaries: %#v", vector.Boundaries)
+	}
+}
+
 func TestGoalRunCLIValidatesContextHandoffBeforeResume(t *testing.T) {
 	root := repoRoot(t)
 	goalPath := filepath.Join(root, "examples", "goals", "ao2-weekend-hardening.goal-run.json")

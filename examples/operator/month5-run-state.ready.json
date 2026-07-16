@@ -1,0 +1,70 @@
+{
+  "schema_version": "ao.forge.month5-run-state.v0.1",
+  "status": "ready",
+  "current_month": "month5",
+  "run_state": {
+    "run_id": "month5-operator-workflow-hardening-readback",
+    "source_work_id": "month5-operator-workflow-hardening",
+    "handoff_from": "ao-foundry.safe-next-work",
+    "phase": "operator_workflow_readback",
+    "state": "read_only",
+    "current_public_release_pair": {
+      "ao2": "v0.5.1",
+      "control_plane": "v0.1.15"
+    },
+    "compatibility_edges_tested": 16,
+    "compatibility_gate_complete": false
+  },
+  "gates": {
+    "release_gate": "denied",
+    "provider_gate": "denied",
+    "live_self_modification_gate": "denied",
+    "rsi_gate": "denied",
+    "promotion_gate": "denied",
+    "policy_gate": "human_approval_required_for_governed_action",
+    "observation_gate": "readback_required"
+  },
+  "evidence": {
+    "current_stack_state": "ao-architecture/docs/operator-workflow.md",
+    "policy_gate_state": "ao-covenant policy readback fixture",
+    "dry_run_boundary": "Month 4 fixture-only dry-run evidence",
+    "rollback_expectation": "rollback evidence must be visible before closure",
+    "observation_readback": "Control Plane observation readback required",
+    "support_reproduction": "sanitized support evidence must include command, expected result, actual result, and evidence path"
+  },
+  "timeline": [
+    {
+      "event": "safe_next_work_selected",
+      "status": "ready",
+      "summary": "Foundry selected Month 5 operator workflow hardening as the next bounded work item."
+    },
+    {
+      "event": "run_state_bound",
+      "status": "read_only",
+      "summary": "Forge bound the selected work to a read-only run-state packet."
+    },
+    {
+      "event": "denied_gates_visible",
+      "status": "ready",
+      "summary": "Release, provider, live self-modification, promotion, and RSI gates are visible as denied."
+    }
+  ],
+  "boundaries": {
+    "release_or_publish": false,
+    "creates_tag": false,
+    "uploads_assets": false,
+    "deploys": false,
+    "contacts_external_users": false,
+    "provider_pilot": false,
+    "live_self_modification": false,
+    "promotion_requested": false,
+    "promotion_granted": false,
+    "rsi_authorized": false,
+    "executes_work": false
+  },
+  "feeds": [
+    "ao-command.operator-workflow-readback",
+    "ao-mission.month5-closure"
+  ],
+  "operator_next_action": "present read-only run-state and denied gates to the operator before any further action"
+}

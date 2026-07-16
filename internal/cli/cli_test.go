@@ -391,6 +391,57 @@ func TestProducesForgeRunStatusToCommandTimelineCompatibilityVector(t *testing.T
 	}
 }
 
+func TestMonth5RunStateOperatorFixture(t *testing.T) {
+	root := repoRoot(t)
+	fixturePath := filepath.Join(root, "examples", "operator", "month5-run-state.ready.json")
+	var fixture struct {
+		SchemaVersion string         `json:"schema_version"`
+		Status        string         `json:"status"`
+		CurrentMonth  string         `json:"current_month"`
+		RunState      map[string]any `json:"run_state"`
+		Gates         map[string]any `json:"gates"`
+		Evidence      map[string]any `json:"evidence"`
+		Boundaries    map[string]any `json:"boundaries"`
+		Feeds         []string       `json:"feeds"`
+		NextAction    string         `json:"operator_next_action"`
+	}
+	readJSONFixture(t, fixturePath, &fixture)
+
+	if fixture.SchemaVersion != "ao.forge.month5-run-state.v0.1" ||
+		fixture.Status != "ready" ||
+		fixture.CurrentMonth != "month5" {
+		t.Fatalf("bad Month 5 run-state fixture header: %+v", fixture)
+	}
+	if fixture.RunState["source_work_id"] != "month5-operator-workflow-hardening" ||
+		fixture.RunState["phase"] != "operator_workflow_readback" ||
+		fixture.RunState["handoff_from"] != "ao-foundry.safe-next-work" {
+		t.Fatalf("run-state does not bind Foundry handoff: %#v", fixture.RunState)
+	}
+	for _, field := range []string{"release_gate", "provider_gate", "live_self_modification_gate", "rsi_gate", "promotion_gate"} {
+		if fixture.Gates[field] != "denied" {
+			t.Fatalf("gate %s must be denied: %#v", field, fixture.Gates)
+		}
+	}
+	for _, field := range []string{"current_stack_state", "policy_gate_state", "dry_run_boundary", "rollback_expectation", "observation_readback", "support_reproduction"} {
+		if fixture.Evidence[field] == "" {
+			t.Fatalf("fixture missing evidence reference %s: %#v", field, fixture.Evidence)
+		}
+	}
+	for _, field := range []string{"release_or_publish", "creates_tag", "uploads_assets", "deploys", "contacts_external_users", "provider_pilot", "live_self_modification", "promotion_requested", "promotion_granted", "rsi_authorized", "executes_work"} {
+		if fixture.Boundaries[field] != false {
+			t.Fatalf("boundary %s must stay false: %#v", field, fixture.Boundaries)
+		}
+	}
+	if len(fixture.Feeds) != 2 ||
+		fixture.Feeds[0] != "ao-command.operator-workflow-readback" ||
+		fixture.Feeds[1] != "ao-mission.month5-closure" {
+		t.Fatalf("fixture feeds drifted: %#v", fixture.Feeds)
+	}
+	if fixture.NextAction != "present read-only run-state and denied gates to the operator before any further action" {
+		t.Fatalf("fixture next action drifted: %q", fixture.NextAction)
+	}
+}
+
 func TestGoalRunCLIValidatesContextHandoffBeforeResume(t *testing.T) {
 	root := repoRoot(t)
 	goalPath := filepath.Join(root, "examples", "goals", "ao2-weekend-hardening.goal-run.json")

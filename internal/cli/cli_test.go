@@ -261,7 +261,7 @@ func TestGoalRunCLIValidatesAndInspectsContract(t *testing.T) {
 
 func TestGitHubIssueMonth2GoalRunRecordsTargetAndResumeState(t *testing.T) {
 	root := repoRoot(t)
-	body, err := os.ReadFile(filepath.Join(root, "examples", "goals", "github-issue-month2-reproduction.goal-run.json"))
+	body, err := os.ReadFile(filepath.Join(root, "examples", "goals", "github-issue-month2-reproduction-run-state.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

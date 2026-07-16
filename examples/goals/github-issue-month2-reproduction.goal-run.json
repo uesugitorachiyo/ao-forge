@@ -1,0 +1,42 @@
+{
+  "schema_version": "ao.forge.github-issue-reproduction-goal-run.v0.1",
+  "goal_id": "github-issue-month2-reproduction",
+  "status": "ready",
+  "repository": {
+    "identity": "uesugitorachiyo/ao2",
+    "upstream_url": "https://github.com/uesugitorachiyo/ao2.git",
+    "default_branch": "main",
+    "target_commit": "80ec5321f42d4bab17d5e64fdae6aa099ba59d4a",
+    "hooks_disabled": true,
+    "controlled_remotes": true,
+    "safe_git_config": true
+  },
+  "command_state": {
+    "selected_commands": [
+      {
+        "command_id": "pre-patch-repro",
+        "argv": ["cargo", "test", "-p", "ao2-cli", "--test", "github_issue_intake"],
+        "policy_class": "local_test_only",
+        "expected_pre_patch_status": "fails_before_repair"
+      }
+    ],
+    "github_write_performed": false,
+    "issue_write_performed": false,
+    "feature_generated_pr_opened": false,
+    "provider_call_performed": false
+  },
+  "resume_points": [
+    "clone",
+    "fetch",
+    "dependency_resolution",
+    "compile",
+    "test",
+    "evidence_export"
+  ],
+  "evidence": {
+    "command_log": "tmp/github-issue-month2/command-log.json",
+    "reproduction_result": "tmp/github-issue-month2/reproduction-result.json",
+    "target_digest": "sha256:fixture-target-digest"
+  },
+  "operator_next_action": "Run the selected pre-patch reproduction in an isolated workspace and stop before repair unless the authentic-bug gate passes."
+}

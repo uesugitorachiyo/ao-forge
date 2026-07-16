@@ -259,6 +259,51 @@ func TestGoalRunCLIValidatesAndInspectsContract(t *testing.T) {
 	}
 }
 
+func TestGitHubIssueMonth2GoalRunRecordsTargetAndResumeState(t *testing.T) {
+	root := repoRoot(t)
+	body, err := os.ReadFile(filepath.Join(root, "examples", "goals", "github-issue-month2-reproduction.goal-run.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture map[string]any
+	if err := json.Unmarshal(body, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	if fixture["schema_version"] != "ao.forge.github-issue-reproduction-goal-run.v0.1" ||
+		fixture["goal_id"] != "github-issue-month2-reproduction" ||
+		fixture["status"] != "ready" {
+		t.Fatalf("unexpected goal-run identity: %#v", fixture)
+	}
+	repo := fixture["repository"].(map[string]any)
+	if repo["identity"] != "uesugitorachiyo/ao2" ||
+		repo["upstream_url"] != "https://github.com/uesugitorachiyo/ao2.git" ||
+		repo["target_commit"] != "80ec5321f42d4bab17d5e64fdae6aa099ba59d4a" ||
+		repo["hooks_disabled"] != true ||
+		repo["controlled_remotes"] != true ||
+		repo["safe_git_config"] != true {
+		t.Fatalf("repository acquisition state drifted: %#v", repo)
+	}
+	state := fixture["command_state"].(map[string]any)
+	for _, key := range []string{"github_write_performed", "issue_write_performed", "feature_generated_pr_opened", "provider_call_performed"} {
+		if state[key] != false {
+			t.Fatalf("command_state.%s = %#v, want false", key, state[key])
+		}
+	}
+	resume := fixture["resume_points"].([]any)
+	if len(resume) != 6 {
+		t.Fatalf("resume_points len = %d, want 6", len(resume))
+	}
+	for _, want := range []string{"clone", "fetch", "dependency_resolution", "compile", "test", "evidence_export"} {
+		found := false
+		for _, item := range resume {
+			found = found || item == want
+		}
+		if !found {
+			t.Fatalf("resume_points missing %q: %#v", want, resume)
+		}
+	}
+}
+
 func TestConsumesFoundrySafeNextWorkCompatibilityVector(t *testing.T) {
 	root := repoRoot(t)
 	vectorPath := filepath.Join(root, "examples", "compatibility", "foundry-safe-next-work-to-forge-goal-run-v0.1.json")

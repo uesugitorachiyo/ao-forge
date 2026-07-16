@@ -304,6 +304,58 @@ func TestGitHubIssueMonth2GoalRunRecordsTargetAndResumeState(t *testing.T) {
 	}
 }
 
+func TestGitHubIssueMonth3RepairRunStateRecordsRollbackReplayAndResume(t *testing.T) {
+	root := repoRoot(t)
+	body, err := os.ReadFile(filepath.Join(root, "examples", "goals", "github-issue-month3-repair-run-state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture map[string]any
+	if err := json.Unmarshal(body, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	if fixture["schema_version"] != "ao.forge.github-issue-month3-repair-run-state.v0.1" ||
+		fixture["goal_id"] != "github-issue-month3-isolated-repair" ||
+		fixture["status"] != "ready" {
+		t.Fatalf("unexpected repair run-state identity: %#v", fixture)
+	}
+	workspace := fixture["isolated_workspace"].(map[string]any)
+	if workspace["mode"] != "disposable_worktree" || workspace["live_repo_mutated"] != false {
+		t.Fatalf("repair must stay isolated from live repos: %#v", workspace)
+	}
+	prePatch := fixture["pre_patch"].(map[string]any)
+	if prePatch["expected_failure_observed"] != true || prePatch["negative_control_passed"] != true {
+		t.Fatalf("pre-patch proof drifted: %#v", prePatch)
+	}
+	postPatch := fixture["post_patch"].(map[string]any)
+	if postPatch["regression_test_passed"] != true || postPatch["diff_scope_clean"] != true {
+		t.Fatalf("post-patch verification drifted: %#v", postPatch)
+	}
+	rollback := fixture["rollback"].(map[string]any)
+	if rollback["before_digest"] != rollback["after_rollback_digest"] ||
+		rollback["before_digest"] == rollback["after_repair_digest"] ||
+		rollback["exact_state_restored"] != true {
+		t.Fatalf("rollback did not prove exact restoration: %#v", rollback)
+	}
+	replay := fixture["replay"].(map[string]any)
+	if replay["status"] != "accepted" ||
+		replay["evidence_digest"] != replay["replay_digest"] ||
+		len(replay["digest_failures"].([]any)) != 0 {
+		t.Fatalf("replay evidence is not accepted and digest-clean: %#v", replay)
+	}
+	resume := fixture["resume"].(map[string]any)
+	if resume["resumed_after_interruption"] != true ||
+		resume["duplicate_edits"] != false ||
+		resume["stale_resume_rejected"] != true {
+		t.Fatalf("resume evidence drifted: %#v", resume)
+	}
+	for _, key := range []string{"feature_generated_draft_pr_opened", "issue_write_performed", "provider_call_performed", "release_selected", "rsi_authorized"} {
+		if fixture["denied_actions"].(map[string]any)[key] != false {
+			t.Fatalf("denied action %s must remain false: %#v", key, fixture["denied_actions"])
+		}
+	}
+}
+
 func TestConsumesFoundrySafeNextWorkCompatibilityVector(t *testing.T) {
 	root := repoRoot(t)
 	vectorPath := filepath.Join(root, "examples", "compatibility", "foundry-safe-next-work-to-forge-goal-run-v0.1.json")

@@ -1,0 +1,48 @@
+{
+  "schema_version": "ao.forge.github-issue-month3-repair-run-state.v0.1",
+  "goal_id": "github-issue-month3-isolated-repair",
+  "status": "ready",
+  "source_fixture": "deterministic_authentic_bug",
+  "base_commit": "80ec5321f42d4bab17d5e64fdae6aa099ba59d4a",
+  "isolated_workspace": {
+    "mode": "disposable_worktree",
+    "hooks_disabled": true,
+    "safe_git_config": true,
+    "live_repo_mutated": false
+  },
+  "pre_patch": {
+    "regression_test": "fixture/tests/regression.txt",
+    "expected_failure_observed": true,
+    "negative_control_passed": true
+  },
+  "post_patch": {
+    "regression_test_passed": true,
+    "relevant_existing_tests_passed": true,
+    "diff_scope_clean": true
+  },
+  "rollback": {
+    "before_digest": "1111111111111111111111111111111111111111111111111111111111111111",
+    "after_repair_digest": "2222222222222222222222222222222222222222222222222222222222222222",
+    "after_rollback_digest": "1111111111111111111111111111111111111111111111111111111111111111",
+    "exact_state_restored": true
+  },
+  "replay": {
+    "status": "accepted",
+    "evidence_digest": "3333333333333333333333333333333333333333333333333333333333333333",
+    "replay_digest": "3333333333333333333333333333333333333333333333333333333333333333",
+    "digest_failures": []
+  },
+  "resume": {
+    "checkpoint": "post_reproduction_pre_repair",
+    "resumed_after_interruption": true,
+    "duplicate_edits": false,
+    "stale_resume_rejected": true
+  },
+  "denied_actions": {
+    "feature_generated_draft_pr_opened": false,
+    "issue_write_performed": false,
+    "provider_call_performed": false,
+    "release_selected": false,
+    "rsi_authorized": false
+  }
+}

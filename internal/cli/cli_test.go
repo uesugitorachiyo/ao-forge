@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -25,6 +26,22 @@ func repoRoot(t *testing.T) string {
 		t.Fatalf("resolve repo root: %v", err)
 	}
 	return root
+}
+
+func pythonForTest(t *testing.T) string {
+	t.Helper()
+	for _, name := range []string{"python3", "python"} {
+		if path, err := exec.LookPath(name); err == nil {
+			return path
+		}
+	}
+	t.Fatalf("python executable not found")
+	return ""
+}
+
+func bashAvailable() bool {
+	_, err := exec.LookPath("bash")
+	return err == nil
 }
 
 func readJSONFixture(t *testing.T, path string, target any) {
@@ -2011,7 +2028,12 @@ func hasProductionReadinessGate(gates []productionReadinessGate, id string) bool
 
 func TestPublicRepoPolicyCheckPassesForTrackedFiles(t *testing.T) {
 	root := repoRoot(t)
-	cmd := exec.Command("bash", filepath.Join(root, "scripts", "check-public-repo-policy.sh"))
+	var cmd *exec.Cmd
+	if bashAvailable() {
+		cmd = exec.Command("bash", filepath.Join(root, "scripts", "check-public-repo-policy.sh"))
+	} else {
+		cmd = exec.Command(pythonForTest(t), filepath.Join(root, "scripts", "check-public-repo-policy.py"))
+	}
 	cmd.Dir = root
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -2019,6 +2041,19 @@ func TestPublicRepoPolicyCheckPassesForTrackedFiles(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "public repo policy check passed") {
 		t.Fatalf("public repo policy check output drifted: %s", out)
+	}
+}
+
+func TestNativePublicRepoPolicyCheckPassesForTrackedFiles(t *testing.T) {
+	root := repoRoot(t)
+	cmd := exec.Command(pythonForTest(t), filepath.Join(root, "scripts", "check-public-repo-policy.py"))
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("native public repo policy check failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "public repo policy check passed") {
+		t.Fatalf("native public repo policy check output drifted: %s", out)
 	}
 }
 
@@ -4210,8 +4245,12 @@ func TestCIWorkflowPinsMacOSRunner(t *testing.T) {
 func TestBranchProtectionVerifierRunsWithPortableUTCTimestamp(t *testing.T) {
 	root := repoRoot(t)
 	tempDir := t.TempDir()
-	fakeGH := filepath.Join(tempDir, "gh")
-	if err := os.WriteFile(fakeGH, []byte(`#!/usr/bin/env bash
+	useBash := bashAvailable()
+	if !useBash {
+		writeFakeGHForTest(t, tempDir)
+	} else {
+		fakeGH := filepath.Join(tempDir, "gh")
+		if err := os.WriteFile(fakeGH, []byte(`#!/usr/bin/env bash
 set -euo pipefail
 
 if [[ "$1" != "api" ]]; then
@@ -4263,11 +4302,17 @@ JSON
     ;;
 esac
 `), 0755); err != nil {
-		t.Fatalf("write fake gh: %v", err)
+			t.Fatalf("write fake gh: %v", err)
+		}
 	}
 
 	outPath := filepath.Join(tempDir, "branch-protection-audit.json")
-	cmd := exec.Command("bash", filepath.Join(root, "scripts", "verify-branch-protection.sh"))
+	var cmd *exec.Cmd
+	if useBash {
+		cmd = exec.Command("bash", filepath.Join(root, "scripts", "verify-branch-protection.sh"))
+	} else {
+		cmd = exec.Command(pythonForTest(t), filepath.Join(root, "scripts", "verify-branch-protection.py"))
+	}
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(),
 		"PATH="+tempDir+string(os.PathListSeparator)+os.Getenv("PATH"),
@@ -4299,6 +4344,110 @@ esac
 	}
 	if !containsString(audit.RequiredChecks, "License policy") {
 		t.Fatalf("required checks missing License policy: %#v", audit.RequiredChecks)
+	}
+}
+
+func TestNativeBranchProtectionVerifierRunsWithPortableUTCTimestamp(t *testing.T) {
+	root := repoRoot(t)
+	tempDir := t.TempDir()
+	writeFakeGHForTest(t, tempDir)
+
+	outPath := filepath.Join(tempDir, "branch-protection-audit.json")
+	cmd := exec.Command(pythonForTest(t), filepath.Join(root, "scripts", "verify-branch-protection.py"))
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(),
+		"PATH="+tempDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"AO_FORGE_GITHUB_REPOSITORY=uesugitorachiyo/ao-forge",
+		"AO_FORGE_BRANCH_PROTECTION_BRANCH=main",
+		"AO_FORGE_BRANCH_PROTECTION_AUDIT="+outPath,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("native verify branch protection failed: %v\n%s", err, out)
+	}
+
+	var audit struct {
+		Status         string   `json:"status"`
+		CheckedAt      string   `json:"checked_at"`
+		RequiredChecks []string `json:"required_checks"`
+	}
+	bytes, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read native audit: %v", err)
+	}
+	if err := json.Unmarshal(bytes, &audit); err != nil {
+		t.Fatalf("parse native audit: %v\n%s", err, bytes)
+	}
+	if audit.Status != "passed" {
+		t.Fatalf("status = %q, want passed\n%s", audit.Status, bytes)
+	}
+	if !strings.HasSuffix(audit.CheckedAt, "Z") {
+		t.Fatalf("checked_at = %q, want UTC Z timestamp", audit.CheckedAt)
+	}
+	if !containsString(audit.RequiredChecks, "License policy") {
+		t.Fatalf("required checks missing License policy: %#v", audit.RequiredChecks)
+	}
+}
+
+func writeFakeGHForTest(t *testing.T, tempDir string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		fakeGH := filepath.Join(tempDir, "gh.cmd")
+		if err := os.WriteFile(fakeGH, []byte(`@echo off
+set patharg=%2
+if "%patharg%"=="repos/uesugitorachiyo/ao-forge/branches/main/protection" (
+  echo {"required_status_checks":{"strict":true,"contexts":["Go ubuntu-latest","Go macos-26","Go windows-latest","License policy","Workflow lint","GoalRun fixture smoke","Production readiness audit","Release preview dry-run audit"]},"required_pull_request_reviews":{"dismiss_stale_reviews":true},"enforce_admins":{"enabled":true},"required_linear_history":{"enabled":true},"allow_force_pushes":{"enabled":false},"allow_deletions":{"enabled":false}}
+  exit /b 0
+)
+if "%patharg%"=="repos/uesugitorachiyo/ao-forge/rulesets" (
+  echo []
+  exit /b 0
+)
+echo unexpected gh api path: %patharg% 1>&2
+exit /b 2
+`), 0755); err != nil {
+			t.Fatalf("write native fake gh: %v", err)
+		}
+		return
+	}
+	fakeGH := filepath.Join(tempDir, "gh")
+	if err := os.WriteFile(fakeGH, []byte(`#!/usr/bin/env sh
+set -eu
+case "$2" in
+  repos/uesugitorachiyo/ao-forge/branches/main/protection)
+    cat <<'JSON'
+{
+  "required_status_checks": {
+    "strict": true,
+    "contexts": ["Go ubuntu-latest", "Go macos-26", "Go windows-latest", "License policy", "Workflow lint", "GoalRun fixture smoke", "Production readiness audit", "Release preview dry-run audit"]
+  },
+  "required_pull_request_reviews": {
+    "dismiss_stale_reviews": true
+  },
+  "enforce_admins": {
+    "enabled": true
+  },
+  "required_linear_history": {
+    "enabled": true
+  },
+  "allow_force_pushes": {
+    "enabled": false
+  },
+  "allow_deletions": {
+    "enabled": false
+  }
+}
+JSON
+    ;;
+  repos/uesugitorachiyo/ao-forge/rulesets)
+    printf '[]\n'
+    ;;
+  *)
+    echo "unexpected gh api path: $2" >&2
+    exit 2
+    ;;
+esac
+`), 0755); err != nil {
+		t.Fatalf("write native fake gh: %v", err)
 	}
 }
 
@@ -7485,9 +7634,11 @@ func main() {
 		t.Fatalf("expected executions to overlap (be concurrent), but wc1 ran %d-%d and wc2 ran %d-%d", start1, end1, start2, end2)
 	}
 
-	// Verify duration is reasonable (failsafe to ensure it did not hang)
-	if duration >= 2500*time.Millisecond {
-		t.Fatalf("execution took too long, expected under 2500ms, took %v", duration)
+	// Verify duration is reasonable as a hangsafety bound. The overlap check
+	// above is the behavior assertion; Windows process startup can exceed the
+	// old 2.5s bound on slower hosts even when the workcells run concurrently.
+	if duration >= 10*time.Second {
+		t.Fatalf("execution took too long, expected under 10s, took %v", duration)
 	}
 
 	// Verify both workcells are passed in packet

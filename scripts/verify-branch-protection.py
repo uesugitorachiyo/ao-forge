@@ -3,6 +3,7 @@ import datetime
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -20,9 +21,17 @@ REQUIRED_CHECKS = [
 ]
 
 
+def gh_executable() -> str:
+    if os.name == "nt":
+        gh_cmd = shutil.which("gh.cmd")
+        if gh_cmd:
+            return gh_cmd
+    return shutil.which("gh") or "gh"
+
+
 def gh_json(path: str, out_path: pathlib.Path):
     with out_path.open("w", encoding="utf-8") as handle:
-        subprocess.run(["gh", "api", path], stdout=handle, check=True)
+        subprocess.run([gh_executable(), "api", path], stdout=handle, check=True)
     return json.loads(out_path.read_text(encoding="utf-8"))
 
 

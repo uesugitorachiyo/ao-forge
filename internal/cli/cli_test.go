@@ -55,6 +55,17 @@ func readJSONFixture(t *testing.T, path string, target any) {
 	}
 }
 
+func copyFileForTest(t *testing.T, source string, target string) {
+	t.Helper()
+	body, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatalf("read %s: %v", source, err)
+	}
+	if err := os.WriteFile(target, body, 0o644); err != nil {
+		t.Fatalf("write %s: %v", target, err)
+	}
+}
+
 func goalEvidencePathPresent(evidence []struct {
 	Label string `json:"label"`
 	Path  string `json:"path"`
@@ -1472,6 +1483,42 @@ func TestGoalRunCLIDryRunsRetainedEvidenceCleanup(t *testing.T) {
 	}
 	if stderr != "" {
 		t.Fatalf("goal evidence cleanup --json wrote stderr: %s", stderr)
+	}
+
+	symlinkRoot := t.TempDir()
+	outsideRoot := t.TempDir()
+	outsideArtifact := filepath.Join(outsideRoot, "outside-retained.json")
+	copyFileForTest(t, filepath.Join(root, "docs", "evidence", "goals", "ao2-weekend-hardening", "20260101T010000Z-complete", "old-loop-retention-proof.json"), outsideArtifact)
+	if err := os.Symlink(outsideArtifact, filepath.Join(symlinkRoot, "linked-retained.json")); err != nil {
+		t.Fatalf("create retained evidence symlink: %v", err)
+	}
+	code, stdout, stderr = runCLI("goal", "evidence", "cleanup", "--dry-run", "--root", symlinkRoot, "--now", now, "--json")
+	if code != 1 {
+		t.Fatalf("goal evidence cleanup symlink exit code = %d, want 1\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if err := json.Unmarshal([]byte(stdout), &summary); err != nil {
+		t.Fatalf("goal evidence cleanup symlink --json emitted invalid JSON: %v\n%s", err, stdout)
+	}
+	if summary.Status != "failed" || summary.ArtifactsScanned != 0 || !strings.Contains(strings.Join(summary.Errors, " "), "symlink") {
+		t.Fatalf("goal evidence cleanup symlink summary drifted: %+v", summary)
+	}
+	if !strings.Contains(stderr, "dry-run failed") {
+		t.Fatalf("goal evidence cleanup symlink stderr drifted: %s", stderr)
+	}
+
+	tooManyRoot := t.TempDir()
+	for i := 0; i <= maxRetainedEvidenceCleanupFiles; i++ {
+		copyFileForTest(t, filepath.Join(root, "docs", "evidence", "goals", "ao2-weekend-hardening", "20260101T010000Z-complete", "old-loop-retention-proof.json"), filepath.Join(tooManyRoot, fmt.Sprintf("retained-%05d.json", i)))
+	}
+	code, stdout, stderr = runCLI("goal", "evidence", "cleanup", "--dry-run", "--root", tooManyRoot, "--now", now, "--json")
+	if code != 1 {
+		t.Fatalf("goal evidence cleanup file-count exit code = %d, want 1\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if err := json.Unmarshal([]byte(stdout), &summary); err != nil {
+		t.Fatalf("goal evidence cleanup file-count --json emitted invalid JSON: %v\n%s", err, stdout)
+	}
+	if summary.Status != "failed" || !strings.Contains(strings.Join(summary.Errors, " "), "file count limit") {
+		t.Fatalf("goal evidence cleanup file-count summary drifted: %+v", summary)
 	}
 }
 

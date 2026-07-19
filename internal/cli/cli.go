@@ -15,6 +15,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
@@ -34,28 +35,31 @@ import (
 )
 
 const (
-	briefSchemaVersion           = "ao.forge.factory-brief.v0.1"
-	planSchemaVersion            = "ao.forge.factory-plan.v0.1"
-	packetSchemaVersion          = "ao.forge.factory-packet.v0.1"
-	decisionFixtureSchemaVersion = "ao.forge.covenant-decision-fixture.v0.1"
-	gateResultSchemaVersion      = "ao.forge.covenant-gate-result.v0.1"
-	releaseCandidateVersion      = "ao.forge.release-candidate.v0.1"
-	releaseCandidateSchemaPath   = "docs/contracts/release-candidate-v0.1.schema.json"
-	releasePreviewAuditVersion   = "ao.forge.release-preview-audit.v0.1"
-	releasePreviewInspectVersion = "ao.forge.release-preview-inspect.v0.1"
-	productionReadinessVersion   = "ao.forge.production-readiness-audit.v0.1"
-	goalRunSchemaVersion         = "ao.forge.goal-run.v0.1"
-	goalRunSchemaPath            = "docs/contracts/goal-run-v0.1.schema.json"
-	goalContextHandoffVersion    = "ao.forge.goal-run-context-handoff.v0.1"
-	goalContextHandoffSchemaPath = "docs/contracts/goal-run-context-handoff-v0.1.schema.json"
-	goalVerificationVersion      = "ao.forge.goal-run-verification.v0.1"
-	goalVerificationSchemaPath   = "docs/contracts/goal-run-verification-v0.1.schema.json"
-	goalRunUpdateAuditVersion    = "ao.forge.goal-run-update-audit.v0.1"
-	goalRunUpdateAuditSchemaPath = "docs/contracts/goal-run-update-audit-v0.1.schema.json"
-	goalRetainedEvidenceVersion  = "ao.forge.goal-run-retained-evidence.v0.1"
-	goalRetainedEvidencePath     = "docs/contracts/goal-run-retained-evidence-v0.1.schema.json"
-	goalEvidenceCleanupVersion   = "ao.forge.goal-run-retained-evidence-cleanup.v0.1"
-	liveDocsGuardVersion         = "ao.forge.live-docs-execution-guard.v0.1"
+	briefSchemaVersion                   = "ao.forge.factory-brief.v0.1"
+	planSchemaVersion                    = "ao.forge.factory-plan.v0.1"
+	packetSchemaVersion                  = "ao.forge.factory-packet.v0.1"
+	decisionFixtureSchemaVersion         = "ao.forge.covenant-decision-fixture.v0.1"
+	gateResultSchemaVersion              = "ao.forge.covenant-gate-result.v0.1"
+	releaseCandidateVersion              = "ao.forge.release-candidate.v0.1"
+	releaseCandidateSchemaPath           = "docs/contracts/release-candidate-v0.1.schema.json"
+	releasePreviewAuditVersion           = "ao.forge.release-preview-audit.v0.1"
+	releasePreviewInspectVersion         = "ao.forge.release-preview-inspect.v0.1"
+	productionReadinessVersion           = "ao.forge.production-readiness-audit.v0.1"
+	goalRunSchemaVersion                 = "ao.forge.goal-run.v0.1"
+	goalRunSchemaPath                    = "docs/contracts/goal-run-v0.1.schema.json"
+	goalContextHandoffVersion            = "ao.forge.goal-run-context-handoff.v0.1"
+	goalContextHandoffSchemaPath         = "docs/contracts/goal-run-context-handoff-v0.1.schema.json"
+	goalVerificationVersion              = "ao.forge.goal-run-verification.v0.1"
+	goalVerificationSchemaPath           = "docs/contracts/goal-run-verification-v0.1.schema.json"
+	goalRunUpdateAuditVersion            = "ao.forge.goal-run-update-audit.v0.1"
+	goalRunUpdateAuditSchemaPath         = "docs/contracts/goal-run-update-audit-v0.1.schema.json"
+	goalRetainedEvidenceVersion          = "ao.forge.goal-run-retained-evidence.v0.1"
+	goalRetainedEvidencePath             = "docs/contracts/goal-run-retained-evidence-v0.1.schema.json"
+	goalEvidenceCleanupVersion           = "ao.forge.goal-run-retained-evidence-cleanup.v0.1"
+	maxRetainedEvidenceCleanupFiles      = 4096
+	maxRetainedEvidenceCleanupFileBytes  = 8 * 1024 * 1024
+	maxRetainedEvidenceCleanupTotalBytes = 64 * 1024 * 1024
+	liveDocsGuardVersion                 = "ao.forge.live-docs-execution-guard.v0.1"
 )
 
 var (
@@ -7038,14 +7042,32 @@ func discoverRetainedEvidenceArtifacts(root string) ([]string, error) {
 	if !info.IsDir() {
 		return nil, fmt.Errorf("%s is not a directory", root)
 	}
+	linkInfo, err := os.Lstat(resolvedRoot)
+	if err != nil {
+		return nil, fmt.Errorf("%s is not readable: %v", root, err)
+	}
+	if linkInfo.Mode()&fs.ModeSymlink != 0 {
+		return nil, fmt.Errorf("%s is a symlink", root)
+	}
 
 	var artifacts []string
+	budget := retainedEvidenceCleanupScanBudget{}
 	err = filepath.WalkDir(resolvedRoot, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			return fmt.Errorf("retained evidence cleanup symlink is not allowed: %s", filepath.ToSlash(path))
+		}
 		if d.IsDir() || filepath.Ext(path) != ".json" {
 			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		if err := budget.accept(path, info); err != nil {
+			return err
 		}
 		if retainedEvidenceFileHasSchema(path) {
 			artifacts = append(artifacts, path)
@@ -7057,6 +7079,27 @@ func discoverRetainedEvidenceArtifacts(root string) ([]string, error) {
 	}
 	sort.Strings(artifacts)
 	return artifacts, nil
+}
+
+type retainedEvidenceCleanupScanBudget struct {
+	files      int
+	totalBytes int64
+}
+
+func (budget *retainedEvidenceCleanupScanBudget) accept(path string, info fs.FileInfo) error {
+	budget.files++
+	if budget.files > maxRetainedEvidenceCleanupFiles {
+		return fmt.Errorf("retained evidence cleanup file count limit exceeded: max %d", maxRetainedEvidenceCleanupFiles)
+	}
+	size := info.Size()
+	if size > maxRetainedEvidenceCleanupFileBytes {
+		return fmt.Errorf("retained evidence cleanup file size limit exceeded for %s: max %d bytes", filepath.ToSlash(path), maxRetainedEvidenceCleanupFileBytes)
+	}
+	budget.totalBytes += size
+	if budget.totalBytes > maxRetainedEvidenceCleanupTotalBytes {
+		return fmt.Errorf("retained evidence cleanup total byte limit exceeded: max %d bytes", maxRetainedEvidenceCleanupTotalBytes)
+	}
+	return nil
 }
 
 func retainedEvidenceFileHasSchema(path string) bool {

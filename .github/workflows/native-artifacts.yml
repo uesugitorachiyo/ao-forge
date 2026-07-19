@@ -1,0 +1,71 @@
+name: native-artifacts
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-artifacts:
+    name: native-artifacts (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target_label: linux-x86_64
+            binary_suffix: ""
+          - os: macos-latest
+            target_label: macos-aarch64
+            binary_suffix: ""
+          - os: windows-latest
+            target_label: windows-x86_64
+            binary_suffix: ".exe"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Build native artifact
+        shell: bash
+        env:
+          TARGET_LABEL: ${{ matrix.target_label }}
+        run: |
+          set -euo pipefail
+          artifact_dir="target/native-artifacts/${TARGET_LABEL}"
+          binary="forge${{ matrix.binary_suffix }}"
+          mkdir -p "$artifact_dir"
+          go build -trimpath -o "$artifact_dir/$binary" ./cmd/forge
+          "$artifact_dir/$binary" --help > "$artifact_dir/smoke.txt" 2>&1
+          cp LICENSE "$artifact_dir/"
+          if [ -f NOTICE ]; then
+            cp NOTICE "$artifact_dir/"
+          fi
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$artifact_dir/$binary" > "$artifact_dir/SHA256SUMS"
+          else
+            shasum -a 256 "$artifact_dir/$binary" > "$artifact_dir/SHA256SUMS"
+          fi
+          go env -json GOOS GOARCH GOVERSION > "$artifact_dir/go-env.json"
+          go_version=$(go version | sed 's|"|\\"|g')
+          cat > "$artifact_dir/native-artifact-summary.json" <<EOF
+          {"command":"./cmd/forge","entry_point":"forge","go_version":"${go_version}","publication_allowed":false,"release_upload_attempted":false,"repository":"ao-forge","runner_os":"${RUNNER_OS}","schema_version":"ao.native-artifact-summary.v0.1","smoke":{"command":"--help","expected_success":true,"status":"passed"},"source_commit":"${GITHUB_SHA}","target_label":"${TARGET_LABEL}"}
+          EOF
+
+      - name: Upload native artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ao-forge-native-artifact-${{ matrix.target_label }}-${{ github.sha }}
+          path: target/native-artifacts/${{ matrix.target_label }}
+          if-no-files-found: error

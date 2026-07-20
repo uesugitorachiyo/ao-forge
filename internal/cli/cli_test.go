@@ -4572,7 +4572,7 @@ func TestReleasePreviewWorkflowPublishesDryRunAuditArtifacts(t *testing.T) {
 	}
 }
 
-func TestReleaseRehearsalWorkflowValidatesTaggedEvidenceWithoutPublishing(t *testing.T) {
+func TestReleaseRehearsalWorkflowBuildsBoundNativeEvidenceWithoutPublishing(t *testing.T) {
 	root := repoRoot(t)
 	readText := func(path ...string) string {
 		t.Helper()
@@ -4594,33 +4594,25 @@ func TestReleaseRehearsalWorkflowValidatesTaggedEvidenceWithoutPublishing(t *tes
 	}{
 		{name: "workflow name", doc: workflow, want: "name: Release Rehearsal"},
 		{name: "manual trigger", doc: workflow, want: "workflow_dispatch:"},
-		{name: "tag push trigger", doc: workflow, want: "tags:"},
-		{name: "version tag glob", doc: workflow, want: "'v*'"},
 		{name: "read only permissions", doc: workflow, want: "contents: read"},
-		{name: "dispatch input via event context", doc: workflow, want: "REQUESTED_REHEARSAL_TAG: ${{ github.event.inputs.tag }}"},
-		{name: "tag env", doc: workflow, want: "AO_FORGE_RELEASE_PREVIEW_TAG"},
-		{name: "runner temp via shell env", doc: workflow, want: "AO_FORGE_RELEASE_PREVIEW_OUT=${RUNNER_TEMP}/ao-forge-release-rehearsal"},
-		{name: "release notes env", doc: workflow, want: "AO_FORGE_RELEASE_NOTES_PATH"},
-		{name: "release notes tag path", doc: workflow, want: "docs/release/${notes_tag}-RELEASE-NOTES.md"},
-		{name: "release notes guard", doc: workflow, want: "release notes file is required before release rehearsal"},
+		{name: "exact source input", doc: workflow, want: "source_commit:"},
+		{name: "version discovery", doc: workflow, want: "scripts/discover-release-candidate-version.py"},
+		{name: "manifest input", doc: workflow, want: "approved_manifest_base64:"},
+		{name: "manifest digest input", doc: workflow, want: "approved_manifest_digest:"},
+		{name: "linux target", doc: workflow, want: "linux-x86_64"},
+		{name: "macos target", doc: workflow, want: "macos-aarch64"},
+		{name: "windows target", doc: workflow, want: "windows-x86_64"},
+		{name: "candidate builder", doc: workflow, want: "scripts/build-release-rehearsal-candidate.py"},
+		{name: "candidate verifier", doc: workflow, want: "scripts/verify-release-rehearsal.py"},
+		{name: "promotion plan", doc: workflow, want: "immutable-promotion-plan.json"},
 		{name: "dry run script", doc: workflow, want: "scripts/release-preview-dry-run.sh"},
-		{name: "validate evidence step", doc: workflow, want: "Validate rehearsal evidence"},
-		{name: "audit schema validation", doc: workflow, want: "ao.forge.release-preview-audit.v0.1"},
-		{name: "inspect schema validation", doc: workflow, want: "ao.forge.release-preview-inspect.v0.1"},
-		{name: "inventory schema validation step", doc: workflow, want: "Validate rehearsal release contracts"},
-		{name: "inventory contract validation", doc: workflow, want: "contract validate --schema docs/contracts/release-artifact-inventory-v0.1.schema.json"},
-		{name: "attestation contract validation", doc: workflow, want: "contract validate --schema docs/contracts/release-attestation-plan-v0.1.schema.json"},
-		{name: "inventory readback", doc: workflow, want: "release-artifact-inventory.v0.1.example.json"},
-		{name: "attestation readback", doc: workflow, want: "release-attestation-plan.v0.1.example.json"},
-		{name: "inventory schema readback", doc: workflow, want: "ao.forge.release-artifact-inventory.v0.1"},
-		{name: "attestation schema readback", doc: workflow, want: "ao.forge.release-attestation-plan.v0.1"},
 		{name: "upload evidence artifact", doc: workflow, want: "release-rehearsal-evidence"},
-		{name: "runbook section", doc: previewRunbook, want: "## Tagged Release Rehearsal"},
+		{name: "runbook section", doc: previewRunbook, want: "## Native Release Rehearsal"},
 		{name: "runbook workflow name", doc: previewRunbook, want: "`Release Rehearsal`"},
-		{name: "runbook release notes guard", doc: previewRunbook, want: "requires a tag-specific release notes file"},
-		{name: "runbook contract readback", doc: previewRunbook, want: "reads back the artifact inventory and attestation plan"},
+		{name: "runbook source binding", doc: previewRunbook, want: "exact 40-character source commit"},
+		{name: "runbook plan", doc: previewRunbook, want: "immutable promotion plan"},
 		{name: "runbook artifact name", doc: previewRunbook, want: "`release-rehearsal-evidence`"},
-		{name: "readme mentions rehearsal", doc: readme, want: "tagged release rehearsal"},
+		{name: "readme mentions rehearsal", doc: readme, want: "native release rehearsal"},
 	} {
 		if !strings.Contains(check.doc, check.want) {
 			t.Fatalf("%s missing %q", check.name, check.want)
@@ -4634,8 +4626,8 @@ func TestReleaseRehearsalWorkflowValidatesTaggedEvidenceWithoutPublishing(t *tes
 		"--live",
 		"gh release create",
 		"softprops/action-gh-release",
-		"${{ inputs.",
-		"AO_FORGE_RELEASE_PREVIEW_OUT: ${{ runner.temp }}",
+		"\n  push:",
+		"\n      tags:",
 	} {
 		if strings.Contains(workflow, forbidden) {
 			t.Fatalf("release rehearsal workflow must not contain %q\n%s", forbidden, workflow)

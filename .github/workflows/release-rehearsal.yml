@@ -3,159 +3,277 @@ name: Release Rehearsal
 on:
   workflow_dispatch:
     inputs:
-      tag:
-        description: "Release tag to rehearse without publishing"
+      source_commit:
+        description: Exact 40-character AO Forge source commit.
         required: true
-        default: "v0.0.0-rehearsal"
-  push:
-    tags:
-      - 'v*'
+        type: string
+      version:
+        description: Candidate version discovered from repository release notes.
+        required: true
+        type: string
+      tag:
+        description: Future candidate tag, exactly v followed by version.
+        required: true
+        type: string
+      approved_manifest_base64:
+        description: Base64-encoded approved release manifest JSON.
+        required: true
+        type: string
+      approved_manifest_digest:
+        description: SHA-256 of the decoded approved manifest bytes.
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-rehearsal-${{ github.ref }}
+  group: release-rehearsal-${{ inputs.source_commit }}
   cancel-in-progress: false
 
 jobs:
-  tagged-rehearsal:
-    name: Tagged release rehearsal
-    runs-on: ubuntu-latest
-    env:
-      REQUESTED_REHEARSAL_TAG: ${{ github.event.inputs.tag }}
-
+  bind-inputs:
+    name: Bind exact source, version, tag, and manifest
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+      - name: Checkout exact source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
-          fetch-depth: 0
+          ref: ${{ inputs.source_commit }}
+          fetch-depth: 1
 
-      - name: Setup Go
-        uses: actions/setup-go@v6
+      - name: Validate exact workflow and repository identity
+        shell: bash
+        env:
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+          TAG: ${{ inputs.tag }}
+          VERSION: ${{ inputs.version }}
+          WORKFLOW_SOURCE: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "source_commit must be an exact lowercase SHA" >&2; exit 1; }
+          [[ "$WORKFLOW_SOURCE" == "$SOURCE_COMMIT" ]] || { echo "workflow source must equal source_commit" >&2; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_COMMIT" ]] || { echo "checkout source mismatch" >&2; exit 1; }
+          discovered_version="$(python3 scripts/discover-release-candidate-version.py)"
+          [[ "$VERSION" == "$discovered_version" ]] || { echo "version does not match repository discovery" >&2; exit 1; }
+          [[ "$TAG" == "v$VERSION" ]] || { echo "tag must equal v plus version" >&2; exit 1; }
+          set +e
+          git ls-remote --exit-code origin "refs/tags/$TAG" >remote-tag.txt
+          tag_status=$?
+          set -e
+          if [[ "$tag_status" -eq 0 ]]; then
+            echo "candidate tag already exists" >&2
+            exit 1
+          fi
+          [[ "$tag_status" -eq 2 ]] || { echo "unable to prove candidate tag absence" >&2; exit 1; }
+
+      - name: Reconstruct and verify approved manifest
+        shell: bash
+        env:
+          APPROVED_MANIFEST_BASE64: ${{ inputs.approved_manifest_base64 }}
+          APPROVED_MANIFEST_DIGEST: ${{ inputs.approved_manifest_digest }}
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+          TAG: ${{ inputs.tag }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          python3 scripts/validate-release-rehearsal-manifest.py \
+            --output approved-manifest/approved-release-manifest.json
+
+      - name: Upload bound approved manifest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ao-forge-approved-manifest-${{ inputs.source_commit }}
+          path: approved-manifest/approved-release-manifest.json
+          if-no-files-found: error
+          retention-days: 14
+
+  native-candidate:
+    name: Native candidate (${{ matrix.target }})
+    needs: bind-inputs
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: linux-x86_64
+            binary: forge
+          - runner: macos-15
+            target: macos-aarch64
+            binary: forge
+          - runner: windows-2025
+            target: windows-x86_64
+            binary: forge.exe
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ inputs.source_commit }}
+          fetch-depth: 1
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
 
-      - name: Resolve rehearsal tag
-        id: rehearsal-tag
+      - name: Download approved manifest
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: ao-forge-approved-manifest-${{ inputs.source_commit }}
+          path: approved-manifest
+
+      - name: Reverify approved manifest bytes
         shell: bash
+        env:
+          APPROVED_MANIFEST_DIGEST: ${{ inputs.approved_manifest_digest }}
         run: |
-          if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
-            tag="${GITHUB_REF_NAME}"
-          else
-            tag="${REQUESTED_REHEARSAL_TAG:-}"
-          fi
-
-          if [[ -z "$tag" ]]; then
-            echo "release rehearsal tag is required" >&2
-            exit 1
-          fi
-          notes_tag="${tag^^}"
-          notes_path="docs/release/${notes_tag}-RELEASE-NOTES.md"
-          if [[ ! -f "${notes_path}" ]]; then
-            echo "release notes file is required before release rehearsal: ${notes_path}" >&2
-            exit 1
-          fi
-
-          echo "AO_FORGE_RELEASE_PREVIEW_TAG=$tag" >> "$GITHUB_ENV"
-          echo "AO_FORGE_RELEASE_PREVIEW_OUT=${RUNNER_TEMP}/ao-forge-release-rehearsal" >> "$GITHUB_ENV"
-          echo "AO_FORGE_RELEASE_NOTES_PATH=${notes_path}" >> "$GITHUB_ENV"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "release_notes=${notes_path}" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Run tagged release rehearsal
-        run: scripts/release-preview-dry-run.sh
-
-      - name: Validate rehearsal release contracts
-        run: |
-          go run ./cmd/forge contract validate --schema docs/contracts/release-artifact-inventory-v0.1.schema.json --document examples/release-preview/release-artifact-inventory.v0.1.example.json
-          go run ./cmd/forge contract validate --schema docs/contracts/release-attestation-plan-v0.1.schema.json --document examples/release-preview/release-attestation-plan.v0.1.example.json
-
-      - name: Validate rehearsal evidence
-        shell: bash
-        run: |
+          set -euo pipefail
           python3 - <<'PY'
-          import json
+          import hashlib
           import os
           import pathlib
-          import sys
 
-          out_dir = pathlib.Path(os.environ["AO_FORGE_RELEASE_PREVIEW_OUT"])
-          expected_tag = os.environ["AO_FORGE_RELEASE_PREVIEW_TAG"]
-          audit_path = out_dir / "release-preview-audit.json"
-          inspect_path = out_dir / "release-preview-inspect.json"
-          inventory_path = pathlib.Path("examples/release-preview/release-artifact-inventory.v0.1.example.json")
-          attestation_path = pathlib.Path("examples/release-preview/release-attestation-plan.v0.1.example.json")
-
-          audit = json.loads(audit_path.read_text())
-          inspect = json.loads(inspect_path.read_text())
-          inventory = json.loads(inventory_path.read_text())
-          attestation = json.loads(attestation_path.read_text())
-
-          errors = []
-          if audit.get("schema_version") != "ao.forge.release-preview-audit.v0.1":
-            errors.append("unexpected audit schema version")
-          if inspect.get("inspect_schema_version") != "ao.forge.release-preview-inspect.v0.1":
-            errors.append("unexpected inspect schema version")
-          if inventory.get("schema_version") != "ao.forge.release-artifact-inventory.v0.1":
-            errors.append("unexpected artifact inventory schema version")
-          if attestation.get("schema_version") != "ao.forge.release-attestation-plan.v0.1":
-            errors.append("unexpected attestation plan schema version")
-          if audit.get("status") != "passed" or inspect.get("status") != "passed":
-            errors.append("rehearsal evidence did not pass")
-          if audit.get("tag") != expected_tag or inspect.get("tag") != expected_tag:
-            errors.append("rehearsal evidence tag mismatch")
-          if audit.get("mutates_releases") is not False or inspect.get("mutates_releases") is not False:
-            errors.append("rehearsal evidence must be non-mutating")
-          if audit.get("network_required") is not False or inspect.get("network_required") is not False:
-            errors.append("rehearsal evidence must not require network")
-          if inspect.get("failed_checks") != 0:
-            errors.append("inspect JSON reported failed checks")
-          if inspect.get("artifacts") != len(audit.get("artifacts", [])):
-            errors.append("inspect JSON artifact count mismatch")
-
-          inventory_attestations = set(inventory.get("required_attestations", []))
-          if "signed-checksum" not in inventory_attestations:
-            errors.append("artifact inventory must require signed checksums")
-          for artifact in inventory.get("expected_artifacts", []):
-            if artifact.get("checksum_required") is not True:
-              errors.append(f"inventory artifact {artifact.get('artifact_id')} must require checksums")
-            artifact_attestations = set(artifact.get("attestations", []))
-            missing = inventory_attestations - artifact_attestations
-            if missing:
-              errors.append(f"inventory artifact {artifact.get('artifact_id')} missing attestations: {sorted(missing)}")
-
-          subject_types = {subject.get("subject_type") for subject in attestation.get("subjects", [])}
-          for required_subject in ("checksum-manifest", "release-preview-audit", "artifact-inventory"):
-            if required_subject not in subject_types:
-              errors.append(f"attestation plan missing required subject {required_subject}")
-
-          audit_artifact_names = {pathlib.Path(artifact.get("path", "")).name for artifact in audit.get("artifacts", [])}
-          checksum_name = pathlib.Path(inventory.get("checksum_manifest", {}).get("path", "")).name
-          if checksum_name not in audit_artifact_names:
-            errors.append("rehearsal audit missing checksum manifest from artifact inventory")
-
-          if errors:
-            for error in errors:
-              print(f"::error::{error}")
-            sys.exit(1)
-
-          print(f"release_rehearsal_tag={expected_tag}")
-          print(f"release_rehearsal_audit={audit_path}")
-          print(f"release_rehearsal_inspect={inspect_path}")
-          print(f"release_rehearsal_inventory={inventory_path}")
-          print(f"release_rehearsal_attestation_plan={attestation_path}")
+          path = pathlib.Path("approved-manifest/approved-release-manifest.json")
+          if hashlib.sha256(path.read_bytes()).hexdigest() != os.environ["APPROVED_MANIFEST_DIGEST"]:
+              raise SystemExit("downloaded approved manifest digest mismatch")
           PY
 
-      - name: Upload release rehearsal evidence
-        uses: actions/upload-artifact@v7
+      - name: Build and inspect actual native candidate
+        shell: bash
+        env:
+          AO_FORGE_BUILD_SOURCE_COMMIT: ${{ inputs.source_commit }}
+          AO_FORGE_BUILD_VERSION: ${{ inputs.version }}
+          APPROVED_MANIFEST_DIGEST: ${{ inputs.approved_manifest_digest }}
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+          TAG: ${{ inputs.tag }}
+          TARGET: ${{ matrix.target }}
+          VERSION: ${{ inputs.version }}
+          WORKFLOW_IDENTITY: .github/workflows/release-rehearsal.yml@${{ inputs.source_commit }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          go build -trimpath \
+            -ldflags "-s -w -X github.com/uesugitorachiyo/ao-forge/internal/cli.buildVersion=${AO_FORGE_BUILD_VERSION} -X github.com/uesugitorachiyo/ao-forge/internal/cli.buildSourceCommit=${AO_FORGE_BUILD_SOURCE_COMMIT}" \
+            -o "build/${{ matrix.binary }}" ./cmd/forge
+          python3 scripts/build-release-rehearsal-candidate.py \
+            --binary-path "build/${{ matrix.binary }}" \
+            --output "candidate-${TARGET}" \
+            --version "$VERSION" \
+            --tag "$TAG" \
+            --source-sha "$SOURCE_COMMIT" \
+            --target "$TARGET" \
+            --manifest-digest "$APPROVED_MANIFEST_DIGEST" \
+            --workflow-identity "$WORKFLOW_IDENTITY" \
+            --workflow-run-id "$WORKFLOW_RUN_ID"
+
+      - name: Assert complete candidate inventory
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          candidate_dir="candidate-${TARGET}"
+          for required in candidate-summary.json provenance.json smoke-summary.json SHA256SUMS LICENSE NOTICE; do
+            test -f "${candidate_dir}/${required}"
+          done
+
+      - name: Upload native candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ao-forge-release-candidate-${{ matrix.target }}-${{ inputs.source_commit }}
+          path: candidate-${{ matrix.target }}
+          if-no-files-found: error
+          retention-days: 14
+
+  immutable-plan:
+    name: Independently assemble immutable promotion plan
+    needs: native-candidate
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact verifier source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ inputs.source_commit }}
+          fetch-depth: 1
+
+      - name: Download all native candidates
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: ao-forge-release-candidate-*-${{ inputs.source_commit }}
+          path: ${{ runner.temp }}/downloaded-candidates
+
+      - name: Download bound approved manifest
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: ao-forge-approved-manifest-${{ inputs.source_commit }}
+          path: ${{ runner.temp }}/approved-manifest
+
+      - name: Assemble and independently verify exact plan
+        shell: bash
+        env:
+          APPROVED_MANIFEST_DIGEST: ${{ inputs.approved_manifest_digest }}
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+          TAG: ${{ inputs.tag }}
+          VERSION: ${{ inputs.version }}
+          WORKFLOW_IDENTITY: .github/workflows/release-rehearsal.yml@${{ inputs.source_commit }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          plan_dir="${RUNNER_TEMP}/promotion-plan"
+          mkdir "$plan_dir"
+          manifest_path="${RUNNER_TEMP}/approved-manifest/approved-release-manifest.json"
+          manifest_actual="$(python3 -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' "$manifest_path")"
+          [[ "$manifest_actual" == "$APPROVED_MANIFEST_DIGEST" ]] || { echo "approved manifest digest drift before plan assembly" >&2; exit 1; }
+          common_args=(
+            --version "$VERSION"
+            --tag "$TAG"
+            --source-sha "$SOURCE_COMMIT"
+            --manifest-digest "$APPROVED_MANIFEST_DIGEST"
+            --workflow-identity "$WORKFLOW_IDENTITY"
+            --workflow-run-id "$WORKFLOW_RUN_ID"
+          )
+          python3 scripts/verify-release-rehearsal.py assemble \
+            "${common_args[@]}" \
+            --candidates-dir "${RUNNER_TEMP}/downloaded-candidates" \
+            --output "${plan_dir}/immutable-promotion-plan.json"
+          python3 scripts/verify-release-rehearsal.py verify-plan \
+            "${common_args[@]}" \
+            --plan "${plan_dir}/immutable-promotion-plan.json"
+
+      - name: Produce publisher-compatible read-only preview evidence
+        shell: bash
+        env:
+          AO_FORGE_RELEASE_PREVIEW_OUT: ${{ runner.temp }}/release-rehearsal-evidence
+          AO_FORGE_RELEASE_PREVIEW_TAG: ${{ inputs.tag }}
+        run: scripts/release-preview-dry-run.sh
+
+      - name: Upload immutable promotion plan
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ao-forge-release-rehearsal-plan-${{ inputs.source_commit }}
+          path: ${{ runner.temp }}/promotion-plan
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload publisher-compatible rehearsal evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-rehearsal-evidence
           path: |
-            ${{ runner.temp }}/ao-forge-release-rehearsal/release-preview-audit.json
-            ${{ runner.temp }}/ao-forge-release-rehearsal/release-preview-inspect.txt
-            ${{ runner.temp }}/ao-forge-release-rehearsal/release-preview-inspect.json
-            ${{ runner.temp }}/ao-forge-release-rehearsal/checksums.txt
+            ${{ runner.temp }}/release-rehearsal-evidence/release-preview-audit.json
+            ${{ runner.temp }}/release-rehearsal-evidence/release-preview-inspect.txt
+            ${{ runner.temp }}/release-rehearsal-evidence/release-preview-inspect.json
+            ${{ runner.temp }}/release-rehearsal-evidence/checksums.txt
+            ${{ runner.temp }}/promotion-plan/immutable-promotion-plan.json
+            ${{ runner.temp }}/promotion-plan/immutable-promotion-plan.json.sha256
           if-no-files-found: error
           retention-days: 14

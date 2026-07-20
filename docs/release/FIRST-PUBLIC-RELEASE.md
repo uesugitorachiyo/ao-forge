@@ -86,19 +86,29 @@ to the attestation plan before publishing.
 
 ## Release Rehearsal
 
-Run the `Release Rehearsal` workflow manually with `<tag>` before any public
-publish operation. Review the uploaded `release-rehearsal-evidence` artifact and
-confirm:
+Run the `Release Rehearsal` workflow manually before creating `<tag>`. Provide
+the exact source commit, repository-discovered candidate version, future tag,
+and a base64-encoded approved manifest with its SHA-256. The manifest must bind
+the same source, version, tag, three native targets, and
+`publication_authorized: false`.
+
+Review the immutable plan artifact, all three native candidate artifacts, and
+the publisher-compatible `release-rehearsal-evidence` artifact. Confirm:
 
 - audit status is `passed`;
 - inspect status is `passed`;
 - failed checks count is `0`;
 - tag equals `<tag>`;
 - commit equals the intended release commit;
+- Linux x86_64, macOS arm64, and Windows x86_64 candidate summaries passed;
+- every binary, archive, checksum, provenance, and smoke digest matches the
+  immutable promotion plan;
+- candidate version output binds the intended version and exact source commit;
+- provider-free functional smoke passed on every native runner;
 - `mutates_releases` is `false`;
 - `network_required` is `false`;
 - `checksums.txt` is present in the artifact evidence;
-- the workflow read back the artifact inventory and attestation plan.
+- the approved manifest and promotion plan digests match the reviewed bytes.
 
 If any item fails, stop the release and open a hardening issue or PR before
 retrying.

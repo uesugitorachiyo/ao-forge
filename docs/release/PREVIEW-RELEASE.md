@@ -54,21 +54,27 @@ pushes to `main`. The workflow uploads the machine-readable audit, an inspect
 summary, a JSON inspect summary, and artifact checksums for review without using
 write permissions or live release flags.
 
-## Tagged Release Rehearsal
+## Native Release Rehearsal
 
-The `Release Rehearsal` workflow rehearses tagged release evidence without
-publishing a GitHub release, pushing refs, or requiring write permissions. It can
-run manually with a tag input before the first public release, and it also runs
-on pushed `v*` tags as a final non-mutating evidence check.
+The `Release Rehearsal` workflow is manual-only and uses `contents: read`. Its
+inputs bind the exact 40-character source commit, the candidate version
+discovered from checked-in release notes, the absent future tag, and the
+SHA-256 of a bounded approved manifest. The workflow does not run on pushed
+tags and cannot create tags, releases, deployments, or public uploads.
 
-The workflow uses `scripts/release-preview-dry-run.sh` with
-`AO_FORGE_RELEASE_PREVIEW_TAG` set to the selected tag, validates the audit and
-inspect JSON schema versions, requires a tag-specific release notes file such
-as `docs/release/V0.1.2-RELEASE-NOTES.md`, reads back the artifact inventory and
-attestation plan, confirms the evidence is passed, local-only, and non-mutating,
-then uploads `release-rehearsal-evidence`. In other words, it requires a
-tag-specific release notes file and reads back the artifact inventory and attestation plan
-before upload.
+Native Linux x86_64, macOS arm64, and Windows x86_64 runners build the actual
+candidate with linker-injected version and source identity. Each candidate
+executes help, version, and provider-free contract-validation smoke checks,
+then packages the binary with `LICENSE` and `NOTICE`, a portable
+`SHA256SUMS`, provenance, and machine-readable smoke and candidate summaries.
+An independent job unpacks and re-hashes all three candidates and assembles an
+immutable promotion plan that binds the complete inventories plus all binary,
+archive, checksum, summary, provenance, and smoke-evidence digests.
+
+The plan has its own artifact. The workflow also uploads
+`release-rehearsal-evidence` with the plan and the existing read-only preview
+audit so the separately protected `Release Publish` workflow retains its
+historical import contract.
 
 Before publishing a real release, review the uploaded evidence artifact and
 confirm it matches the intended tag and commit. For the first public release,

@@ -317,10 +317,13 @@ The CI production-readiness artifact also includes
 `goal-run-retained-evidence-cleanup.json`, a schema-valid cleanup dry-run for
 reviewing retained GoalRun evidence eligibility without deleting files.
 
-The `Release Rehearsal` workflow provides a tagged release rehearsal without
-publishing. Run it manually with the intended tag, or let it run on pushed `v*`
-tags, then review the uploaded `release-rehearsal-evidence` artifact before any
-public release mutation.
+The `Release Rehearsal` workflow provides a manual native release rehearsal
+without publishing. It binds an exact source commit, repository-discovered
+candidate version, future tag, and approved manifest digest; builds and executes
+Linux x86_64, macOS arm64, and Windows x86_64 candidates; and independently
+assembles an immutable promotion plan. Review both the plan artifact and the
+publisher-compatible `release-rehearsal-evidence` artifact before any public
+release mutation.
 
 The `Release Attestation` workflow builds the expected preview artifacts,
 generates and verifies `checksums.txt`, runs release preview, creates GitHub

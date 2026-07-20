@@ -63,6 +63,8 @@ const (
 )
 
 var (
+	buildVersion                = "dev"
+	buildSourceCommit           = "unknown"
 	planIDPattern               = regexp.MustCompile(`^forge-plan-[a-f0-9]{12}$`)
 	windowsAbsolutePathPattern  = regexp.MustCompile(`^[A-Za-z]:/`)
 	liveDocsPermittedClasses    = []string{"docs_only_single_file", "docs_only_multi_file"}
@@ -358,6 +360,10 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		printHelp(stdout)
 		return 0
 	}
+	if args[0] == "--version" {
+		fmt.Fprintf(stdout, "ao-forge version=%s source_sha=%s\n", buildVersion, buildSourceCommit)
+		return 0
+	}
 
 	switch args[0] {
 	case "init":
@@ -404,6 +410,7 @@ func printHelp(w io.Writer) {
 
 Usage:
   forge --help
+  forge --version
   forge init
   forge plan --brief <factory-brief.json> [--out <factory-plan.json>] [--dynamic]
   forge gate --plan <factory-plan.json> --covenant <path-to-covenant-or-config> [--out <gate-result.json>]

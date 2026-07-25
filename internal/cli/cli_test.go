@@ -2158,7 +2158,7 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 		return string(bytes)
 	}
 
-	readme := readText("README.md")
+	readme := readText("REFERENCE.md")
 	docsIndex := readText("docs", "README.md")
 	ao2PulseGoalRunLoopDocs := readText("docs", "design", "AO2-PULSE-GOAL-RUN-LOOP.md")
 	ao2PulseReadinessScript := readText("scripts", "ao2-pulse-goal-readiness.sh")
@@ -3181,8 +3181,8 @@ func TestLiveMutationDryRunPlanContractValidatesAuthorityIsolationAndRollback(t 
 		want string
 	}{
 		{name: "docs index schema link", doc: readText("docs", "README.md"), want: "[Live Mutation Dry-Run Plan v0.1 Schema](contracts/live-mutation-dry-run-plan-v0.1.schema.json)"},
-		{name: "README dry-run boundary", doc: readText("README.md"), want: "live-mutation dry-run plan"},
-		{name: "README no live mutation claim", doc: readText("README.md"), want: "does not permit live repository mutation"},
+		{name: "README dry-run boundary", doc: readText("REFERENCE.md"), want: "live-mutation dry-run plan"},
+		{name: "README no live mutation claim", doc: readText("REFERENCE.md"), want: "does not permit live repository mutation"},
 	} {
 		if !strings.Contains(check.doc, check.want) {
 			t.Fatalf("%s missing %q", check.name, check.want)
@@ -3734,7 +3734,7 @@ func TestContractValidateAcceptsReleasePreviewAuditAndInspectFixtures(t *testing
 		doc  string
 		want string
 	}{
-		{name: "README contract validate command", doc: readText("README.md"), want: "forge contract validate --schema docs/contracts/release-preview-audit-v0.1.schema.json"},
+		{name: "README contract validate command", doc: readText("REFERENCE.md"), want: "forge contract validate --schema docs/contracts/release-preview-audit-v0.1.schema.json"},
 		{name: "branch runbook contract validate command", doc: readText("docs", "release", "BRANCH-PROTECTION.md"), want: "forge contract validate --schema docs/contracts/release-preview-inspect-v0.1.schema.json"},
 	} {
 		if !strings.Contains(check.doc, check.want) {
@@ -3831,7 +3831,7 @@ func TestReleaseThreatModelIsPublicAndMapsAttacksToControls(t *testing.T) {
 		return string(bytes)
 	}
 
-	readme := readText("README.md")
+	readme := readText("REFERENCE.md")
 	previewRunbook := readText("docs", "release", "PREVIEW-RELEASE.md")
 	threatModel := readText("docs", "security", "RELEASE-THREAT-MODEL.md")
 
@@ -4129,7 +4129,7 @@ func TestBranchProtectionRunbookDocumentsRequiredChecks(t *testing.T) {
 		return string(bytes)
 	}
 
-	readme := readText("README.md")
+	readme := readText("REFERENCE.md")
 	docsIndex := readText("docs", "README.md")
 	threatModel := readText("docs", "security", "RELEASE-THREAT-MODEL.md")
 	runbook := readText("docs", "release", "BRANCH-PROTECTION.md")
@@ -4585,7 +4585,7 @@ func TestReleaseRehearsalWorkflowBuildsBoundNativeEvidenceWithoutPublishing(t *t
 
 	workflow := readText(".github", "workflows", "release-rehearsal.yml")
 	previewRunbook := readText("docs", "release", "PREVIEW-RELEASE.md")
-	readme := readText("README.md")
+	readme := readText("REFERENCE.md")
 
 	for _, check := range []struct {
 		name string
@@ -4650,7 +4650,7 @@ func TestReleaseAttestationWorkflowProducesSignedEvidenceWithoutPublishing(t *te
 	gitignore := readText(".gitignore")
 	previewRunbook := readText("docs", "release", "PREVIEW-RELEASE.md")
 	releaseNotes := readText("docs", "release", "V0.1.2-RELEASE-NOTES.md")
-	readme := readText("README.md")
+	readme := readText("REFERENCE.md")
 
 	for _, check := range []struct {
 		name string
@@ -4735,7 +4735,7 @@ func TestReleasePublishWorkflowCreatesDraftReleaseOnlyAfterEvidenceGates(t *test
 	}
 
 	workflow := readText(".github", "workflows", "release-publish.yml")
-	readme := readText("README.md")
+	readme := readText("REFERENCE.md")
 	previewRunbook := readText("docs", "release", "PREVIEW-RELEASE.md")
 	firstRelease := readText("docs", "release", "FIRST-PUBLIC-RELEASE.md")
 	releaseNotes := readText("docs", "release", "V0.1.0-RELEASE-NOTES.md")
@@ -4858,7 +4858,7 @@ func TestReleaseVerifyWorkflowChecksPublishedReleaseEvidence(t *testing.T) {
 	}
 
 	workflow := readText(".github", "workflows", "release-verify.yml")
-	readme := readText("README.md")
+	readme := readText("REFERENCE.md")
 	firstRelease := readText("docs", "release", "FIRST-PUBLIC-RELEASE.md")
 	threatModel := readText("docs", "security", "RELEASE-THREAT-MODEL.md")
 
@@ -4956,7 +4956,7 @@ func TestReleaseInstallVerifyWorkflowChecksPublicAssets(t *testing.T) {
 
 	workflow := readText(".github", "workflows", "release-install-verify.yml")
 	runbook := readText("docs", "release", "PUBLIC-ASSET-INSTALL-VERIFY.md")
-	readme := readText("README.md")
+	readme := readText("REFERENCE.md")
 	promotion := readText("docs", "release", "PRODUCTION-STABLE-PROMOTION.md")
 	threatModel := readText("docs", "security", "RELEASE-THREAT-MODEL.md")
 
@@ -5031,7 +5031,7 @@ func TestReleaseRollbackWorkflowGuardsReleaseYankActions(t *testing.T) {
 	}
 
 	workflow := readText(".github", "workflows", "release-rollback.yml")
-	readme := readText("README.md")
+	readme := readText("REFERENCE.md")
 	firstRelease := readText("docs", "release", "FIRST-PUBLIC-RELEASE.md")
 	threatModel := readText("docs", "security", "RELEASE-THREAT-MODEL.md")
 
@@ -5119,7 +5119,7 @@ func TestReleaseSignerPolicyDefinesEligibilityAndRotation(t *testing.T) {
 	policyText := readText("docs", "release", "RELEASE-SIGNERS.json")
 	runbook := readText("docs", "release", "RELEASE-SIGNERS.md")
 	publicKey := readText("docs", "release", "signers", "uesugi-2026.asc")
-	readme := readText("README.md")
+	readme := readText("REFERENCE.md")
 	threatModel := readText("docs", "security", "RELEASE-THREAT-MODEL.md")
 	promotion := readText("docs", "release", "PRODUCTION-STABLE-PROMOTION.md")
 
@@ -5191,7 +5191,7 @@ func TestProductionPromotionWorkflowDefinesStableCriteria(t *testing.T) {
 
 	workflow := readText(".github", "workflows", "production-promotion.yml")
 	runbook := readText("docs", "release", "PRODUCTION-STABLE-PROMOTION.md")
-	readme := readText("README.md")
+	readme := readText("REFERENCE.md")
 	threatModel := readText("docs", "security", "RELEASE-THREAT-MODEL.md")
 
 	for _, check := range []struct {

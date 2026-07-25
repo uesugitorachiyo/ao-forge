@@ -5049,7 +5049,7 @@ func liveDocsAllowedPathsAreDocsOnly(paths []any) bool {
 		if strings.HasPrefix(path, "/") || strings.HasPrefix(path, "~") || strings.Contains(path, "..") || windowsAbsolutePathPattern.MatchString(path) {
 			return false
 		}
-		if path == "README.md" || path == "CHANGELOG.md" || strings.HasPrefix(path, "docs/") {
+		if path == "README.md" || path == "REFERENCE.md" || path == "CHANGELOG.md" || strings.HasPrefix(path, "docs/") {
 			continue
 		}
 		return false
@@ -8577,7 +8577,7 @@ func productionReadinessGateSpecs() []productionReadinessGateSpec {
 			GateID:   "release.candidate_handoff",
 			Category: "release",
 			Summary:  "release candidate handoff is schema-backed and validated in CI before preview, publish, or promotion",
-			Evidence: []string{"docs/contracts/release-candidate-v0.1.schema.json", "examples/release-preview/release-candidate.v0.1.example.json", ".github/workflows/ci.yml", "README.md", "docs/README.md"},
+			Evidence: []string{"docs/contracts/release-candidate-v0.1.schema.json", "examples/release-preview/release-candidate.v0.1.example.json", ".github/workflows/ci.yml", "REFERENCE.md", "docs/README.md"},
 			Requires: []productionReadinessRequirement{
 				{Path: "docs/contracts/release-candidate-v0.1.schema.json", Pattern: releaseCandidateVersion},
 				{Path: "docs/contracts/release-candidate-v0.1.schema.json", Pattern: `"additionalProperties": false`},
@@ -8585,7 +8585,7 @@ func productionReadinessGateSpecs() []productionReadinessGateSpec {
 				{Path: "examples/release-preview/release-candidate.v0.1.example.json", Pattern: `"id": "ao-forge"`},
 				{Path: "examples/release-preview/release-candidate.v0.1.example.json", Pattern: `"status": "manual_required"`},
 				{Path: ".github/workflows/ci.yml", Pattern: "release-candidate validate --candidate examples/release-preview/release-candidate.v0.1.example.json"},
-				{Path: "README.md", Pattern: "release-candidate validate --candidate examples/release-preview/release-candidate.v0.1.example.json"},
+				{Path: "REFERENCE.md", Pattern: "release-candidate validate --candidate examples/release-preview/release-candidate.v0.1.example.json"},
 				{Path: "docs/README.md", Pattern: "[Release Candidate v0.1 Schema](contracts/release-candidate-v0.1.schema.json)"},
 			},
 		},
@@ -8703,7 +8703,7 @@ func productionReadinessGateSpecs() []productionReadinessGateSpec {
 			GateID:   "goalrun.architecture_rsi_pin_readback",
 			Category: "goalrun",
 			Summary:  "AO Architecture pins Forge retained RSI proofs and AO Command enforces those pins",
-			Evidence: []string{"docs/contracts/architecture-rsi-pin-readback-v0.1.schema.json", "docs/evidence/architecture/ao-architecture-rsi-pin-readback.json", "README.md", "docs/README.md"},
+			Evidence: []string{"docs/contracts/architecture-rsi-pin-readback-v0.1.schema.json", "docs/evidence/architecture/ao-architecture-rsi-pin-readback.json", "REFERENCE.md", "docs/README.md"},
 			Requires: []productionReadinessRequirement{
 				{Path: "docs/contracts/architecture-rsi-pin-readback-v0.1.schema.json", Pattern: "ao.forge.architecture-rsi-pin-readback.v0.1"},
 				{Path: "docs/contracts/architecture-rsi-pin-readback-v0.1.schema.json", Pattern: `"additionalProperties": false`},
@@ -8712,7 +8712,7 @@ func productionReadinessGateSpecs() []productionReadinessGateSpec {
 				{Path: "docs/evidence/architecture/ao-architecture-rsi-pin-readback.json", Pattern: "bounded-rsi-improvement-chain-retention-proof.json"},
 				{Path: "docs/evidence/architecture/ao-architecture-rsi-pin-readback.json", Pattern: `"architecture_prs": [13, 14, 15]`},
 				{Path: "docs/evidence/architecture/ao-architecture-rsi-pin-readback.json", Pattern: `"command_validator_pr": 32`},
-				{Path: "README.md", Pattern: "ao-architecture-rsi-pin-readback.json"},
+				{Path: "REFERENCE.md", Pattern: "ao-architecture-rsi-pin-readback.json"},
 				{Path: "docs/README.md", Pattern: "[AO Architecture RSI Pin Readback](evidence/architecture/ao-architecture-rsi-pin-readback.json)"},
 			},
 		},

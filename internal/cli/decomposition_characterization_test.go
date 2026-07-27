@@ -6,6 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +17,72 @@ import (
 	"testing"
 	"time"
 )
+
+func TestPhase4OrchestrationOwnership(t *testing.T) {
+	expected := map[string][]string{
+		"cli_registry.go": {
+			"Run",
+			"printHelp",
+		},
+		"run_commands.go": {
+			"runRun",
+			"runResume",
+			"runOnce",
+		},
+		"run_state.go": {
+			"peerRunState",
+			"workcellRunState",
+			"loadResumeStates",
+			"archiveRunState",
+		},
+		"scheduler.go": {
+			"realTimeWriter",
+			"runWorkcellsConcurrent",
+		},
+		"workspace_session.go": {
+			"directWorkspaceSession",
+			"newDirectWorkspaceSession",
+		},
+	}
+
+	monolithDeclarations := phase4TopLevelDeclarations(t, "cli.go")
+	for file, names := range expected {
+		declarations := phase4TopLevelDeclarations(t, file)
+		for _, name := range names {
+			if !declarations[name] {
+				t.Errorf("%s does not own %s", file, name)
+			}
+			if monolithDeclarations[name] {
+				t.Errorf("cli.go still owns %s", name)
+			}
+		}
+	}
+}
+
+func phase4TopLevelDeclarations(t *testing.T, path string) map[string]bool {
+	t.Helper()
+	file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+	if err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	declarations := make(map[string]bool)
+	for _, declaration := range file.Decls {
+		switch declaration := declaration.(type) {
+		case *ast.FuncDecl:
+			if declaration.Recv == nil {
+				declarations[declaration.Name.Name] = true
+			}
+		case *ast.GenDecl:
+			for _, specification := range declaration.Specs {
+				typeSpec, ok := specification.(*ast.TypeSpec)
+				if ok {
+					declarations[typeSpec.Name.Name] = true
+				}
+			}
+		}
+	}
+	return declarations
+}
 
 func TestPhase4RootCLIParity(t *testing.T) {
 	var helpStdout, helpStderr bytes.Buffer

@@ -1,0 +1,170 @@
+{
+  "schema_version": "ao-forge.go-architecture-baseline.v1",
+  "source_tree": "40c415fae730116923d7d366eb07b08be1c42edc",
+  "prior_sources": {},
+  "measurements": {
+    "internal/cli/cli.go": {
+      "lines": 6023,
+      "owned_declarations": [
+        "type:goalRetainedEvidenceArtifact",
+        "type:goalRun",
+        "type:goalRunEvidence",
+        "type:goalRunIteration"
+      ]
+    },
+    "internal/cli/goal_command.go": {
+      "lines": 482,
+      "owned_declarations": [
+        "func:runGoal",
+        "func:runGoalContext",
+        "func:runGoalContextValidate",
+        "func:runGoalEvidence",
+        "func:runGoalEvidenceCleanup",
+        "func:runGoalEvidenceLint",
+        "func:runGoalEvidenceRetention",
+        "func:runGoalEvidenceVerify",
+        "func:runGoalInspect",
+        "func:runGoalTransitions",
+        "func:runGoalUpdate",
+        "func:runGoalValidate",
+        "func:runGoalVerification",
+        "func:runGoalVerificationValidate"
+      ]
+    },
+    "internal/cli/goal_evidence.go": {
+      "lines": 510,
+      "owned_declarations": [
+        "func:accept",
+        "func:allGoalRetentionAuditsPassed",
+        "func:applyGoalEvidenceRetentionArtifact",
+        "func:buildGoalEvidenceCleanupSummary",
+        "func:buildGoalEvidenceLintSummaryForGoal",
+        "func:buildGoalEvidenceRetentionSummary",
+        "func:buildGoalEvidenceVerifySummary",
+        "func:buildGoalRunEvidence",
+        "func:discoverRetainedEvidenceArtifacts",
+        "func:emptyGoalEvidenceLintSummary",
+        "func:emptyGoalEvidenceVerifySummary",
+        "func:ensureGoalRunEvidenceReadyForUpdate",
+        "func:isPublicProvenanceRetentionClass",
+        "func:lintGoalRunEvidencePath",
+        "func:readGoalRetainedEvidence",
+        "func:rejectedGoalRunEvidencePathReason",
+        "func:resolveGoalRunEvidencePath",
+        "func:retainedEvidenceFileHasSchema",
+        "func:retainedGoalRunEvidence",
+        "func:sha256File",
+        "func:validateAndReadGoalRetainedEvidence",
+        "func:verifyGoalRunEvidence",
+        "type:goalEvidenceCleanupSummary",
+        "type:goalEvidenceLintResult",
+        "type:goalEvidenceLintSummary",
+        "type:goalEvidenceRetentionSummary",
+        "type:goalEvidenceVerifyResult",
+        "type:goalEvidenceVerifySummary",
+        "type:retainedEvidenceCleanupScanBudget"
+      ]
+    },
+    "internal/cli/goal_flags.go": {
+      "lines": 504,
+      "owned_declarations": [
+        "func:hasMutation",
+        "func:parseGoalContextFlags",
+        "func:parseGoalEvidenceCleanupFlags",
+        "func:parseGoalEvidenceLintFlags",
+        "func:parseGoalEvidenceRetentionFlags",
+        "func:parseGoalFlags",
+        "func:parseGoalReadinessFlags",
+        "func:parseGoalTransitionFlags",
+        "func:parseGoalUpdateFlags",
+        "func:parseGoalVerificationFlags",
+        "func:readFlagValue",
+        "type:goalContextFlags",
+        "type:goalEvidenceCleanupFlags",
+        "type:goalEvidenceLintFlags",
+        "type:goalEvidenceRetentionFlags",
+        "type:goalFlags",
+        "type:goalReadinessFlags",
+        "type:goalTransitionFlags",
+        "type:goalUpdateFlags",
+        "type:goalVerificationFlags"
+      ]
+    },
+    "internal/cli/goal_readiness.go": {
+      "lines": 170,
+      "owned_declarations": [
+        "func:addGoalReadinessCheck",
+        "func:emptyGoalReadinessSummary",
+        "func:goalReadinessEvidenceProvenance",
+        "func:markGoalReadinessFailed",
+        "func:runGoalReadiness",
+        "type:goalReadinessCheck",
+        "type:goalReadinessProvenance",
+        "type:goalReadinessProvenanceArtifact",
+        "type:goalReadinessSummary"
+      ]
+    },
+    "internal/cli/goal_render.go": {
+      "lines": 335,
+      "owned_declarations": [
+        "func:writeGoalContextSummary",
+        "func:writeGoalEvidenceCleanupSummary",
+        "func:writeGoalEvidenceLintSummary",
+        "func:writeGoalEvidenceRetentionSummary",
+        "func:writeGoalEvidenceVerifySummary",
+        "func:writeGoalInspectSummary",
+        "func:writeGoalReadinessSummary",
+        "func:writeGoalTransitionSummary",
+        "func:writeGoalUpdateAudit",
+        "func:writeGoalValidationSummary",
+        "func:writeGoalVerificationSummary"
+      ]
+    },
+    "internal/cli/goal_transition.go": {
+      "lines": 213,
+      "owned_declarations": [
+        "func:allowedGoalRunNextPhases",
+        "func:applyGoalRunUpdate",
+        "func:buildGoalTransitionSummary",
+        "func:buildGoalUpdateAudit",
+        "func:containsString",
+        "func:formatGoalRunPhaseList",
+        "func:goalRunGuardStatus",
+        "func:isKnownGoalRunPhase",
+        "func:isTerminalGoalRunPhase",
+        "func:readGoalRunUpdateAudit",
+        "func:validateAndReadGoalRunUpdateAudit",
+        "type:goalTransitionSummary",
+        "type:goalUpdateAudit"
+      ]
+    },
+    "internal/cli/goal_validation.go": {
+      "lines": 315,
+      "owned_declarations": [
+        "func:buildGoalInspectSummary",
+        "func:readGoalContextHandoff",
+        "func:readGoalRun",
+        "func:readGoalVerification",
+        "func:resolveDefaultContractPath",
+        "func:samePath",
+        "func:validateAndReadGoalContextHandoff",
+        "func:validateAndReadGoalRun",
+        "func:validateAndReadGoalVerification",
+        "func:validateGoalRunValue",
+        "func:validateGoalVerificationSemantics",
+        "type:goalContextHandoff",
+        "type:goalContextSummary",
+        "type:goalInspectSummary",
+        "type:goalRunVerification",
+        "type:goalValidationSummary",
+        "type:goalVerificationSummary"
+      ]
+    }
+  },
+  "notes": [
+    "Generated after the goal-lifecycle source-movement commit.",
+    "The source tree remains stable when repository policy rewrites commit IDs during rebase merge.",
+    "Measured file sizes may decrease but must not increase before another explicit decomposition.",
+    "Goal-lifecycle declarations are bound to their measured owner files."
+  ]
+}

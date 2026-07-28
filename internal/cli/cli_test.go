@@ -9329,6 +9329,10 @@ func TestForgeResumeSuccess(t *testing.T) {
 			{
 				"workcell_id": "wc1",
 				"kind": "prepare",
+				"executor": "agy-swarms",
+				"peers": 2,
+				"max_repairs": 3,
+				"task": "retain completed workcell state",
 				"status": "planned",
 				"depends_on": []
 			},
@@ -9384,10 +9388,15 @@ func TestForgeResumeSuccess(t *testing.T) {
 			{
 				"workcell_id": "wc1",
 				"kind": "prepare",
+				"executor": "agy-swarms",
+				"peers": 2,
+				"max_repairs": 3,
+				"task": "retain completed workcell state",
 				"status": "passed",
 				"depends_on": [],
 				"ao2_run": "dry-run",
-				"summary": "Dry-run accepted by ao2"
+				"summary": "retained completed summary",
+				"repairs_attempted": 2
 			},
 			{
 				"workcell_id": "wc2",
@@ -9414,6 +9423,26 @@ func TestForgeResumeSuccess(t *testing.T) {
 	}`
 	if err := os.WriteFile(wc1EvidencePath, []byte(wc1EvidenceContent), 0644); err != nil {
 		t.Fatalf("write wc1 evidence: %v", err)
+	}
+	for index, values := range []struct {
+		stdout string
+		stderr string
+	}{
+		{stdout: "peer zero stdout", stderr: "peer zero stderr"},
+		{stdout: "peer one stdout", stderr: "peer one stderr"},
+	} {
+		peerEvidencePath := filepath.Join(runDir, fmt.Sprintf("ao2-wc-wc1-peer-%d-evidence.json", index))
+		peerEvidenceContent := fmt.Sprintf(`{
+			"schema_version": "ao2.workcell-evidence.v1",
+			"workcell_id": "wc1",
+			"status": "passed",
+			"stdout": %q,
+			"stderr": %q,
+			"spec_sha256": "wc1_spec_sha"
+		}`, values.stdout, values.stderr)
+		if err := os.WriteFile(peerEvidencePath, []byte(peerEvidenceContent), 0644); err != nil {
+			t.Fatalf("write wc1 peer %d evidence: %v", index, err)
+		}
 	}
 
 	// 5. Run resume command
@@ -9455,6 +9484,14 @@ func TestForgeResumeSuccess(t *testing.T) {
 	if finalPacket.Workcells[0].WorkcellID != "wc1" || finalPacket.Workcells[0].Status != "passed" {
 		t.Fatalf("expected wc1 to be passed, got %+v", finalPacket.Workcells[0])
 	}
+	if finalPacket.Workcells[0].Summary != "retained completed summary" ||
+		finalPacket.Workcells[0].Executor != "agy-swarms" ||
+		finalPacket.Workcells[0].Peers != 2 ||
+		finalPacket.Workcells[0].MaxRepairs != 3 ||
+		finalPacket.Workcells[0].Task != "retain completed workcell state" ||
+		finalPacket.Workcells[0].RepairsAttempted != 2 {
+		t.Fatalf("resumed wc1 packet state drifted: %+v", finalPacket.Workcells[0])
+	}
 	if finalPacket.Workcells[1].WorkcellID != "wc2" || finalPacket.Workcells[1].Status != "passed" {
 		t.Fatalf("expected wc2 to be passed, got %+v", finalPacket.Workcells[1])
 	}
@@ -9467,6 +9504,39 @@ func TestForgeResumeSuccess(t *testing.T) {
 	}
 	if _, err := os.Stat(wc2ArchivedEv); err != nil {
 		t.Fatalf("expected wc2 evidence to exist in run archive: %v", err)
+	}
+	var resumedEvidence struct {
+		Stdout     string `json:"stdout"`
+		Stderr     string `json:"stderr"`
+		SpecSHA256 string `json:"spec_sha256"`
+	}
+	readJSONFixture(t, wc1ArchivedEv, &resumedEvidence)
+	if resumedEvidence.Stdout != "wc1 stdout" ||
+		resumedEvidence.Stderr != "wc1 stderr" ||
+		resumedEvidence.SpecSHA256 != "wc1_spec_sha" {
+		t.Fatalf("resumed wc1 evidence drifted: %+v", resumedEvidence)
+	}
+	for index, values := range []struct {
+		stdout string
+		stderr string
+	}{
+		{stdout: "peer zero stdout", stderr: "peer zero stderr"},
+		{stdout: "peer one stdout", stderr: "peer one stderr"},
+	} {
+		peerEvidencePath := filepath.Join(runDir, fmt.Sprintf("ao2-wc-wc1-peer-%d-evidence.json", index))
+		var peerEvidence struct {
+			Status  string `json:"status"`
+			Stdout  string `json:"stdout"`
+			Stderr  string `json:"stderr"`
+			SpecSHA string `json:"spec_sha256"`
+		}
+		readJSONFixture(t, peerEvidencePath, &peerEvidence)
+		if peerEvidence.Status != "passed" ||
+			peerEvidence.Stdout != values.stdout ||
+			peerEvidence.Stderr != values.stderr ||
+			peerEvidence.SpecSHA != "wc1_spec_sha" {
+			t.Fatalf("resumed wc1 peer %d evidence drifted: %+v", index, peerEvidence)
+		}
 	}
 }
 
@@ -10626,6 +10696,16 @@ func TestInteractiveWorkcellFailureRetry(t *testing.T) {
 	if packet.Workcells[0].Status != "passed" {
 		t.Fatalf("expected wc1 status to be passed, got %q", packet.Workcells[0].Status)
 	}
+	runCount, err := os.ReadFile(stateFile)
+	if err != nil {
+		t.Fatalf("read retry count: %v", err)
+	}
+	if got := strings.TrimSpace(string(runCount)); got != "2" {
+		t.Fatalf("retry execution count = %q, want 2", got)
+	}
+	if !strings.Contains(stderrBuf.String(), "Retrying workcell [wc1] (attempt 1)") {
+		t.Fatalf("retry prompt output drifted: %q", stderrBuf.String())
+	}
 }
 
 func compileSelectiveTestAo2(t *testing.T, tmpDir string) string {
@@ -10785,6 +10865,12 @@ func TestInteractiveWorkcellFailureSkip(t *testing.T) {
 	if wc2Status != "passed" {
 		t.Errorf("expected wc2 status to be 'passed', got %q", wc2Status)
 	}
+	if packet.Workcells[0].WorkcellID != "wc1" || packet.Workcells[1].WorkcellID != "wc2" {
+		t.Fatalf("skip result order drifted: %+v", packet.Workcells)
+	}
+	if got := packet.Workcells[0].Summary; !strings.HasPrefix(got, "Skipped by operator after failure:") {
+		t.Fatalf("skip summary drifted: %q", got)
+	}
 }
 
 func TestInteractiveWorkcellFailureAbort(t *testing.T) {
@@ -10852,6 +10938,9 @@ func TestInteractiveWorkcellFailureAbort(t *testing.T) {
 	}
 	if packet.Workcells[0].Status != "failed" {
 		t.Fatalf("expected wc1 status to be failed, got %q", packet.Workcells[0].Status)
+	}
+	if !strings.Contains(stderrBuf.String(), "Choose action: (r)etry, (s)kip and continue, or (a)bort? [r/s/A]:") {
+		t.Fatalf("abort prompt output drifted: %q", stderrBuf.String())
 	}
 }
 

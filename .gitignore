@@ -6,3 +6,5 @@
 /tmp/
 /excluded/
 *.log
+CLAUDE.local.md
+.claude/settings.local.json

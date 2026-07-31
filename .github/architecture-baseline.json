@@ -1,7 +1,9 @@
 {
   "schema_version": "ao-forge.go-architecture-baseline.v1",
-  "source_tree": "40c415fae730116923d7d366eb07b08be1c42edc",
-  "prior_sources": {},
+  "source_tree": "30bfcb5875569669637a9d30e26f2b27a2e4581a",
+  "prior_sources": {
+    "goal_lifecycle_decomposition": "40c415fae730116923d7d366eb07b08be1c42edc"
+  },
   "measurements": {
     "internal/cli/cli.go": {
       "lines": 6023,
@@ -159,12 +161,44 @@
         "type:goalValidationSummary",
         "type:goalVerificationSummary"
       ]
+    },
+    "internal/cli/plan_execution.go": {
+      "lines": 1142,
+      "owned_declarations": [
+        "func:executePlanRun",
+        "func:generateTransientRSAKey",
+        "func:mapWorkcellKind",
+        "func:parseAo2DryRunOutput",
+        "func:performControlPlaneUploadAndReadback",
+        "func:resolveAgySwarmsCommand",
+        "func:resolveAgySwarmsProjectDir",
+        "func:resolveAo2Binary",
+        "func:resolveControlPlaneToken",
+        "func:resolveControlPlaneURL",
+        "func:signPayloadRSA_SHA256",
+        "func:truncateCommit",
+        "type:ao2RunSpec",
+        "type:cpOperatorPacket",
+        "type:cpPacketEvidence",
+        "type:cpPacketSummary",
+        "type:cpSignature",
+        "type:cpSignedUpload",
+        "type:cpTrustBoundary",
+        "type:exitCriteria",
+        "type:runMetadata",
+        "type:runSource",
+        "type:runSpecDetails",
+        "type:runTarget",
+        "type:runTask",
+        "type:trustBoundary"
+      ]
     }
   },
   "notes": [
     "Generated after the goal-lifecycle source-movement commit.",
     "The source tree remains stable when repository policy rewrites commit IDs during rebase merge.",
     "Measured file sizes may decrease but must not increase before another explicit decomposition.",
-    "Goal-lifecycle declarations are bound to their measured owner files."
+    "Goal-lifecycle declarations are bound to their measured owner files.",
+    "Plan execution and outbound Control Plane declarations are bound to internal/cli/plan_execution.go."
   ]
 }

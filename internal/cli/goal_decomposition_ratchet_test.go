@@ -22,7 +22,7 @@ type goalArchitectureBaseline struct {
 }
 
 func TestGoalLifecycleArchitectureRatchet(t *testing.T) {
-	const sourceMovementTree = "40c415fae730116923d7d366eb07b08be1c42edc"
+	const sourceMovementTree = "30bfcb5875569669637a9d30e26f2b27a2e4581a"
 
 	root := filepath.Clean(filepath.Join("..", ".."))
 	body, err := os.ReadFile(filepath.Join(root, ".github", "architecture-baseline.json"))
@@ -56,7 +56,16 @@ func TestGoalLifecycleArchitectureRatchet(t *testing.T) {
 		if lines := strings.Count(string(source), "\n"); lines > expected.Lines {
 			t.Errorf("%s grew above architecture ratchet: %d > %d lines", relative, lines, expected.Lines)
 		}
-		expectedOwnership[relative] = expected.Declarations
+		var goalDeclarations []string
+		for _, declaration := range expected.Declarations {
+			parts := strings.SplitN(declaration, ":", 2)
+			if len(parts) == 2 && measuredGoalArchitectureName(parts[1]) {
+				goalDeclarations = append(goalDeclarations, declaration)
+			}
+		}
+		if len(goalDeclarations) != 0 {
+			expectedOwnership[relative] = goalDeclarations
+		}
 	}
 
 	actualOwnership := map[string][]string{}
@@ -84,6 +93,62 @@ func TestGoalLifecycleArchitectureRatchet(t *testing.T) {
 	if !equalGoalOwnership(actualOwnership, expectedOwnership) {
 		t.Errorf("goal lifecycle ownership drifted:\nactual:   %v\nexpected: %v", actualOwnership, expectedOwnership)
 	}
+}
+
+func TestPlanExecutionArchitectureRatchet(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	body, err := os.ReadFile(filepath.Join(root, ".github", "architecture-baseline.json"))
+	if err != nil {
+		t.Fatalf("read architecture baseline: %v", err)
+	}
+	var baseline goalArchitectureBaseline
+	if err := json.Unmarshal(body, &baseline); err != nil {
+		t.Fatalf("decode architecture baseline: %v", err)
+	}
+	const relative = "internal/cli/plan_execution.go"
+	expected, ok := baseline.Measurements[relative]
+	if !ok {
+		t.Fatalf("architecture baseline does not measure %s", relative)
+	}
+	path := filepath.Join(root, filepath.FromSlash(relative))
+	parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+	if err != nil {
+		t.Fatalf("parse plan execution source: %v", err)
+	}
+	actual := allArchitectureDeclarations(parsed)
+	if !equalStringLists(actual, expected.Declarations) {
+		t.Fatalf("plan execution ownership drifted:\nactual:   %v\nexpected: %v", actual, expected.Declarations)
+	}
+}
+
+func allArchitectureDeclarations(file *ast.File) []string {
+	var result []string
+	for _, declaration := range file.Decls {
+		switch value := declaration.(type) {
+		case *ast.FuncDecl:
+			result = append(result, "func:"+value.Name.Name)
+		case *ast.GenDecl:
+			for _, spec := range value.Specs {
+				if typeSpec, ok := spec.(*ast.TypeSpec); ok {
+					result = append(result, "type:"+typeSpec.Name.Name)
+				}
+			}
+		}
+	}
+	sort.Strings(result)
+	return result
+}
+
+func equalStringLists(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func measuredGoalArchitectureDeclarations(file *ast.File) []string {

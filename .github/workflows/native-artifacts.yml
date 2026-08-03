@@ -37,6 +37,13 @@ jobs:
           go-version-file: go.mod
           cache: false
 
+      - name: Checkout pinned supply-chain policy
+        uses: actions/checkout@v6
+        with:
+          repository: uesugitorachiyo/ao-architecture
+          ref: 45e75766dfe1eaf586a4e87259cbc44ae4b2ce7a
+          path: .ao-supply-chain-policy
+
       - name: Build native artifact
         shell: bash
         env:
@@ -58,6 +65,40 @@ jobs:
             shasum -a 256 "$artifact_dir/$binary" > "$artifact_dir/SHA256SUMS"
           fi
           go env -json GOOS GOARCH GOVERSION > "$artifact_dir/go-env.json"
+          go run .ao-supply-chain-policy/scripts/read_go_binary_metadata.go \
+            "$artifact_dir/$binary" > "$artifact_dir/go-modules.json"
+          source_sha="${GITHUB_SHA}"
+          version="0.0.0+git.${source_sha:0:12}"
+          generated_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          dependency_lock=go.mod
+          if [[ -f go.sum ]]; then
+            dependency_lock=go.sum
+          fi
+          supply_chain_dir="$artifact_dir/supply-chain"
+          archive="ao-forge-${version}-${TARGET_LABEL}.tar.gz"
+          python3 .ao-supply-chain-policy/scripts/build_go_supply_chain_candidate.py \
+            --workspace-root . \
+            --repository ao-forge \
+            --source-sha "$source_sha" \
+            --version "$version" \
+            --target "$TARGET_LABEL" \
+            --binary "$artifact_dir/$binary" \
+            --module-json "$artifact_dir/go-modules.json" \
+            --dependency-lock "$dependency_lock" \
+            --license LICENSE \
+            --notice NOTICE \
+            --archive-name "$archive" \
+            --generated-at-utc "$generated_at_utc" \
+            --out "$supply_chain_dir"
+          python3 .ao-supply-chain-policy/scripts/verify_supply_chain_policy.py \
+            --inventory .ao-supply-chain-policy/stack/distributable-inventory.json \
+            --policy .ao-supply-chain-policy/stack/sbom-policy.json \
+            --evidence "$supply_chain_dir/supply-chain-evidence.json" \
+            --workspace-root . \
+            --expected-source-sha "$source_sha" \
+            --expected-version "$version" \
+            --expected-target "$TARGET_LABEL" \
+            --now "$generated_at_utc"
           go_version=$(go version | sed 's|"|\\"|g')
           cat > "$artifact_dir/native-artifact-summary.json" <<EOF
           {"command":"./cmd/forge","entry_point":"forge","go_version":"${go_version}","publication_allowed":false,"release_upload_attempted":false,"repository":"ao-forge","runner_os":"${RUNNER_OS}","schema_version":"ao.native-artifact-summary.v0.1","smoke":{"command":"--help","expected_success":true,"status":"passed"},"source_commit":"${GITHUB_SHA}","target_label":"${TARGET_LABEL}"}

@@ -147,6 +147,8 @@ jobs:
               expected_assets.update({
                   "release-evidence-bundle.json",
                   "release-evidence-bundle.attestation.json",
+                  "immutable-promotion-plan.json",
+                  "immutable-promotion-plan.json.sha256",
               })
 
           errors = []
@@ -312,12 +314,22 @@ jobs:
 
           release = json.loads((pathlib.Path(os.environ["AO_FORGE_RELEASE_VERIFY_DIR"]) / "release.json").read_text())
           bundle = json.loads(pathlib.Path("release-evidence-bundle.json").read_text())
+          plan_path = pathlib.Path("immutable-promotion-plan.json")
+          plan_sidecar = pathlib.Path("immutable-promotion-plan.json.sha256")
+          expected_plan_sidecar = f"{__import__('hashlib').sha256(plan_path.read_bytes()).hexdigest()}  immutable-promotion-plan.json\n"
+          evidence_digests = {
+              entry.get("path"): entry.get("sha256")
+              for entry in bundle.get("evidence_files", [])
+              if isinstance(entry, dict)
+          }
           checks = {
               "schema_version": bundle.get("schema_version") == "ao.forge.release-evidence-bundle.v0.1",
               "tag": bundle.get("tag") == os.environ["AO_FORGE_RELEASE_VERIFY_TAG"],
               "head_commit": bundle.get("head_commit") == release.get("targetCommitish"),
               "workflow_path": bundle.get("workflow", {}).get("path") == ".github/workflows/release-publish.yml",
               "artifacts": len(bundle.get("artifacts", [])) == 3,
+              "promotion_plan_sidecar": plan_sidecar.read_text() == expected_plan_sidecar,
+              "promotion_plan_bundle_binding": evidence_digests.get("immutable-promotion-plan.json") == __import__('hashlib').sha256(plan_path.read_bytes()).hexdigest(),
           }
           for evidence in bundle.get("evidence_files", []):
               if evidence.get("path", "").startswith("/"):

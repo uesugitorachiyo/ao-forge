@@ -1,0 +1,138 @@
+name: Release Finalize
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Exact signed tag whose reviewed draft should become public.
+        required: true
+        type: string
+      source_commit:
+        description: Exact source and workflow commit.
+        required: true
+        type: string
+      expected_plan_digest:
+        description: Exact immutable promotion-plan SHA-256.
+        required: true
+        type: string
+      exact_confirmation:
+        description: finalize-ao-forge:<tag>:<source_commit>:<plan_digest>
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-finalize-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    name: Verify and publish exact reviewed draft
+    runs-on: ubuntu-24.04
+    environment: production-release
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exact finalizer source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ inputs.source_commit }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Import release signer keys
+        shell: bash
+        run: gpg --batch --import docs/release/signers/*.asc
+
+      - name: Verify exact draft, tag, plan, and assets
+        id: verified
+        shell: bash
+        env:
+          EXACT_CONFIRMATION: ${{ inputs.exact_confirmation }}
+          EXPECTED_PLAN_DIGEST: ${{ inputs.expected_plan_digest }}
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "source commit is malformed" >&2; exit 1; }
+          [[ "$EXPECTED_PLAN_DIGEST" =~ ^[0-9a-f]{64}$ ]] || { echo "plan digest is malformed" >&2; exit 1; }
+          [[ "$GITHUB_SHA" == "$SOURCE_COMMIT" && "$(git rev-parse HEAD)" == "$SOURCE_COMMIT" ]] || { echo "finalizer source mismatch" >&2; exit 1; }
+          expected_confirmation="finalize-ao-forge:${TAG}:${SOURCE_COMMIT}:${EXPECTED_PLAN_DIGEST}"
+          [[ "$EXACT_CONFIRMATION" == "$expected_confirmation" ]] || { echo "exact confirmation mismatch" >&2; exit 1; }
+          git fetch --force --tags origin "refs/tags/${TAG}:refs/tags/${TAG}"
+          [[ "$(git cat-file -t "refs/tags/${TAG}")" == "tag" ]] || { echo "release tag must be annotated" >&2; exit 1; }
+          git verify-tag "$TAG"
+          [[ "$(git rev-parse "refs/tags/${TAG}^{commit}")" == "$SOURCE_COMMIT" ]] || { echo "release tag source mismatch" >&2; exit 1; }
+          release_json=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}")
+          export RELEASE_JSON="$release_json"
+          python3 - <<'PY'
+          import json
+          import os
+
+          release = json.loads(os.environ["RELEASE_JSON"])
+          if release.get("tag_name") != os.environ["TAG"] or release.get("draft") is not True:
+              raise SystemExit("release must be an exact draft")
+          expected = {
+              "ao-forge_Linux_x86_64.tar.gz",
+              "ao-forge_Darwin_arm64.tar.gz",
+              "ao-forge_Windows_x86_64.zip",
+              "checksums.txt",
+              "ao-forge_Linux_x86_64.tar.gz.attestation.json",
+              "ao-forge_Darwin_arm64.tar.gz.attestation.json",
+              "ao-forge_Windows_x86_64.zip.attestation.json",
+              "release-preview-audit.json",
+              "release-preview-inspect.txt",
+              "release-preview-inspect.json",
+              "release-evidence-bundle.json",
+              "release-evidence-bundle.attestation.json",
+              "immutable-promotion-plan.json",
+              "immutable-promotion-plan.json.sha256",
+              "release-artifact-inventory.v0.1.example.json",
+              "release-attestation-plan.v0.1.example.json",
+          }
+          observed = {asset.get("name") for asset in release.get("assets", [])}
+          if observed != expected:
+              raise SystemExit("release asset inventory mismatch")
+          plan = next(asset for asset in release["assets"] if asset["name"] == "immutable-promotion-plan.json")
+          print(f"release_id={release['id']}")
+          print(f"plan_url={plan['url']}")
+          PY
+          release_id=$(python3 -c 'import json,os; print(json.loads(os.environ["RELEASE_JSON"])["id"])')
+          plan_url=$(python3 -c 'import json,os; print(next(a["url"] for a in json.loads(os.environ["RELEASE_JSON"])["assets"] if a["name"]=="immutable-promotion-plan.json"))')
+          gh api -H 'Accept: application/octet-stream' "$plan_url" > immutable-promotion-plan.json
+          [[ "$(sha256sum < immutable-promotion-plan.json | awk '{print $1}')" == "$EXPECTED_PLAN_DIGEST" ]] || { echo "published draft plan digest mismatch" >&2; exit 1; }
+          echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
+
+      - name: Finalize exact draft
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ steps.verified.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" -F draft=false > finalized-release.json
+          jq -e '.draft == false and .prerelease == false' finalized-release.json >/dev/null || { echo "published release readback mismatch" >&2; exit 1; }
+
+      - name: Verify public release readback
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" > public-release.json
+          jq -e --arg tag "$TAG" '.tag_name == $tag and .draft == false and .prerelease == false' public-release.json >/dev/null || { echo "published release readback mismatch" >&2; exit 1; }
+
+      - name: Upload finalization evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ao-forge-release-finalization-${{ inputs.source_commit }}
+          path: |
+            immutable-promotion-plan.json
+            finalized-release.json
+            public-release.json
+          if-no-files-found: error
+          retention-days: 30

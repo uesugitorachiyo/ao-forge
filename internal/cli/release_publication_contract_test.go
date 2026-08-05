@@ -114,6 +114,38 @@ func TestReleaseFinalizerResolvesDraftWithAuthenticatedList(t *testing.T) {
 	}
 }
 
+func TestPublicReleaseVerifiersUsePackedBinaryNames(t *testing.T) {
+	verify := readPublicationContractFile(t, ".github", "workflows", "release-verify.yml")
+	for _, want := range []string{
+		"ao-forge-release-smoke/forge",
+		"linux_x86_64_smoke=passed",
+		"darwin_arm64_smoke=passed",
+	} {
+		if !strings.Contains(verify, want) {
+			t.Fatalf("release verifier missing packed binary contract %q", want)
+		}
+	}
+	if strings.Contains(verify, "ao-forge-release-smoke/ao-forge") {
+		t.Fatal("release verifier expects a binary name not present in public archives")
+	}
+
+	install := readPublicationContractFile(t, ".github", "workflows", "release-install-verify.yml")
+	for _, want := range []string{
+		"${extract}/linux/forge",
+		"(extract / \"forge.exe\").is_file()",
+		"windows_archive_contains=forge.exe",
+	} {
+		if !strings.Contains(install, want) {
+			t.Fatalf("release install verifier missing packed binary contract %q", want)
+		}
+	}
+	for _, forbidden := range []string{"${extract}/linux/ao-forge", "(extract / \"ao-forge.exe\").is_file()"} {
+		if strings.Contains(install, forbidden) {
+			t.Fatalf("release install verifier expects a binary name not present in public archives: %q", forbidden)
+		}
+	}
+}
+
 func readPublicationContractFile(t *testing.T, parts ...string) string {
 	t.Helper()
 	path := filepath.Join(append([]string{repoRoot(t)}, parts...)...)

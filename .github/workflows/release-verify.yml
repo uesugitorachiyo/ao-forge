@@ -357,11 +357,11 @@ jobs:
           mkdir -p "${RUNNER_TEMP}/ao-forge-release-smoke"
           if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
             tar -xzf ao-forge_Linux_x86_64.tar.gz -C "${RUNNER_TEMP}/ao-forge-release-smoke"
-            "${RUNNER_TEMP}/ao-forge-release-smoke/ao-forge" --help >/dev/null
+            "${RUNNER_TEMP}/ao-forge-release-smoke/forge" --help >/dev/null
             echo "linux_x86_64_smoke=passed"
           elif [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]]; then
             tar -xzf ao-forge_Darwin_arm64.tar.gz -C "${RUNNER_TEMP}/ao-forge-release-smoke"
-            "${RUNNER_TEMP}/ao-forge-release-smoke/ao-forge" --help >/dev/null
+            "${RUNNER_TEMP}/ao-forge-release-smoke/forge" --help >/dev/null
             echo "darwin_arm64_smoke=passed"
           else
             echo "binary_smoke_skipped_for_host=$(uname -s)-$(uname -m)"

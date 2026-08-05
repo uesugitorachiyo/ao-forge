@@ -4983,7 +4983,7 @@ func TestReleaseInstallVerifyWorkflowChecksPublicAssets(t *testing.T) {
 		{name: "windows archive", doc: workflow, want: "ao-forge_Windows_x86_64.zip"},
 		{name: "linux smoke", doc: workflow, want: "Run Linux install smoke test"},
 		{name: "installed binary checksum verification", doc: workflow, want: `artifact verify-checksums --manifest "${assets}/checksums.txt"`},
-		{name: "windows inspection", doc: workflow, want: "ao-forge.exe"},
+		{name: "windows inspection", doc: workflow, want: "forge.exe"},
 		{name: "audit schema", doc: workflow, want: "ao.forge.release-install-verify.v0.1"},
 		{name: "audit output", doc: workflow, want: "release-install-verify-audit.json"},
 		{name: "audit contract", doc: workflow, want: "release-install-verify-audit-v0.1.schema.json"},

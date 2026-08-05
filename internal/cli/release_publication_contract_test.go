@@ -95,6 +95,25 @@ func TestReleaseTagProducerAndFinalizerAreGoverned(t *testing.T) {
 	}
 }
 
+func TestReleaseFinalizerResolvesDraftWithAuthenticatedList(t *testing.T) {
+
+	finalizer := readPublicationContractFile(t, ".github", "workflows", "release-finalize.yml")
+	for _, want := range []string{
+		"workflow_source_commit:",
+		"WORKFLOW_SOURCE_COMMIT: ${{ inputs.workflow_source_commit }}",
+		"releases?per_page=100",
+		"matching = [release for release in releases",
+		"len(matching) != 1",
+		"release = matching[0]",
+		"git merge-base --is-ancestor \"$SOURCE_COMMIT\" \"$GITHUB_SHA\"",
+		"workflow source must descend from release source",
+	} {
+		if !strings.Contains(finalizer, want) {
+			t.Fatalf("release finalizer missing draft-safe contract %q", want)
+		}
+	}
+}
+
 func readPublicationContractFile(t *testing.T, parts ...string) string {
 	t.Helper()
 	path := filepath.Join(append([]string{repoRoot(t)}, parts...)...)

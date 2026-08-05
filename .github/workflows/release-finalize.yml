@@ -8,7 +8,11 @@ on:
         required: true
         type: string
       source_commit:
-        description: Exact source and workflow commit.
+        description: Exact signed release source commit.
+        required: true
+        type: string
+      workflow_source_commit:
+        description: Exact main commit containing the finalizer workflow.
         required: true
         type: string
       expected_plan_digest:
@@ -16,7 +20,7 @@ on:
         required: true
         type: string
       exact_confirmation:
-        description: finalize-ao-forge:<tag>:<source_commit>:<plan_digest>
+        description: finalize-ao-forge:<tag>:<source_commit>:<workflow_source_commit>:<plan_digest>
         required: true
         type: string
 
@@ -38,7 +42,7 @@ jobs:
       - name: Checkout exact finalizer source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
-          ref: ${{ inputs.source_commit }}
+          ref: ${{ inputs.workflow_source_commit }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -54,26 +58,35 @@ jobs:
           EXPECTED_PLAN_DIGEST: ${{ inputs.expected_plan_digest }}
           GH_TOKEN: ${{ github.token }}
           SOURCE_COMMIT: ${{ inputs.source_commit }}
+          WORKFLOW_SOURCE_COMMIT: ${{ inputs.workflow_source_commit }}
           TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
           [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "source commit is malformed" >&2; exit 1; }
+          [[ "$WORKFLOW_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "workflow source commit is malformed" >&2; exit 1; }
           [[ "$EXPECTED_PLAN_DIGEST" =~ ^[0-9a-f]{64}$ ]] || { echo "plan digest is malformed" >&2; exit 1; }
-          [[ "$GITHUB_SHA" == "$SOURCE_COMMIT" && "$(git rev-parse HEAD)" == "$SOURCE_COMMIT" ]] || { echo "finalizer source mismatch" >&2; exit 1; }
-          expected_confirmation="finalize-ao-forge:${TAG}:${SOURCE_COMMIT}:${EXPECTED_PLAN_DIGEST}"
+          [[ "$GITHUB_REF" == "refs/heads/main" ]] || { echo "finalizer must run from main" >&2; exit 1; }
+          [[ "$GITHUB_SHA" == "$WORKFLOW_SOURCE_COMMIT" && "$(git rev-parse HEAD)" == "$WORKFLOW_SOURCE_COMMIT" ]] || { echo "finalizer workflow source mismatch" >&2; exit 1; }
+          git merge-base --is-ancestor "$SOURCE_COMMIT" "$GITHUB_SHA" || { echo "workflow source must descend from release source" >&2; exit 1; }
+          expected_confirmation="finalize-ao-forge:${TAG}:${SOURCE_COMMIT}:${WORKFLOW_SOURCE_COMMIT}:${EXPECTED_PLAN_DIGEST}"
           [[ "$EXACT_CONFIRMATION" == "$expected_confirmation" ]] || { echo "exact confirmation mismatch" >&2; exit 1; }
           git fetch --force --tags origin "refs/tags/${TAG}:refs/tags/${TAG}"
           [[ "$(git cat-file -t "refs/tags/${TAG}")" == "tag" ]] || { echo "release tag must be annotated" >&2; exit 1; }
           git verify-tag "$TAG"
           [[ "$(git rev-parse "refs/tags/${TAG}^{commit}")" == "$SOURCE_COMMIT" ]] || { echo "release tag source mismatch" >&2; exit 1; }
-          release_json=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}")
-          export RELEASE_JSON="$release_json"
+          releases_json=$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100")
+          export RELEASES_JSON="$releases_json"
           python3 - <<'PY'
           import json
           import os
 
-          release = json.loads(os.environ["RELEASE_JSON"])
-          if release.get("tag_name") != os.environ["TAG"] or release.get("draft") is not True:
+          pages = json.loads(os.environ["RELEASES_JSON"])
+          releases = [release for page in pages for release in page]
+          matching = [release for release in releases if release.get("tag_name") == os.environ["TAG"]]
+          if len(matching) != 1:
+              raise SystemExit("release draft lookup must resolve exactly one matching tag")
+          release = matching[0]
+          if release.get("draft") is not True:
               raise SystemExit("release must be an exact draft")
           expected = {
               "ao-forge_Linux_x86_64.tar.gz",
@@ -97,11 +110,11 @@ jobs:
           if observed != expected:
               raise SystemExit("release asset inventory mismatch")
           plan = next(asset for asset in release["assets"] if asset["name"] == "immutable-promotion-plan.json")
-          print(f"release_id={release['id']}")
-          print(f"plan_url={plan['url']}")
+          with open("draft-release.json", "w", encoding="utf-8") as handle:
+              json.dump(release, handle, sort_keys=True)
           PY
-          release_id=$(python3 -c 'import json,os; print(json.loads(os.environ["RELEASE_JSON"])["id"])')
-          plan_url=$(python3 -c 'import json,os; print(next(a["url"] for a in json.loads(os.environ["RELEASE_JSON"])["assets"] if a["name"]=="immutable-promotion-plan.json"))')
+          release_id=$(jq -r '.id' draft-release.json)
+          plan_url=$(jq -r '.assets[] | select(.name == "immutable-promotion-plan.json") | .url' draft-release.json)
           gh api -H 'Accept: application/octet-stream' "$plan_url" > immutable-promotion-plan.json
           [[ "$(sha256sum < immutable-promotion-plan.json | awk '{print $1}')" == "$EXPECTED_PLAN_DIGEST" ]] || { echo "published draft plan digest mismatch" >&2; exit 1; }
           echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
@@ -131,6 +144,7 @@ jobs:
         with:
           name: ao-forge-release-finalization-${{ inputs.source_commit }}
           path: |
+            draft-release.json
             immutable-promotion-plan.json
             finalized-release.json
             public-release.json

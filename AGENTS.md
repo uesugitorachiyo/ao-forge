@@ -26,6 +26,7 @@ Forge does not create authorization, decide Covenant policy, bypass AO2 controls
 
 - Change the smallest owned preparation surface and preserve GoalRun monotonicity, one-run scope, policy provenance, rollback, evidence retention, and producer/consumer ownership.
 - Add negative tests for stale state, digest drift, invalid paths, missing decisions, failed readiness, and over-authority packets.
+- Finalize a reviewed draft only when the signed release source, immutable plan, and an explicit descendant finalizer-workflow source are all bound; do not replace a draft or move a signed tag to repair a finalizer.
 - Update this file in the same pull request when durable commands, architecture, ownership, or authority boundaries change.
 
 ## Verification

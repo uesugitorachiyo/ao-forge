@@ -4,20 +4,25 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to publish as a draft"
+        description: "Exact signed release tag to publish as a draft"
         required: true
-        default: "v0.1.2"
+        default: "v0.1.4"
+      source_commit:
+        description: "Exact source and workflow commit qualified by rehearsal"
+        required: true
       release_rehearsal_run_id:
         description: "Successful Release Rehearsal run ID for this tag"
         required: true
-      notes_path:
-        description: "Public-safe release notes file"
+      expected_plan_digest:
+        description: "Exact SHA-256 of the immutable rehearsal plan"
         required: true
-        default: "docs/release/V0.1.2-RELEASE-NOTES.md"
       confirm_publish:
         description: "Type true to create a draft GitHub release"
         required: true
         default: "false"
+      exact_confirmation:
+        description: "publish-ao-forge:<tag>:<source_commit>:<run_id>:<plan_digest>"
+        required: true
 
 permissions:
   actions: read
@@ -37,8 +42,10 @@ jobs:
     env:
       REQUESTED_PUBLISH_TAG: ${{ github.event.inputs.tag }}
       RELEASE_REHEARSAL_RUN_ID: ${{ github.event.inputs.release_rehearsal_run_id }}
-      RELEASE_NOTES_PATH: ${{ github.event.inputs.notes_path }}
+      SOURCE_COMMIT: ${{ github.event.inputs.source_commit }}
+      EXPECTED_PLAN_DIGEST: ${{ github.event.inputs.expected_plan_digest }}
       CONFIRM_PUBLISH: ${{ github.event.inputs.confirm_publish }}
+      EXACT_CONFIRMATION: ${{ github.event.inputs.exact_confirmation }}
 
     steps:
       - name: Guard explicit publish approval
@@ -49,11 +56,18 @@ jobs:
             echo "confirm_publish must be exactly true" >&2
             exit 1
           fi
+          [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "source_commit must be an exact lowercase SHA" >&2; exit 1; }
+          [[ "$RELEASE_REHEARSAL_RUN_ID" =~ ^[1-9][0-9]*$ ]] || { echo "release rehearsal run id is malformed" >&2; exit 1; }
+          [[ "$EXPECTED_PLAN_DIGEST" =~ ^[0-9a-f]{64}$ ]] || { echo "expected plan digest is malformed" >&2; exit 1; }
+          expected_confirmation="publish-ao-forge:${REQUESTED_PUBLISH_TAG}:${SOURCE_COMMIT}:${RELEASE_REHEARSAL_RUN_ID}:${EXPECTED_PLAN_DIGEST}"
+          [[ "$EXACT_CONFIRMATION" == "$expected_confirmation" ]] || { echo "exact confirmation mismatch" >&2; exit 1; }
 
-      - name: Checkout
+      - name: Checkout exact publisher source
         uses: actions/checkout@v6
         with:
+          ref: ${{ github.event.inputs.source_commit }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Go
         uses: actions/setup-go@v6
@@ -71,6 +85,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          [[ "$GITHUB_SHA" == "$SOURCE_COMMIT" ]] || { echo "workflow source mismatch" >&2; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_COMMIT" ]] || { echo "publisher checkout source mismatch" >&2; exit 1; }
           tag="${REQUESTED_PUBLISH_TAG:-}"
           if [[ -z "$tag" ]]; then
             echo "release publish tag is required" >&2
@@ -201,34 +217,63 @@ jobs:
           print(f"release_rehearsal_tag={expected_tag}")
           PY
 
-      - name: Build release archives
+      - name: Import and reverify immutable rehearsed candidates
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist build
-
-          GOOS=linux GOARCH=amd64 go build -o build/ao-forge ./cmd/forge
-          cp LICENSE NOTICE build/
-          tar -C build -czf dist/ao-forge_Linux_x86_64.tar.gz ao-forge LICENSE NOTICE
-          rm -f build/ao-forge
-
-          GOOS=darwin GOARCH=arm64 go build -o build/ao-forge ./cmd/forge
-          tar -C build -czf dist/ao-forge_Darwin_arm64.tar.gz ao-forge LICENSE NOTICE
-          rm -f build/ao-forge
-
-          GOOS=windows GOARCH=amd64 go build -o build/ao-forge.exe ./cmd/forge
-          python3 - <<'PY'
-          import zipfile
-          from pathlib import Path
-
-          archive = Path("dist/ao-forge_Windows_x86_64.zip")
-          binary = Path("build/ao-forge.exe")
-          with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-              zf.write(binary, arcname="ao-forge.exe")
-              zf.write("LICENSE", arcname="LICENSE")
-              zf.write("NOTICE", arcname="NOTICE")
-          PY
-          rm -rf build
+          plan_dir="${RUNNER_TEMP}/promotion-plan"
+          candidates_dir="${RUNNER_TEMP}/downloaded-candidates"
+          reconstructed_dir="${RUNNER_TEMP}/reconstructed-plan"
+          mkdir -p "$plan_dir" "$candidates_dir" "$reconstructed_dir" "$AO_FORGE_RELEASE_PUBLISH_OUT" dist
+          gh run download "$RELEASE_REHEARSAL_RUN_ID" \
+            --name "ao-forge-release-rehearsal-plan-${SOURCE_COMMIT}" \
+            --dir "$plan_dir"
+          gh run download "$RELEASE_REHEARSAL_RUN_ID" \
+            --pattern "ao-forge-release-candidate-*-${SOURCE_COMMIT}" \
+            --dir "$candidates_dir"
+          plan="$plan_dir/immutable-promotion-plan.json"
+          actual_plan_digest=$(sha256sum < "$plan" | awk '{print $1}')
+          [[ "$actual_plan_digest" == "$EXPECTED_PLAN_DIGEST" ]] || { echo "immutable plan digest mismatch" >&2; exit 1; }
+          VERSION=$(jq -er '.version' "$plan")
+          manifest_digest=$(jq -er '.approved_manifest_sha256' "$plan")
+          [[ "$(jq -er '.source_sha' "$plan")" == "$SOURCE_COMMIT" ]] || { echo "immutable plan source mismatch" >&2; exit 1; }
+          [[ "$(jq -er '.tag' "$plan")" == "$AO_FORGE_RELEASE_PUBLISH_TAG" ]] || { echo "immutable plan tag mismatch" >&2; exit 1; }
+          [[ "$(jq -er '.workflow_run_id' "$plan")" == "$RELEASE_REHEARSAL_RUN_ID" ]] || { echo "immutable plan run mismatch" >&2; exit 1; }
+          common_args=(
+            --version "$VERSION"
+            --tag "$AO_FORGE_RELEASE_PUBLISH_TAG"
+            --source-sha "$SOURCE_COMMIT"
+            --manifest-digest "$manifest_digest"
+            --workflow-identity ".github/workflows/release-rehearsal.yml@${SOURCE_COMMIT}"
+            --workflow-run-id "$RELEASE_REHEARSAL_RUN_ID"
+          )
+          python3 scripts/verify-release-rehearsal.py assemble \
+            "${common_args[@]}" \
+            --candidates-dir "$candidates_dir" \
+            --output "$reconstructed_dir/immutable-promotion-plan.json"
+          cmp --silent "$plan" "$reconstructed_dir/immutable-promotion-plan.json" || { echo "reconstructed immutable plan mismatch" >&2; exit 1; }
+          python3 scripts/verify-release-rehearsal.py verify-plan \
+            "${common_args[@]}" \
+            --plan "$plan"
+          while IFS='|' read -r target public_name; do
+            planned_name=$(jq -er --arg target "$target" '.candidates[] | select(.target == $target) | .archive' "$plan")
+            expected_digest=$(jq -er --arg target "$target" '.candidates[] | select(.target == $target) | .archive_sha256' "$plan")
+            mapfile -t matches < <(find "$candidates_dir" -type f -name "$planned_name")
+            [[ "${#matches[@]}" -eq 1 ]] || { echo "candidate archive inventory mismatch for $target" >&2; exit 1; }
+            actual_digest=$(sha256sum < "${matches[0]}" | awk '{print $1}')
+            [[ "$actual_digest" == "$expected_digest" ]] || { echo "candidate archive digest mismatch" >&2; exit 1; }
+            cp "${matches[0]}" "dist/$public_name"
+          done <<'EOF'
+          linux-x86_64|ao-forge_Linux_x86_64.tar.gz
+          macos-aarch64|ao-forge_Darwin_arm64.tar.gz
+          windows-x86_64|ao-forge_Windows_x86_64.zip
+          EOF
+          cp "$plan" "${AO_FORGE_RELEASE_PUBLISH_OUT}/immutable-promotion-plan.json"
+          cp "${plan}.sha256" "${AO_FORGE_RELEASE_PUBLISH_OUT}/immutable-promotion-plan.json.sha256"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "RELEASE_NOTES_PATH=docs/release/V${VERSION}-RELEASE-NOTES.md" >> "$GITHUB_ENV"
 
       - name: Check release archive license files
         run: scripts/check-license-policy.sh --scan-archives
@@ -381,6 +426,8 @@ jobs:
 
           evidence_paths = [
               ("checksums.txt", pathlib.Path("dist/checksums.txt")),
+              ("immutable-promotion-plan.json", publish_out / "immutable-promotion-plan.json"),
+              ("immutable-promotion-plan.json.sha256", publish_out / "immutable-promotion-plan.json.sha256"),
               ("release-preview-audit.json", publish_out / "release-preview-audit.json"),
               ("release-preview-inspect.txt", publish_out / "release-preview-inspect.txt"),
               ("release-preview-inspect.json", publish_out / "release-preview-inspect.json"),
@@ -534,7 +581,7 @@ jobs:
             printf -- '- Commit: `%s`\n' "${GITHUB_SHA}"
             printf -- '- Release Publish run: `https://github.com/%s/actions/runs/%s`\n' "${GITHUB_REPOSITORY}" "${GITHUB_RUN_ID}"
             printf -- '- Release Rehearsal run: `https://github.com/%s/actions/runs/%s`\n' "${GITHUB_REPOSITORY}" "${RELEASE_REHEARSAL_RUN_ID}"
-            printf -- '- Release evidence assets: `release-preview-audit.json`, `release-preview-inspect.json`, `checksums.txt`, `release-evidence-bundle.json`, `release-evidence-bundle.attestation.json`, and `*.attestation.json`.\n'
+            printf -- '- Release evidence assets: `immutable-promotion-plan.json`, `immutable-promotion-plan.json.sha256`, `release-preview-audit.json`, `release-preview-inspect.json`, `checksums.txt`, `release-evidence-bundle.json`, `release-evidence-bundle.attestation.json`, and `*.attestation.json`.\n'
           } > "${AO_FORGE_RELEASE_PUBLISH_NOTES}"
 
           python3 - <<'PY'
@@ -570,6 +617,8 @@ jobs:
             "${AO_FORGE_RELEASE_PUBLISH_OUT}/release-preview-inspect.json" \
             "${AO_FORGE_RELEASE_PUBLISH_OUT}/release-evidence-bundle.json" \
             "${AO_FORGE_RELEASE_PUBLISH_OUT}/release-evidence-bundle.attestation.json" \
+            "${AO_FORGE_RELEASE_PUBLISH_OUT}/immutable-promotion-plan.json" \
+            "${AO_FORGE_RELEASE_PUBLISH_OUT}/immutable-promotion-plan.json.sha256" \
             examples/release-preview/release-artifact-inventory.v0.1.example.json \
             examples/release-preview/release-attestation-plan.v0.1.example.json \
             --repo "${GITHUB_REPOSITORY}" \
@@ -594,6 +643,8 @@ jobs:
             ${{ runner.temp }}/ao-forge-release-publish/release-preview-inspect.json
             ${{ runner.temp }}/ao-forge-release-publish/release-evidence-bundle.json
             ${{ runner.temp }}/ao-forge-release-publish/release-evidence-bundle.attestation.json
+            ${{ runner.temp }}/ao-forge-release-publish/immutable-promotion-plan.json
+            ${{ runner.temp }}/ao-forge-release-publish/immutable-promotion-plan.json.sha256
             examples/release-preview/release-artifact-inventory.v0.1.example.json
             examples/release-preview/release-attestation-plan.v0.1.example.json
           if-no-files-found: error

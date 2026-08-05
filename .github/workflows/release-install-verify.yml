@@ -129,10 +129,10 @@ jobs:
           mkdir -p "${extract}/linux" "${extract}/darwin" "${extract}/windows"
 
           tar -xzf "${assets}/ao-forge_Linux_x86_64.tar.gz" -C "${extract}/linux"
-          test -x "${extract}/linux/ao-forge"
+          test -x "${extract}/linux/forge"
 
           tar -xzf "${assets}/ao-forge_Darwin_arm64.tar.gz" -C "${extract}/darwin"
-          test -f "${extract}/darwin/ao-forge"
+          test -f "${extract}/darwin/forge"
 
           python3 - <<'PY'
           import os
@@ -143,9 +143,9 @@ jobs:
           extract = pathlib.Path(os.environ["AO_FORGE_INSTALL_VERIFY_OUT"]) / "extract" / "windows"
           with zipfile.ZipFile(assets / "ao-forge_Windows_x86_64.zip") as archive:
               archive.extractall(extract)
-          if not (extract / "ao-forge.exe").is_file():
-              raise SystemExit("ao-forge.exe missing from Windows release archive")
-          print("windows_archive_contains=ao-forge.exe")
+          if not (extract / "forge.exe").is_file():
+              raise SystemExit("forge.exe missing from Windows release archive")
+          print("windows_archive_contains=forge.exe")
           PY
 
       - name: Run Linux install smoke test
@@ -153,8 +153,8 @@ jobs:
         run: |
           set -euo pipefail
           assets="${AO_FORGE_INSTALL_VERIFY_OUT}/assets"
-          "${AO_FORGE_INSTALL_VERIFY_OUT}/extract/linux/ao-forge" --help >/dev/null
-          "${AO_FORGE_INSTALL_VERIFY_OUT}/extract/linux/ao-forge" artifact verify-checksums --manifest "${assets}/checksums.txt"
+          "${AO_FORGE_INSTALL_VERIFY_OUT}/extract/linux/forge" --help >/dev/null
+          "${AO_FORGE_INSTALL_VERIFY_OUT}/extract/linux/forge" artifact verify-checksums --manifest "${assets}/checksums.txt"
           echo "linux_public_asset_install_smoke=passed"
 
       - name: Write install verification audit

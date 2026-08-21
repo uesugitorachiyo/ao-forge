@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -42,6 +44,16 @@ func pythonForTest(t *testing.T) string {
 func bashAvailable() bool {
 	_, err := exec.LookPath("bash")
 	return err == nil
+}
+
+func requireTestSymlink(t *testing.T, oldname, newname string) {
+	t.Helper()
+	if err := os.Symlink(oldname, newname); err != nil {
+		if runtime.GOOS == "windows" && errors.Is(err, syscall.Errno(1314)) {
+			t.Skipf("symlink unavailable without Create Symbolic Link privilege: %v", err)
+		}
+		t.Fatalf("symlink %s %s: %v", oldname, newname, err)
+	}
 }
 
 func readJSONFixture(t *testing.T, path string, target any) {
@@ -1489,9 +1501,7 @@ func TestGoalRunCLIDryRunsRetainedEvidenceCleanup(t *testing.T) {
 	outsideRoot := t.TempDir()
 	outsideArtifact := filepath.Join(outsideRoot, "outside-retained.json")
 	copyFileForTest(t, filepath.Join(root, "docs", "evidence", "goals", "ao2-weekend-hardening", "20260101T010000Z-complete", "old-loop-retention-proof.json"), outsideArtifact)
-	if err := os.Symlink(outsideArtifact, filepath.Join(symlinkRoot, "linked-retained.json")); err != nil {
-		t.Fatalf("create retained evidence symlink: %v", err)
-	}
+	requireTestSymlink(t, outsideArtifact, filepath.Join(symlinkRoot, "linked-retained.json"))
 	code, stdout, stderr = runCLI("goal", "evidence", "cleanup", "--dry-run", "--root", symlinkRoot, "--now", now, "--json")
 	if code != 1 {
 		t.Fatalf("goal evidence cleanup symlink exit code = %d, want 1\nstdout: %s\nstderr: %s", code, stdout, stderr)

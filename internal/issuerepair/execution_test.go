@@ -10,10 +10,22 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
+
+func requireTestSymlink(t *testing.T, oldname, newname string) {
+	t.Helper()
+	if err := os.Symlink(oldname, newname); err != nil {
+		if runtime.GOOS == "windows" && errors.Is(err, syscall.Errno(1314)) {
+			t.Skipf("symlink unavailable without Create Symbolic Link privilege: %v", err)
+		}
+		t.Fatalf("symlink %s %s: %v", oldname, newname, err)
+	}
+}
 
 type testExecution struct {
 	execution *Execution
@@ -485,9 +497,7 @@ func TestMalformedAndUnsafeResumeFilesAreRejected(t *testing.T) {
 		if err := os.Remove(fixture.execution.StatePath()); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Symlink(target, fixture.execution.StatePath()); err != nil {
-			t.Skipf("symlinks unavailable: %v", err)
-		}
+		requireTestSymlink(t, target, fixture.execution.StatePath())
 		if _, err := Resume(
 			fixture.execution.StatePath(),
 			resumeRequest(fixture.request, fixture.execution.State(), "worker-1"),

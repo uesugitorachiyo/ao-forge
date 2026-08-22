@@ -107,9 +107,16 @@ func TestReleaseFinalizerResolvesDraftWithAuthenticatedList(t *testing.T) {
 		"release = matching[0]",
 		"git merge-base --is-ancestor \"$SOURCE_COMMIT\" \"$GITHUB_SHA\"",
 		"workflow source must descend from release source",
+		"releases-pages.json",
+		`Path("releases-pages.json").read_bytes()`,
 	} {
 		if !strings.Contains(finalizer, want) {
 			t.Fatalf("release finalizer missing draft-safe contract %q", want)
+		}
+	}
+	for _, forbidden := range []string{"RELEASES_JSON", "releases_json=$("} {
+		if strings.Contains(finalizer, forbidden) {
+			t.Fatalf("release finalizer uses oversized environment transfer %q", forbidden)
 		}
 	}
 }

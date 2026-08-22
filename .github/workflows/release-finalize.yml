@@ -74,13 +74,13 @@ jobs:
           [[ "$(git cat-file -t "refs/tags/${TAG}")" == "tag" ]] || { echo "release tag must be annotated" >&2; exit 1; }
           git verify-tag "$TAG"
           [[ "$(git rev-parse "refs/tags/${TAG}^{commit}")" == "$SOURCE_COMMIT" ]] || { echo "release tag source mismatch" >&2; exit 1; }
-          releases_json=$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100")
-          export RELEASES_JSON="$releases_json"
+          gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > releases-pages.json
           python3 - <<'PY'
           import json
           import os
+          from pathlib import Path
 
-          pages = json.loads(os.environ["RELEASES_JSON"])
+          pages = json.loads(Path("releases-pages.json").read_bytes())
           releases = [release for page in pages for release in page]
           matching = [release for release in releases if release.get("tag_name") == os.environ["TAG"]]
           if len(matching) != 1:

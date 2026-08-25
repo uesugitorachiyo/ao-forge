@@ -22,6 +22,8 @@ for the cross-repository flow.
 
 ## Quick Start
 
+Go 1.26 or later is required to build AO Forge from source.
+
 ```sh
 go test ./...
 go build -o bin/forge ./cmd/forge
@@ -56,6 +58,15 @@ Verify only the downloaded archive:
 grep '  <archive-name>$' checksums.txt > checksums.selected
 sha256sum -c checksums.selected # Linux
 shasum -a 256 -c checksums.selected # macOS
+```
+
+On PowerShell, compare the downloaded archive with its `checksums.txt` entry:
+
+```powershell
+$archive = 'ao-forge_Windows_x86_64.zip'
+$expected = ((Select-String -Path checksums.txt -Pattern " $archive$").Line -split '\s+')[0]
+$actual = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLower()
+if ($actual -ne $expected) { throw 'release digest mismatch' }
 ```
 
 After extraction, run `./forge --help` on macOS or Linux, or

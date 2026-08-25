@@ -2735,6 +2735,7 @@ func TestRootReadmeCurrentReleaseIsDiscoverable(t *testing.T) {
 
 	for _, want := range []string{
 		"## Install v0.1.5",
+		"Go 1.26 or later",
 		"https://github.com/uesugitorachiyo/ao-forge/releases/tag/v0.1.5",
 		"`d1723769949269dcd0589916d83769dcb7275f98`",
 		"https://github.com/uesugitorachiyo/ao-forge/releases/download/v0.1.5/ao-forge_Darwin_arm64.tar.gz",
@@ -2742,6 +2743,7 @@ func TestRootReadmeCurrentReleaseIsDiscoverable(t *testing.T) {
 		"https://github.com/uesugitorachiyo/ao-forge/releases/download/v0.1.5/ao-forge_Windows_x86_64.zip",
 		"https://github.com/uesugitorachiyo/ao-forge/releases/download/v0.1.5/checksums.txt",
 		"grep '  <archive-name>$' checksums.txt > checksums.selected",
+		"Get-FileHash $archive -Algorithm SHA256",
 		"`./forge --help`",
 		"`.\\forge.exe --help`",
 	} {

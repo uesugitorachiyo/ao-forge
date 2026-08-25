@@ -2726,6 +2726,31 @@ func TestFactoryBriefAndPlanSchemasAreLinkedAndStrict(t *testing.T) {
 	}
 }
 
+func TestRootReadmeCurrentReleaseIsDiscoverable(t *testing.T) {
+	readmeBytes, err := os.ReadFile(filepath.Join(repoRoot(t), "README.md"))
+	if err != nil {
+		t.Fatalf("read README.md: %v", err)
+	}
+	readme := string(readmeBytes)
+
+	for _, want := range []string{
+		"## Install v0.1.5",
+		"https://github.com/uesugitorachiyo/ao-forge/releases/tag/v0.1.5",
+		"`d1723769949269dcd0589916d83769dcb7275f98`",
+		"https://github.com/uesugitorachiyo/ao-forge/releases/download/v0.1.5/ao-forge_Darwin_arm64.tar.gz",
+		"https://github.com/uesugitorachiyo/ao-forge/releases/download/v0.1.5/ao-forge_Linux_x86_64.tar.gz",
+		"https://github.com/uesugitorachiyo/ao-forge/releases/download/v0.1.5/ao-forge_Windows_x86_64.zip",
+		"https://github.com/uesugitorachiyo/ao-forge/releases/download/v0.1.5/checksums.txt",
+		"grep '  <archive-name>$' checksums.txt > checksums.selected",
+		"`./forge --help`",
+		"`.\\forge.exe --help`",
+	} {
+		if !strings.Contains(readme, want) {
+			t.Fatalf("README.md missing %q", want)
+		}
+	}
+}
+
 func TestReleaseEvidenceBundleContractDocumentsSignedBundle(t *testing.T) {
 	root := repoRoot(t)
 	readText := func(path ...string) string {

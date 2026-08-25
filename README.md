@@ -1,5 +1,7 @@
 # AO Forge
 
+[![Latest release](https://img.shields.io/github/v/release/uesugitorachiyo/ao-forge?label=latest%20release)](https://github.com/uesugitorachiyo/ao-forge/releases/tag/v0.1.5)
+
 AO Forge coordinates one governed factory run. It maintains GoalRun state,
 builds factory plans, requests Covenant decisions, delegates bounded execution
 to AO2, and retains the evidence needed for operator review.
@@ -35,6 +37,29 @@ bin/forge contract validate \
 The [full CLI and operations reference](REFERENCE.md) documents contracts,
 release previews, GoalRun workflows, retained evidence, checksums, rollback,
 promotion, and every command example.
+
+## Install v0.1.5
+
+The current published release is [v0.1.5](https://github.com/uesugitorachiyo/ao-forge/releases/tag/v0.1.5),
+built from `d1723769949269dcd0589916d83769dcb7275f98`.
+
+Download [checksums.txt](https://github.com/uesugitorachiyo/ao-forge/releases/download/v0.1.5/checksums.txt)
+with the archive for your platform:
+
+- [macOS Apple Silicon](https://github.com/uesugitorachiyo/ao-forge/releases/download/v0.1.5/ao-forge_Darwin_arm64.tar.gz)
+- [Linux x86_64](https://github.com/uesugitorachiyo/ao-forge/releases/download/v0.1.5/ao-forge_Linux_x86_64.tar.gz)
+- [Windows x86_64](https://github.com/uesugitorachiyo/ao-forge/releases/download/v0.1.5/ao-forge_Windows_x86_64.zip)
+
+Verify only the downloaded archive:
+
+```sh
+grep '  <archive-name>$' checksums.txt > checksums.selected
+sha256sum -c checksums.selected # Linux
+shasum -a 256 -c checksums.selected # macOS
+```
+
+After extraction, run `./forge --help` on macOS or Linux, or
+`.\forge.exe --help` in PowerShell.
 
 ## Governance Boundary
 
